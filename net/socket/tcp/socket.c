@@ -426,7 +426,10 @@ static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
 
 // Sends data and/or a FIN if available.  If no data is ready to be sent,
 // returns -EAGAIN (and doesn't send any packets).
-static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
+static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block,
+                            bool is_zwp) {
+  test_point_run("tcp:send_datafin");
+
   // Figure out how much data to send.
   kspin_lock(&socket->spin_mu);
   tcp_coverage_log("send_datafin", socket);
@@ -442,8 +445,18 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
     return -EAGAIN;
   }
 
+  // A ZWP is requested, but it's possible the window has opened in the meantime
+  // (in which case we don't want to close it again).
+  if (is_zwp && socket->send_wndsize == 0) {
+    socket->send_wndsize = 1;
+  } else {
+    is_zwp = false;
+  }
+
   tcp_segment_t* seg = KMALLOC(tcp_segment_t);
   tcp_next_segment(socket, seg);
+  if (is_zwp) socket->send_wndsize = 0;
+
   tcpip_pseudo_hdr_t pseudo_ip;
   pbuf_t* pb = NULL;
   int result = tcp_build_segment(socket, seg, &pb, &pseudo_ip);
@@ -673,48 +686,60 @@ static void tcp_timer_defint(void* arg) {
 }
 
 static void handle_retransmit_timer(socket_tcp_t* socket) {
-  if (list_empty(&socket->segments)) {
-    KLOG(DFATAL, "TCP: socket %p fired RTO timer but has no segments\n",
+  // TODO(aoates): this can probably happen if the defint races with a new
+  // packet.  Write a test for this, and downgrade from DFATAL.
+  if (list_empty(&socket->segments) && socket->send_wndsize != 0) {
+    KLOG(DFATAL, "TCP: socket %p fired RTO timer but has no segments or ZWPs\n",
          socket);
     kspin_unlock(&socket->spin_mu);
     return;
   }
 
-  // Possibly configurations of segment seq and socket->send_unack:
-  //    u     |   <-- typical (send_unack aligned with unack'd segment)
-  //    |  u  |   <-- atypical (segment partially ack'd)
-  // u  |     |   <-- not allowed (we're missing a segment)
-  //    |     | u <-- not allowed (segment was fully ack'd)
-
-  tcp_segment_t* seg = container_of(socket->segments.head, tcp_segment_t, link);
-  uint32_t seg_len = tcp_seg_len(seg);
-  KASSERT_DBG(seq_ge(socket->send_unack, seg->seq));
-  KASSERT_DBG(seq_lt(socket->send_unack, seg->seq + seg_len));
-
-  // If part of the segment was acknowledged, for some reason, truncate this
-  // segment to only retransmit the unacked portion.
-  if (seg->seq != socket->send_unack) {
-    uint32_t bytes_trunc = (socket->send_unack - seg->seq);
-    KLOG(DEBUG,
-         "TCP: socket %p truncating partially-acked segment for retransmit "
-         "(seq %u -> %d; %u bytes less)\n",
-         socket, seg->seq - socket->initial_seq,
-         socket->send_unack - socket->initial_seq, bytes_trunc);
-    seg->seq = socket->send_unack;
-    seg->data_len -= bytes_trunc;
-    KASSERT_DBG(!(seg->flags & TCP_FLAG_SYN));  // Could support this if needed.
-  }
-
   socket->rto_ms = min(socket->rto_ms * 2, TCP_MAX_RTO_MS);
-  KLOG(DEBUG,
-       "TCP: socket %p retransmitting segment [%u, %u) (retransmits: %d); RTO "
-       "-> %dms\n",
-       socket, seg->seq - socket->initial_seq,
-       seg->seq + seg_len - socket->initial_seq, seg->retransmits,
-       socket->rto_ms);
-
   tcp_set_timer(socket, socket->rto_ms, /* force */ true);
-  tcp_retransmit_segment(socket, seg);  // Unlocks the socket.
+
+  if (!list_empty(&socket->segments)) {
+    // Possibly configurations of segment seq and socket->send_unack:
+    //    u     |   <-- typical (send_unack aligned with unack'd segment)
+    //    |  u  |   <-- atypical (segment partially ack'd)
+    // u  |     |   <-- not allowed (we're missing a segment)
+    //    |     | u <-- not allowed (segment was fully ack'd)
+
+    tcp_segment_t* seg = container_of(socket->segments.head, tcp_segment_t, link);
+    uint32_t seg_len = tcp_seg_len(seg);
+    KASSERT_DBG(seq_ge(socket->send_unack, seg->seq));
+    KASSERT_DBG(seq_lt(socket->send_unack, seg->seq + seg_len));
+
+    // If part of the segment was acknowledged, for some reason, truncate this
+    // segment to only retransmit the unacked portion.
+    if (seg->seq != socket->send_unack) {
+      uint32_t bytes_trunc = (socket->send_unack - seg->seq);
+      KLOG(DEBUG,
+           "TCP: socket %p truncating partially-acked segment for retransmit "
+           "(seq %u -> %d; %u bytes less)\n",
+           socket, seg->seq - socket->initial_seq,
+           socket->send_unack - socket->initial_seq, bytes_trunc);
+      seg->seq = socket->send_unack;
+      seg->data_len -= bytes_trunc;
+      KASSERT_DBG(!(seg->flags & TCP_FLAG_SYN));  // Could support this if needed.
+    }
+
+    KLOG(DEBUG,
+         "TCP: socket %p retransmitting segment [%u, %u) (retransmits: %d); RTO "
+         "-> %dms\n",
+         socket, seg->seq - socket->initial_seq,
+         seg->seq + seg_len - socket->initial_seq, seg->retransmits,
+         socket->rto_ms);
+
+    tcp_retransmit_segment(socket, seg);  // Unlocks the socket.
+  } else {
+    KASSERT_DBG(socket->send_wndsize == 0);
+    KLOG(DEBUG,
+         "TCP: socket %p sending 1-byte zero-window probe; RTO -> %dms\n",
+         socket, socket->rto_ms);
+    kspin_unlock(&socket->spin_mu);
+    tcp_send_datafin(socket, /* allow_block */ false, /* is_zwp */ true);
+  }
 }
 
 // Resets the connection state, but does _not_ set a socket error or send a RST.
@@ -996,7 +1021,7 @@ static void tcp_process_action(socket_tcp_t* socket, const pbuf_t* pb,
     case TCP_ACTION_NOT_SET:
     case TCP_ACTION_NONE:
       if (tcp_state_type(socket->state) == TCPSTATE_ESTABLISHED) {
-        result = tcp_send_datafin(socket, false);
+        result = tcp_send_datafin(socket, false, false);
         if (result == 0) {
           action->send_ack = false;  // We sent data, that includes an ack
         } else if (result != -EAGAIN) {
@@ -1148,12 +1173,6 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
     kfree(seg);
   }
 
-  if (list_empty(&socket->segments) && socket->state != TCP_TIME_WAIT) {
-    tcp_cancel_timer(socket);
-  } else if (segs_acked > 0) {
-    tcp_set_timer(socket, socket->rto_ms, true);
-  }
-
   uint32_t seqs_acked = ack - socket->send_unack;
   uint32_t bytes_acked = seqs_acked;
   // We need to track syn_acked explicitly due to the possibility of wraparound.
@@ -1194,6 +1213,13 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
        socket, seqs_acked, bytes_acked, socket->send_next - socket->send_unack,
        socket->send_wndsize, socket->cwnd.cwnd);
   tcp_wake(socket);
+
+  if (list_empty(&socket->segments) && socket->state != TCP_TIME_WAIT &&
+      socket->send_wndsize != 0) {
+    tcp_cancel_timer(socket);
+  } else if (segs_acked > 0 || socket->send_wndsize == 0) {
+    tcp_set_timer(socket, socket->rto_ms, true);
+  }
 
   switch (socket->state) {
     case TCP_LAST_ACK:
@@ -1912,7 +1938,7 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
   if (send_datafin) {
     test_point_run("tcp:shutdown_before_send");
     // Send the FIN if possible.
-    int result = tcp_send_datafin(sock, true);
+    int result = tcp_send_datafin(sock, true, false);
     if (result != 0 && result != -EAGAIN) {
       KLOG(WARNING, "TCP: socket %p unable to send data/FIN: %s\n",
            sock, errorname(-result));
@@ -2497,7 +2523,7 @@ ssize_t sock_tcp_sendto(socket_t* socket_base, int fflags, const void* buffer,
 
   if (result >= 0) {
     int bytes = result;
-    result = tcp_send_datafin(sock, true);
+    result = tcp_send_datafin(sock, true, false);
     if (result == 0 || result == -EAGAIN) {
       result = bytes;
     }

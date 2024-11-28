@@ -14508,6 +14508,204 @@ static void tcp_ipv6_tests(void) {
   bad_ipv6_packet_test4();
 }
 
+static void zwp_test1(void) {
+  KTEST_BEGIN("TCP: zero-window probes sent (ZWP is a FIN)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+  KEXPECT_LT(get_rto(s.socket), 2000);
+
+  set_rto(s.socket, 40);
+  KEXPECT_EQ(5, vfs_write(s.socket, "12345", 5));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "12345"));
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 501, /* ack */ 106, /* wndsize */ WNDSIZE_ZERO));
+
+  KEXPECT_EQ(1, vfs_write(s.socket, "6", 1));
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a series of ZWPs.
+  ksleep(10);
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_TRUE(raw_has_packets_wait(&s, 200));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 501, "6"));
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 501, /* ack */ 107, /* wndsize */ WNDSIZE_ZERO));
+
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_TRUE(raw_has_packets_wait(&s, 200));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 107, /* ack */ 501));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 108));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 108));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 108, /* ack */ 502));
+
+  kill_time_wait(s.socket);
+  cleanup_tcp_test(&s);
+}
+
+static void zwp_test2(void) {
+  KTEST_BEGIN("TCP: zero-window probes sent (timer-based)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+  KEXPECT_LT(get_rto(s.socket), 2000);
+
+  set_rto(s.socket, 10);
+  KEXPECT_EQ(5, vfs_write(s.socket, "12345", 5));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "12345"));
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 501, /* ack */ 106, /* wndsize */ WNDSIZE_ZERO));
+
+  KEXPECT_EQ(5, vfs_write(s.socket, "67890", 5));
+  ksleep(100);
+
+  // We should have gotten at least two ZWPs (one probe, one retransmit).
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 501, "6"));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 501, "6"));
+  KEXPECT_LT(get_rto(s.socket), 1000);
+  set_rto(s.socket, 1000);
+  KEXPECT_LT(raw_drain_packets(&s), 4);
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 107));
+
+  // Should get an ACK (with data).
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 107, /* ack */ 502, "7890"));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 111, /* ack */ 502));
+  SEND_PKT(&s, ACK_PKT(502, /* ack */ 112));
+
+  cleanup_tcp_test(&s);
+}
+
+static void open_window_test_hook(const char* name, int count, void* arg) {
+  if (count != 0) return;
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, ACK_PKT(/* seq */ 501, /* ack */ 106));
+  KEXPECT_EQ(2, vfs_write(s->socket, "ab", 2));
+}
+
+static void zwp_test3(void) {
+  KTEST_BEGIN("TCP: zero-window probe races with window update");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+  KEXPECT_LT(get_rto(s.socket), 2000);
+
+  KEXPECT_EQ(5, vfs_write(s.socket, "12345", 5));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "12345"));
+
+  set_rto(s.socket, 40);
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 501, /* ack */ 106, /* wndsize */ WNDSIZE_ZERO));
+
+  KEXPECT_EQ(3, vfs_write(s.socket, "678", 3));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  test_point_add("tcp:send_datafin", open_window_test_hook, &s);
+
+  // We should get the full message once the RTO timer expires.
+  KEXPECT_TRUE(raw_has_packets_wait(&s, 200));
+  KEXPECT_LE(1, test_point_remove("tcp:send_datafin"));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 501, "678"));
+
+  // We should also get the 'ab' sent right after the window opened.
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 109, /* ack */ 501, "ab"));
+
+  // We should be able to send more.
+  KEXPECT_EQ(2, vfs_write(s.socket, "90", 2));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 111, /* ack */ 501, "90"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 113));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 12, 0));
+  cleanup_tcp_test(&s);
+}
+
+// Tests when the window is closed to zero spontaneously, not while ACK'ing any
+// outstanding data.
+static void zwp_test4(void) {
+  KTEST_BEGIN("TCP: zero-window probes sent (window is spontaneously closed)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  set_rto(s.socket, 40);
+  KEXPECT_EQ(5, vfs_write(s.socket, "12345", 5));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "12345"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 106));
+
+  // _now_ close the window.
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 501, /* ack */ 106, /* wndsize */ WNDSIZE_ZERO));
+
+  KEXPECT_EQ(2, vfs_write(s.socket, "67", 2));
+
+  // Should get a series of ZWPs.
+  ksleep(10);
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_TRUE(raw_has_packets_wait(&s, 200));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 501, "6"));
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 501, /* ack */ 107, /* wndsize */ WNDSIZE_ZERO));
+
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_TRUE(raw_has_packets_wait(&s, 200));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 107, /* ack */ 501, "7"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 108));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 7, 0));
+  cleanup_tcp_test(&s);
+}
+
+static void zero_window_probe_tests(void) {
+  zwp_test1();
+  zwp_test2();
+  zwp_test3();
+  zwp_test4();
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -14554,6 +14752,7 @@ void tcp_test(void) {
     close_race_tests();
     open_race_tests();
     tcp_ipv6_tests();
+    zero_window_probe_tests();
   }
 
   // These are tests that don't look specifically at the sequence numbers or
