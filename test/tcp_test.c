@@ -14754,6 +14754,7 @@ static void* mt_server(void* arg) {
       sched_disable_preemption();
       return NULL;
     }
+    KEXPECT_EQ(0, set_rto(sock, 50));
 
     char buf[300];
     while (true) {
@@ -14816,6 +14817,7 @@ static void* mt_client(void* arg) {
 
     KEXPECT_EQ(0, do_setsockopt_int(sock, SOL_SOCKET, SO_RCVBUF, 1000));
     KEXPECT_EQ(0, do_setsockopt_int(sock, SOL_SOCKET, SO_SNDBUF, 1000));
+    KEXPECT_EQ(0, set_rto(sock, 50));
     int result = net_connect(sock, (const struct sockaddr*)&args->server_addr,
                              sizeof(args->server_addr));
     KEXPECT_EQ(result, 0);
