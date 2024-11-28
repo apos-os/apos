@@ -13201,7 +13201,14 @@ static void sockmap_bind_tests2(void) {
   KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 6, NULL, 0, &s3));
   KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "0.0.0.0", 5, NULL, 0));
   tcpsm_cleanup(&sm);
+}
 
+static void sockmap_bind_tests3(void) {
+  tcp_sockmap_t sm;
+  tcpsm_init(&sm, AF_INET, 5, 7);
+
+  socket_tcp_t s1, s2, s3;
+  char local[INET_PRETTY_LEN];
 
   KTEST_BEGIN("TCP: port assignment (5-tuple)");
   tcpsm_init(&sm, AF_INET, 5, 7);
@@ -13487,7 +13494,7 @@ static void sockmap_find_ipv6_tests(void) {
 
 
   KTEST_BEGIN("TCP: sockmap 5-tuple lookup (IPv6)");
-  socket_tcp_t s1, s2, s3;
+  socket_tcp_t s1, s2;
   char local[INET6_PRETTY_LEN];
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s1, local));
   KEXPECT_STREQ("[::1]:80", local);
@@ -13573,9 +13580,14 @@ static void sockmap_find_ipv6_tests(void) {
   KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
   KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
   KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+}
 
-
+static void sockmap_find_ipv6_tests2(void) {
   KTEST_BEGIN("TCP: sockmap 5-to-3 tuple fallback (any-address) (IPv6)");
+  tcp_sockmap_t sm;
+  tcpsm_init(&sm, AF_INET6, 5, 7);
+  socket_tcp_t s1, s2, s3;
+  char local[INET6_PRETTY_LEN];
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::]:80", local);
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
@@ -13810,7 +13822,14 @@ static void sockmap_bind_ipv6_tests2(void) {
   KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 6, NULL, 0, &s3));
   KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 5, NULL, 0));
   tcpsm_cleanup(&sm);
+}
 
+static void sockmap_bind_ipv6_tests3(void) {
+  tcp_sockmap_t sm;
+  tcpsm_init(&sm, AF_INET6, 5, 7);
+
+  socket_tcp_t s1, s2, s3;
+  char local[INET6_PRETTY_LEN];
 
   KTEST_BEGIN("TCP: port assignment (5-tuple) (IPv6)");
   tcpsm_init(&sm, AF_INET6, 5, 7);
@@ -14090,10 +14109,13 @@ static void sockmap_tests(void) {
   sockmap_find_tests();
   sockmap_bind_tests();
   sockmap_bind_tests2();
+  sockmap_bind_tests3();
   sockmap_reuseaddr_tests();
   sockmap_find_ipv6_tests();
+  sockmap_find_ipv6_tests2();
   sockmap_bind_ipv6_tests();
   sockmap_bind_ipv6_tests2();
+  sockmap_bind_ipv6_tests3();
   sockmap_reuseaddr_ipv6_tests();
 }
 
