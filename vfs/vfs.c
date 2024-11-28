@@ -21,6 +21,7 @@
 #include "common/kstring.h"
 #include "common/math.h"
 #include "dev/dev.h"
+#include "dev/interrupts.h"
 #include "dev/tty.h"
 #include "memory/kmalloc.h"
 #include "memory/memobj_vnode.h"
@@ -610,8 +611,12 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   }
 
   // Allocate a new file_t in the global file table.
+  // TODO(aoates): properly protect the file and FD tables, not just this local
+  // hack.
+  PUSH_AND_DISABLE_INTERRUPTS();
   int idx = next_free_file_idx();
   if (idx < 0) {
+    POP_INTERRUPTS();
     if (child->type == VNODE_FIFO) vfs_close_fifo(child, mode);
     return -ENFILE;
   }
@@ -619,6 +624,7 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   process_t* proc = proc_current();
   int fd = next_free_fd(proc);
   if (fd < 0) {
+    POP_INTERRUPTS();
     if (child->type == VNODE_FIFO) vfs_close_fifo(child, mode);
     return fd;
   }
@@ -634,6 +640,7 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   KASSERT(proc->fds[fd].file == PROC_UNUSED_FD);
   proc->fds[fd].file = idx;
   proc->fds[fd].flags = 0;
+  POP_INTERRUPTS();
 
   if (flags & VFS_O_CLOEXEC) {
     proc->fds[fd].flags |= VFS_O_CLOEXEC;
