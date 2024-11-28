@@ -16,6 +16,11 @@
 #define APOO_DEV_NET_LOOPBACK_H
 
 #include "dev/net/nic.h"
+#include "net/eth/ethertype.h"
+
+// Queue a packet to send on the given loopback nic.  It will be dispatched in a
+// defint ASAP.  Never blocks.
+void loopback_send(nic_t* nic, pbuf_t* pb, ethertype_t protocol);
 
 // Creates a and registers a loopback NIC, returning it for convenience.
 nic_t* loopback_create(void);

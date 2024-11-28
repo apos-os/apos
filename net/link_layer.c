@@ -16,6 +16,7 @@
 
 #include "common/errno.h"
 #include "common/klog.h"
+#include "dev/net/loopback.h"
 #include "net/eth/arp/arp.h"
 #include "net/eth/eth.h"
 #include "net/ip/ip.h"
@@ -30,7 +31,7 @@ int net_link_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb,
       return eth_send(nic, next_hop, pb, protocol, allow_block);
 
     case NIC_LOOPBACK:
-      net_link_recv(nic, pb, protocol);
+      loopback_send(nic, pb, protocol);
       return 0;
 
     case NIC_TUN:
