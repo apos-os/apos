@@ -75,20 +75,60 @@ int_handler_asm:
 
   csrr s2, sstatus
   andi s2, s2, SSTATUS_SPP
-  # If interrupted kernel mode, use our stack as-is.
-  # TODO(aoates): catch double-faults for stack overflows.
-  bnez s2, .Lstack_done
+  # If interrupted user mode, switch stacks.
+  beqz s2, .Luser_stack_switch
 
+  # If interrupted kernel mode, use our stack as-is.  First, check if we
+  # interrupted the prologue of this function --- that indicates a double fault
+  # (and likely stack overflow in one of the below instructions).
+
+  # Read sepc and store s3 into sepc for now.
+  csrrw s3, sepc, s3
+
+  # Check if we interrupted between int_handler_asm and the end of the prologue
+  # --- though if we interrupted between int_handler_asm and here, we're
+  # probably screwed no matter what (as it means $sscratch was invalid), and
+  # likely won't even get here.
+  lla s2, int_handler_asm
+  bltu s3, s2, .Lkernel_stack_safe     # if ($sepc < int_handler_asm) goto safe
+  lla s2, .Lint_handler_prologue_done
+  bgeu s3, s2, .Lkernel_stack_safe     # if ($sepc >= $prologue_end) goto safe
+
+  # Womp, double fault.  Switch stacks and go to the double fault handler.
+  mv a0, s3  # arg0 = interrupted address
+  mv a1, sp  # arg1 = interrupted stack pointer
+
+  la sp, g_dblfault_stack
+  la t0, rsv_dblfault_handler
+  jalr t0
+  # Can't get here.
+.Lloop:
+  wfi
+  j .Lloop
+
+.Lkernel_stack_safe:
+  csrrw s3, sepc, s3  # Swap sepc and s3 back
+  j .Lstack_done
+
+.Luser_stack_switch:
   # We interrupted user mode and need to switch stacks.  sscratch is the bottom
   # (highest address) of the kernel stack, so start right after that.
   mv sp, s1  # Original sp saved above.
   addi sp, sp, RSV64_KSTACK_SCRATCH_NBYTES
 
 .Lstack_done:
-  ld s2, -8(s1)
-  sd s2, -280(sp)         # Save original sp onto new stack.
-  ld s2, 0(s1)            # Get saved s2 from the scratch spot.
+  # New state: sp is believed to be a valid kernel stack.  First, restore
+  # sscratch before we actually _use_ sp, in case we double fault.
+  mv s2, s1               # Save scratch ptr into s2.
   csrrw s1, sscratch, s1  # Restore s1 and sscratch.
+
+  # Save original s1 value onto new stack.  If we're overflowing the kernel
+  # stack, this will trap (first opportunity, if sscratch was valid).
+  sd s1, -224(sp)         # Save original s1 onto new stack (in context struct)
+
+  ld s1, -8(s2)
+  sd s1, -280(sp)         # Save original sp onto new stack.
+  ld s2, 0(s2)            # Get saved s2 from the scratch spot.
   # Now everything is as it was, except we may have switched stacks.
 
   addi sp, sp, -288
@@ -114,7 +154,7 @@ int_handler_asm:
   sd t1,  0x028(sp)
   sd t2,  0x030(sp)
   # fp/s0 stored above.
-  sd s1,  0x040(sp)
+  # s1 stored above.
   sd a0,  0x048(sp)
   sd a1,  0x050(sp)
   sd a2,  0x058(sp)
@@ -149,6 +189,7 @@ int_handler_asm:
   andi t0, t0, SSTATUS_SAVE_MASK
   sd t0, 0x100(sp)
 
+.Lint_handler_prologue_done:
   mv a0, sp  # Pass &ctx
   csrr a1, scause
   csrr a2, stval

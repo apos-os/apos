@@ -17,6 +17,7 @@ Import('env AposAddSources')
 srcs = [
   'arch/common/debug.c',
   'arch/common/die.c',
+  'arch/dev/double_fault.c',
   'arch/dev/interrupts.c',
   'arch/dev/interrupts_asm.s',
   'arch/dev/io.c',
