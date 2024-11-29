@@ -12,15 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef APOO_ARCHS_RISCV64_ARCH_DEV_DOUBLE_FAULT_H
+#define APOO_ARCHS_RISCV64_ARCH_DEV_DOUBLE_FAULT_H
+
 #include <stdint.h>
 
-#include "common/kassert.h"
-#include "common/klog.h"
 #include "arch/memory/layout.h"
 
-// Special stack for double faults.
-uint8_t g_dblfault_stack[RSV64_DBLFAULT_STACK_SIZE] __attribute__((aligned(16)));
+extern uint8_t g_dblfault_stack[RSV64_DBLFAULT_STACK_SIZE];
 
-void rsv_dblfault_handler(uint64_t interrupted_addr, uint64_t interrupted_sp) {
-  klogfm(KL_GENERAL, FATAL, "Kernel double fault at %#lx\n", interrupted_addr);
-}
+#endif

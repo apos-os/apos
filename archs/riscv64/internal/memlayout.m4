@@ -38,4 +38,7 @@ PROVIDE(RSV64_KERNEL_PHYS_ADDR,        0x0000000080000000)
 dnl
 dnl How much scratch space to reserve at the bottom (highest addresses) of every
 dnl kernel mode stack.
-PROVIDE(RSV64_KSTACK_SCRATCH_NBYTES, -16)
+PROVIDE(RSV64_KSTACK_SCRATCH_NBYTES, -24)
+dnl
+dnl How big to make the double-fault stack.
+PROVIDE(RSV64_DBLFAULT_STACK_SIZE, 4096)

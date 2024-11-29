@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include "arch/proc/stack_trace.h"
+
+#include "arch/dev/double_fault.h"
 #include "common/klog.h"
 #include "memory/memory.h"
 #include "proc/kthread-internal.h"
@@ -29,7 +31,9 @@ static int get_stack_trace_internal(addr_t fp, addr_t stack_base,
       break;
     }
 
-    if (fp < stack_base || fp > stack_base + stack_len) {
+    if ((fp < stack_base || fp > stack_base + stack_len) &&
+        (fp < (addr_t)&g_dblfault_stack ||
+         fp > (addr_t)&g_dblfault_stack + RSV64_DBLFAULT_STACK_SIZE)) {
       klogf("Warning: frame pointer left stack (fp = 0x%" PRIxADDR
             " stack_base = 0x%" PRIxADDR ")\n",
             fp, stack_base);

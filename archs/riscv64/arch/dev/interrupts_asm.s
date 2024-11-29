@@ -95,10 +95,30 @@ int_handler_asm:
   bgeu s3, s2, .Lkernel_stack_safe     # if ($sepc >= $prologue_end) goto safe
 
   # Womp, double fault.  Switch stacks and go to the double fault handler.
+  # First, set up a fake stack frame for the interrupted code, and one for
+  # int_handler that double faulted.
+  # Clobber registers freely at this point, we're not going back.
   mv a0, s3  # arg0 = interrupted address
   mv a1, sp  # arg1 = interrupted stack pointer
-
   la sp, g_dblfault_stack
+  li t0, RSV64_DBLFAULT_STACK_SIZE
+  add sp, sp, t0
+  addi sp, sp, RSV64_KSTACK_SCRATCH_NBYTES  # Just for consistency...
+
+  # First stack frame --- original interrupted code.
+  ld t0, -16(s1)  # Get original interrupted address.
+  addi sp, sp, -16
+  sd fp, 0(sp)
+  sd t0, 8(sp)
+  addi fp, sp, 16
+
+  # Second stack frame --- the int_handler_asm code.
+  addi t0, a0, 4  # t0 = a0 + SIZE_OF_JUMP_INSTR
+  addi sp, sp, -16
+  sd fp, 0(sp)
+  sd t0, 8(sp)
+  addi fp, sp, 16
+
   la t0, rsv_dblfault_handler
   jalr t0
   # Can't get here.
@@ -107,6 +127,7 @@ int_handler_asm:
   j .Lloop
 
 .Lkernel_stack_safe:
+  sd s3, -16(s1)      # Store the original sepc into our scratch space.
   csrrw s3, sepc, s3  # Swap sepc and s3 back
   j .Lstack_done
 
