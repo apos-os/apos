@@ -14970,10 +14970,7 @@ void tcp_test(void) {
   reuseaddr_tests();
   rapid_reconnect_test();
   sockmap_tests();
-  // TODO(aoates): reenable these
-#if 0
   multithread_test();
-#endif
 
   KTEST_BEGIN("TCP: test cleanup");
   test_ttap_destroy(&tun);
