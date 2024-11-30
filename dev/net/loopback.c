@@ -18,6 +18,7 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/net/nic.h"
+#include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "net/link_layer.h"
 #include "net/pbuf.h"
@@ -25,18 +26,36 @@
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
+// Parameters that control the maximum throughput of the loopback device.  Each
+// defint run will only process at most this many packets; if the queue is not
+// exhausted, then another run will be scheduled after LOOPBACK_REDEFINT_DELAY
+// ms.  This prevents the loopback defint loop from starving all other system
+// work (which can itself cause a positive feedback loop with e.g. TCP
+// retransmits feeding back into the starvation).
+#define LOOPBACK_MAX_PACKETS 50
+#define LOOPBACK_REDEFINT_DELAY 100
+
 typedef struct {
   nic_t public;
   list_t queue;
+  bool processing;  // Set to true when there is a defint processing packets.
 } loopback_nic_t;
+
+static void dispatch_link_local(void* arg);
+static void dispatch_link_local_timer(void* arg) {
+  defint_schedule(&dispatch_link_local, arg);
+}
 
 static void dispatch_link_local(void* arg) {
   loopback_nic_t* nic = (loopback_nic_t*)arg;
   int num_packets = 0;
-  while (num_packets < 50) {
+  while (num_packets < LOOPBACK_MAX_PACKETS) {
     kspin_lock(&nic->public.lock);
+    nic->processing = true;
     if (list_empty(&nic->queue)) {
+      nic->processing = false;
       kspin_unlock(&nic->public.lock);
+      nic_put(&nic->public);
       return;
     }
 
@@ -48,12 +67,14 @@ static void dispatch_link_local(void* arg) {
     pbuf_pop_header(pb, sizeof(ethertype_t));
 
     net_link_recv(&nic->public, pb, protocol);
-    nic_put(&nic->public);
     num_packets++;
   }
 
   // Schedule another to do more work.
-  defint_schedule(&dispatch_link_local, nic);
+  if (register_event_timer(get_time_ms() + LOOPBACK_REDEFINT_DELAY,
+                           &dispatch_link_local_timer, nic, NULL) != 0) {
+    KLOG(WARNING, "Unable to schedule link-local dispatch timer\n");
+  }
 }
 
 void loopback_send(nic_t* public, pbuf_t* pb, ethertype_t protocol) {
@@ -63,10 +84,10 @@ void loopback_send(nic_t* public, pbuf_t* pb, ethertype_t protocol) {
   // Stash the protocol in the space at the top of the packet.
   pbuf_push_header(pb, sizeof(ethertype_t));
   *(ethertype_t*)pbuf_get(pb) = protocol;
-  nic_ref(public);
 
   kspin_lock(&nic->public.lock);
-  if (list_empty(&nic->queue)) {
+  if (!nic->processing && list_empty(&nic->queue)) {
+    nic_ref(&nic->public);
     defint_schedule(&dispatch_link_local, nic);
   }
   list_push(&nic->queue, &pb->link);
@@ -99,6 +120,7 @@ nic_t* loopback_create(void) {
   kmemset(&nic->public.mac.addr, 0, NIC_MAC_LEN);
   nic->public.ops = &kLoopbackNicOps;
   nic->queue = LIST_INIT;
+  nic->processing = false;
   nic_create(&nic->public, "lo");
   KLOG(INFO, "net: created loopback device %s\n", nic->public.name);
   return &nic->public;
