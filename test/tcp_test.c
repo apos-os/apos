@@ -14602,7 +14602,7 @@ static void zwp_test2(void) {
   KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
   KEXPECT_LT(get_rto(s.socket), 2000);
 
-  set_rto(s.socket, 10);
+  set_rto(s.socket, 20);
   KEXPECT_EQ(5, vfs_write(s.socket, "12345", 5));
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "12345"));
   SEND_PKT(&s,
