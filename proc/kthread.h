@@ -147,7 +147,7 @@ void kmutex_unlock(kmutex_t* m);
 void kmutex_unlock_no_yield(kmutex_t* m);
 
 // Returns non-zero if the mutex is currently locked.
-int kmutex_is_locked(kmutex_t* m);
+bool kmutex_is_locked(const kmutex_t* m);
 
 // Asserts that the mutex is currently held by this thread.
 // Note: may have false negatives in non-debug builds, where we don't track

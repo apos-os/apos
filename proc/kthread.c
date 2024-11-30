@@ -484,7 +484,7 @@ void kmutex_unlock_no_yield(kmutex_t* m) {
   kmutex_unlock_internal(m, false);
 }
 
-int kmutex_is_locked(kmutex_t* m) {
+bool kmutex_is_locked(const kmutex_t* m) {
   PUSH_AND_DISABLE_INTERRUPTS();
   int is_locked = m->locked;
   POP_INTERRUPTS();
