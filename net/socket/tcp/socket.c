@@ -1148,7 +1148,10 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
          socket->dup_ack_count, ack);
     uint32_t unacked_bytes = socket->send_next - socket->send_unack;
     tcp_cwnd_dupack(&socket->cwnd, unacked_bytes, socket->dup_ack_count);
-    if (socket->dup_ack_count > 2) {
+    // Only retransmit on exactly the third dupack.  This avoids a death spiral
+    // when ZWPs are sent, where each fast retransmit triggers another dupack.
+    // I think this is also what RFC 5681 specifies.
+    if (socket->dup_ack_count == 3) {
       action->action = TCP_RETRANSMIT;
     }
     return;

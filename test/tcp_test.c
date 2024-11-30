@@ -11273,14 +11273,14 @@ static void fast_retransmit_test(void) {
   int new_cwnd = get_cwnd(s.socket);
   KEXPECT_LT(new_cwnd, orig_cwnd);
 
-  // Send more duplicate ACKs.  Each one should trigger a retransmit and
-  // inflate the cwnd by MSS.
+  // Send more duplicate ACKs.  Each one should inflate the cwnd by MSS, but not
+  // trigger a retransmit.
   SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 2000));
-  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 505, "456"));
+  KEXPECT_FALSE(raw_has_packets(&s));
   KEXPECT_EQ(new_cwnd + DEFAULT_MSS, get_cwnd(s.socket));
 
   SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 2000));
-  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 505, "456"));
+  KEXPECT_FALSE(raw_has_packets(&s));
   KEXPECT_EQ(new_cwnd + 2 * DEFAULT_MSS, get_cwnd(s.socket));
 
   // A non-dup-ACK should not trigger a retransmit, nor reset the counter.
@@ -11289,7 +11289,7 @@ static void fast_retransmit_test(void) {
   KEXPECT_EQ(new_cwnd + 2 * DEFAULT_MSS, get_cwnd(s.socket));
 
   SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 1000));
-  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 505, "456"));
+  KEXPECT_FALSE(raw_has_packets(&s));
   KEXPECT_EQ(new_cwnd + 3 * DEFAULT_MSS, get_cwnd(s.socket));
 
   // Finally, ACK the data.
@@ -11376,12 +11376,12 @@ static void fast_retransmit_test2(void) {
   // ...we should now get a retransmit.
   EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 505));
 
-  // Send more duplicate ACKs.  Each one should trigger a retransmit.
+  // Send more duplicate ACKs.  Each one should NOT trigger a retransmit.
   SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 2000));
-  EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 505));
+  KEXPECT_FALSE(raw_has_packets(&s));
 
   SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 2000));
-  EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 505));
+  KEXPECT_FALSE(raw_has_packets(&s));
 
   // Finally, ACK the FIN.
   SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 105));
