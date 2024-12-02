@@ -19,6 +19,8 @@
 #include "common/kstring.h"
 #include "common/list.h"
 #include "common/math.h"
+#include "dev/char_dev.h"
+#include "dev/dev.h"
 #include "dev/net/tuntap.h"
 #include "dev/timer.h"
 #include "net/addr.h"
@@ -121,6 +123,9 @@ typedef struct {
   // File descriptor for the TUN device for the test to read packets from.
   int tun_fd;
 
+  // Chardev of the TUN, so we can write directly (skipping the VFS layer).
+  char_dev_t* tun_chardev;
+
   // All queued packets, ready for a test to take.
   list_t packets;
 } global_tcp_test_state_t;
@@ -128,6 +133,7 @@ typedef struct {
 static global_tcp_test_state_t g_tcp_test = {
   .seq_start = TEST_SEQ_START,
   .tun_fd = -1,
+  .tun_chardev = NULL,
   .packets = LIST_INIT_STATIC,
 };
 
@@ -1184,7 +1190,8 @@ static ssize_t do_raw_send(tcp_test_state_t* s, const void* buf, size_t len) {
     ip6_add_hdr(pb, &raw->sin6_addr, &dst->sin6_addr, IPPROTO_TCP, 0);
   }
 
-  ssize_t result = vfs_write(g_tcp_test.tun_fd, pbuf_getc(pb), pbuf_size(pb));
+  ssize_t result = g_tcp_test.tun_chardev->write(
+      g_tcp_test.tun_chardev, pbuf_getc(pb), pbuf_size(pb), 0);
   if (result > 0) {
     result -= (pbuf_size(pb) - len);
   }
@@ -14928,6 +14935,7 @@ void tcp_test(void) {
   kspin_unlock(&tun.n->lock);
 
   g_tcp_test.tun_fd = tun.fd;
+  g_tcp_test.tun_chardev = dev_get_char(tun.nic_id);
 
   for (int i = 0; i < TEST_SEQ_ITERS; ++i) {
     g_tcp_test.seq_start = TEST_SEQ_START;
