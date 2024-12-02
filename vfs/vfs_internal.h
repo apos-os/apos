@@ -163,6 +163,7 @@ int lookup_existing_path_and_lock(vnode_t* root, const char* path,
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in
 // |file_out| with a reference, or -error otherwise.
 int lookup_fd(int fd, file_t** file_out);
+int lookup_fd_locked(int fd, file_t** file_out);  // With process_t->mu held.
 
 // Reference and unreference a file.  You must use these rather than manipulate
 // the refcount directly.
@@ -201,5 +202,9 @@ void vfs_unlock_vnodes(vnode_t* A, vnode_t* B);
 // Lock an array of vnodes.  The order of the array may be mutated.
 void vfs_lock_vnodes2(vnode_t** nodes, size_t n);
 void vfs_unlock_vnodes2(vnode_t** nodes, size_t n);
+
+// Close an open FD with the process locked.  Succeeds unconditionally --- the
+// FD must already have been resolved to the given file.
+void vfs_close_locked(int fd, file_t* file);
 
 #endif

@@ -27,6 +27,7 @@
 #include "proc/kthread-internal.h"
 #include "proc/load/load.h"
 #include "proc/process.h"
+#include "proc/pmutex.h"
 #include "proc/process-internal.h"
 #include "proc/scheduler.h"
 #include "proc/session.h"
@@ -52,6 +53,7 @@ static int g_proc_init_stage = 0;
 static uint32_t g_next_guid = 1;
 
 static void proc_init_process(process_t* p) {
+  pmutex_init(&p->mu);
   p->guid = 0;
   p->id = -1;
   p->state = PROC_INVALID;

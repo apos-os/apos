@@ -17,6 +17,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "proc/pmutex.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/fs.h"
@@ -413,8 +414,9 @@ int lookup_existing_path_and_lock(vnode_t* root, const char* path,
   return -EIO;
 }
 
-int lookup_fd(int fd, file_t** file_out) {
+int lookup_fd_locked(int fd, file_t** file_out) {
   process_t* proc = proc_current();
+  pmutex_assert_is_held(&proc->mu);
   if (!is_valid_fd(fd) || proc->fds[fd].file == PROC_UNUSED_FD) {
     return -EBADF;
   }
@@ -429,6 +431,14 @@ int lookup_fd(int fd, file_t** file_out) {
   file_ref(file);
   *file_out = file;
   return 0;
+}
+
+int lookup_fd(int fd, file_t** file_out) {
+  process_t* proc = proc_current();
+  pmutex_lock(&proc->mu);
+  int result = lookup_fd_locked(fd, file_out);
+  pmutex_unlock(&proc->mu);
+  return result;
 }
 
 int is_absolute_path(const char* path) {

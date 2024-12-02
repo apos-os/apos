@@ -23,6 +23,7 @@
 #include "proc/kthread-internal.h"
 #include "proc/kthread.h"
 #include "proc/load/load.h"
+#include "proc/pmutex.h"
 #include "user/include/apos/posix_signal.h"
 #include "user/include/apos/resource.h"
 #include "vfs/file.h"
@@ -45,7 +46,9 @@ static inline const char* proc_state_to_string(proc_state_t state);
 
 // Note: any fields added here (and potentially in kthread_t) must be properly
 // handled in fork(), execve(), and exit().
+// TODO(aoates): update all fields here to be properly prempt-safe.
 struct process {
+  pmutex_t mu;
   uint32_t guid;
   kpid_t id;  // Index into global process table.
   proc_state_t state;
@@ -54,7 +57,7 @@ struct process {
   bool exiting;  // Whether the process is exiting.
 
   // File descriptors.  Indexes into the global file table.
-  fd_t fds[PROC_MAX_FDS];
+  fd_t fds[PROC_MAX_FDS];  // GUARDED_BY(mu)
 
   // The current working directory of the process.
   struct vnode* cwd;

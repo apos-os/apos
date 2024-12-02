@@ -26,6 +26,7 @@
 #include "memory/kmalloc.h"
 #include "memory/memobj_vnode.h"
 #include "proc/kthread.h"
+#include "proc/pmutex.h"
 #include "proc/process.h"
 #include "proc/session.h"
 #include "proc/signal/signal.h"
@@ -94,6 +95,7 @@ static int next_free_file_idx(void) {
 
 // Return the lowest free fd in the process.
 static int next_free_fd(process_t* p) {
+  pmutex_assert_is_held(&p->mu);
   int max_fd = PROC_MAX_FDS;
   if (p->limits[APOS_RLIMIT_NOFILE].rlim_cur != APOS_RLIM_INFINITY)
     max_fd = min((apos_rlim_t)max_fd, p->limits[APOS_RLIMIT_NOFILE].rlim_cur);
@@ -622,9 +624,11 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   }
 
   process_t* proc = proc_current();
+  pmutex_lock(&proc->mu);
   int fd = next_free_fd(proc);
   if (fd < 0) {
     POP_INTERRUPTS();
+    pmutex_unlock(&proc->mu);
     if (child->type == VNODE_FIFO) vfs_close_fifo(child, mode);
     return fd;
   }
@@ -645,6 +649,7 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   if (flags & VFS_O_CLOEXEC) {
     proc->fds[fd].flags |= VFS_O_CLOEXEC;
   }
+  pmutex_unlock(&proc->mu);
 
   return fd;
 }
@@ -770,16 +775,32 @@ int vfs_open(const char* path, int flags, ...) {
   return result;
 }
 
-int vfs_close(int fd) {
+void vfs_close_locked(int fd, file_t* file) {
   process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd].file == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
+  pmutex_assert_is_held(&proc->mu);
+  KASSERT(fd >= 0 && fd < PROC_MAX_FDS);
+  KASSERT(proc->fds[fd].file == file->index);
+  KASSERT_DBG(g_file_table[file->index] == file);
+
   KASSERT_DBG(proc->fds[fd].flags == 0 || proc->fds[fd].flags == VFS_O_CLOEXEC);
 
-  file_t* file = g_file_table[proc->fds[fd].file];
-  KASSERT(file != 0x0);
   proc->fds[fd].file = PROC_UNUSED_FD;
+  file_unref(file);
+}
+
+int vfs_close(int fd) {
+  process_t* proc = proc_current();
+  pmutex_lock(&proc->mu);
+  file_t* file = NULL;
+  int result = lookup_fd_locked(fd, &file);
+  if (result) {
+    pmutex_unlock(&proc->mu);
+    return result;
+  }
+  vfs_close_locked(fd, file);
+  pmutex_unlock(&proc->mu);
+
+  // Unref our local ref (vfs_close_locked takes care of the FD table ref).
   file_unref(file);
   return 0;
 }
@@ -790,14 +811,17 @@ int vfs_dup(int orig_fd) {
   if (result) return result;
 
   process_t* proc = proc_current();
+  pmutex_lock(&proc->mu);
   int new_fd = next_free_fd(proc);
   if (new_fd < 0) {
+    pmutex_unlock(&proc->mu);
     file_unref(file);
     return new_fd;
   }
 
   KASSERT_DBG(proc->fds[new_fd].file == PROC_UNUSED_FD);
   proc->fds[new_fd] = proc->fds[orig_fd];  // Transfer our ref on |file|.
+  pmutex_unlock(&proc->mu);
   return new_fd;
 }
 
@@ -810,29 +834,31 @@ int vfs_dup2(int fd1, int fd2) {
       (apos_rlim_t)fd2 >= proc_current()->limits[APOS_RLIMIT_NOFILE].rlim_cur)
     return -EMFILE;
 
-  int result = lookup_fd(fd1, &file1);
-  if (result) return result;
+  process_t* proc = proc_current();
+  pmutex_lock(&proc->mu);
+  // TODO(aoates): write a test that catches races in this function.
+  int result = lookup_fd_locked(fd1, &file1);
+  if (result) {
+    pmutex_unlock(&proc->mu);
+    return result;
+  }
 
   if (fd1 == fd2) {
+    pmutex_unlock(&proc->mu);
     file_unref(file1);
     return fd2;
   }
 
   // Close fd2 if it already exists.
-  result = lookup_fd(fd2, &file2);
+  result = lookup_fd_locked(fd2, &file2);
   if (result == 0) {
+    vfs_close_locked(fd2, file2);
     file_unref(file2);
-    result = vfs_close(fd2);
-    if (result) {
-      file_unref(file1);
-      return result;
-    }
   }
-
-  process_t* proc = proc_current();
 
   KASSERT_DBG(proc->fds[fd2].file == PROC_UNUSED_FD);
   proc->fds[fd2] = proc->fds[fd1];  // Transfer our ref on |file1|.
+  pmutex_unlock(&proc->mu);
   return fd2;
 }
 
@@ -1564,6 +1590,7 @@ int vfs_get_memobj(int fd, kmode_t mode, memobj_t** memobj_out) {
 }
 
 void vfs_fork_fds(process_t* procA, process_t* procB) {
+  pmutex_lock(&procA->mu);
   if (ENABLE_KERNEL_SAFETY_NETS) {
     for (int i = 0; i < PROC_MAX_FDS; ++i) {
       KASSERT(procB->fds[i].file == PROC_UNUSED_FD);
@@ -1576,6 +1603,7 @@ void vfs_fork_fds(process_t* procA, process_t* procB) {
       file_ref(g_file_table[procA->fds[i].file]);
     }
   }
+  pmutex_unlock(&procA->mu);
 }
 
 // TODO(aoates): add a unit test for this.

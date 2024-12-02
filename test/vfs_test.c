@@ -6759,6 +6759,9 @@ static void multithread_create_delete_race_test(void) {
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
 
+// TODO(aoates): preemption safety tests:
+//  - FD manipulation (simultaneous lookup, opening, closing, dup, dup2, etc).
+
 void vfs_test(void) {
   KTEST_SUITE_BEGIN("vfs test");
   block_cache_clear_unpinned();
