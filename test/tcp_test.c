@@ -14646,7 +14646,12 @@ static void open_window_test_hook(const char* name, int count, void* arg) {
   if (count != 0) return;
   tcp_test_state_t* s = (tcp_test_state_t*)arg;
   SEND_PKT(s, ACK_PKT(/* seq */ 501, /* ack */ 106));
-  KEXPECT_EQ(2, vfs_write(s->socket, "ab", 2));
+  // TODO(SMP): reenable this when it's possible for this write race to happen
+  // --- either due to a preemption during defint handling, or due to SMP.  This
+  // verifies that we don't lose the write() call even though the window was
+  // closed.  This can't currently run because we can't do a FD lookup from a
+  // defint.
+  // KEXPECT_EQ(2, vfs_write(s->socket, "ab", 2));
 }
 
 static void zwp_test3(void) {
@@ -14680,6 +14685,7 @@ static void zwp_test3(void) {
   KEXPECT_TRUE(raw_has_packets_wait(&s, 200));
   KEXPECT_LE(1, test_point_remove("tcp:send_datafin"));
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 501, "678"));
+  KEXPECT_EQ(2, vfs_write(s.socket, "ab", 2));  // TODO(SMP): see above.
 
   // We should also get the 'ab' sent right after the window opened.
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 109, /* ack */ 501, "ab"));
