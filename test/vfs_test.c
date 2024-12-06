@@ -6761,6 +6761,7 @@ static void multithread_create_delete_race_test(void) {
 
 // TODO(aoates): preemption safety tests:
 //  - FD manipulation (simultaneous lookup, opening, closing, dup, dup2, etc).
+//    Must be from multiple processes as well as threads!
 
 void vfs_test(void) {
   KTEST_SUITE_BEGIN("vfs test");

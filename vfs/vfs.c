@@ -84,6 +84,7 @@ void vfs_fs_init(fs_t* fs) {
 //
 // TODO(aoates): this could be much more efficient.
 static int next_free_file_idx(void) {
+  pmutex_assert_is_held(&g_file_table_mu);
   if (vfs_get_force_no_files()) return -1;
   for (int i = 0; i < VFS_MAX_FILES; ++i) {
     if (g_file_table[i] == 0x0) {
@@ -561,10 +562,10 @@ void file_unref(file_t* file) {
     if (file->vnode->type == VNODE_FIFO)
       vfs_close_fifo(file->vnode, file->mode);
 
-    // TODO(aoates): is there a race here? Does vfs_put block?  Could another
-    // thread reference this fd/file during that time?  Maybe we need to remove
-    // it from the table, and mark the GD as PROC_UNUSED_FD first?
+    pmutex_lock(&g_file_table_mu);
     g_file_table[file->index] = 0x0;
+    pmutex_unlock(&g_file_table_mu);
+
     VFS_PUT_AND_CLEAR(file->vnode);
     file_free(file);
   }
@@ -612,25 +613,24 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
     }
   }
 
-  // Allocate a new file_t in the global file table.
-  // TODO(aoates): properly protect the file and FD tables, not just this local
-  // hack.
-  PUSH_AND_DISABLE_INTERRUPTS();
-  int idx = next_free_file_idx();
-  if (idx < 0) {
-    POP_INTERRUPTS();
-    if (child->type == VNODE_FIFO) vfs_close_fifo(child, mode);
-    return -ENFILE;
-  }
-
+  // Find the next free file descriptor.
   process_t* proc = proc_current();
   pmutex_lock(&proc->mu);
   int fd = next_free_fd(proc);
   if (fd < 0) {
-    POP_INTERRUPTS();
     pmutex_unlock(&proc->mu);
     if (child->type == VNODE_FIFO) vfs_close_fifo(child, mode);
     return fd;
+  }
+
+  // Allocate a new file_t in the global file table.
+  pmutex_lock(&g_file_table_mu);
+  int idx = next_free_file_idx();
+  if (idx < 0) {
+    pmutex_unlock(&g_file_table_mu);
+    pmutex_unlock(&proc->mu);
+    if (child->type == VNODE_FIFO) vfs_close_fifo(child, mode);
+    return -ENFILE;
   }
 
   KASSERT(g_file_table[idx] == 0x0);
@@ -640,11 +640,11 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   g_file_table[idx]->refcount = 1;
   g_file_table[idx]->mode = mode;
   g_file_table[idx]->flags = flags;
+  pmutex_unlock(&g_file_table_mu);
 
   KASSERT(proc->fds[fd].file == PROC_UNUSED_FD);
   proc->fds[fd].file = idx;
   proc->fds[fd].flags = 0;
-  POP_INTERRUPTS();
 
   if (flags & VFS_O_CLOEXEC) {
     proc->fds[fd].flags |= VFS_O_CLOEXEC;

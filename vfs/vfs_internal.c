@@ -31,6 +31,7 @@ kmutex_t g_fs_table_lock;
 htbl_t g_vnode_cache;
 kspinlock_t g_vnode_cache_lock = KSPINLOCK_NORMAL_INIT_STATIC;
 file_t* g_file_table[VFS_MAX_FILES];
+pmutex_t g_file_table_mu;
 
 static int lookup_path_internal(vnode_t* root, const char* path,
                                 lookup_options_t opt, vnode_t** parent_out,
