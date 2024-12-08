@@ -49,17 +49,17 @@ SECTIONS
 
     .init-rodata ALIGN(0x1000) :
     {
-        */libkernel_phys.a:(.rodata*)
+        */libkernel_phys.a:(.rodata* .lrodata* .srodata*)
     }
 
     .init-data ALIGN(0x1000) :
     {
-        */libkernel_phys.a:(.data)
+        */libkernel_phys.a:(.data .ldata .sdata)
     }
 
     .init-bss ALIGN(0x1000) :
     {
-        */libkernel_phys.a:(.bss)
+        */libkernel_phys.a:(.bss .lbss .sbss)
     }
 
     /* Load the main part of the kernel in virtual memory */
