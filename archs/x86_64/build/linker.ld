@@ -75,12 +75,14 @@ SECTIONS
     {
         *(.rodata*)
         *(.lrodata*)
+        *(.srodata*)
     }
 
     .data ALIGN (0x1000) : AT(ADDR(.data) - _OFFSET)
     {
         *(.data)
         *(.ldata)
+        *(.sdata)
     }
 
     .bss : AT(ADDR(.bss) - _OFFSET)
@@ -88,6 +90,7 @@ SECTIONS
         *(COMMON)
         *(.bss)
         *(.lbss)
+        *(.sbss)
         KERNEL_END_SYMBOL = .;
     }
 }
