@@ -86,6 +86,10 @@ SECTIONS
         *(.bss)
         *(.lbss)
         *(.sbss)
-        KERNEL_END_SYMBOL = .;
     }
+    KERNEL_END_SYMBOL = .;
+
+    . = 0;
+    INCLUDE build/common_metadata_sections.ld
+    INCLUDE archs/x86-common/x86_common_sections.ld
 }

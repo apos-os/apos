@@ -78,6 +78,11 @@ SECTIONS
         *(.srodata*)
     }
 
+    .eh_frame : AT(ADDR(.eh_frame) - _OFFSET)
+    {
+        *(.eh_frame)
+    }
+
     .data ALIGN (0x1000) : AT(ADDR(.data) - _OFFSET)
     {
         *(.data)
@@ -91,6 +96,10 @@ SECTIONS
         *(.bss)
         *(.lbss)
         *(.sbss)
-        KERNEL_END_SYMBOL = .;
     }
+    KERNEL_END_SYMBOL = .;
+
+    . = 0;
+    INCLUDE build/common_metadata_sections.ld
+    INCLUDE archs/x86-common/x86_common_sections.ld
 }

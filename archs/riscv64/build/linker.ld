@@ -87,4 +87,8 @@ SECTIONS
         *(.sbss)
     }
     KERNEL_END_SYMBOL = .;
+
+    . = 0;
+    .riscv.attributes : { *(.riscv.attributes) }
+    INCLUDE build/common_metadata_sections.ld
 }

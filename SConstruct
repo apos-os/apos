@@ -154,7 +154,7 @@ if not env['CLANG']:
 env.Append(CFLAGS = Split("-Wframe-larger-than=1500"))
 env.Append(ASFLAGS = ['--gen-debug', '-I', '$BUILD_CFG_DIR'])
 env.Replace(LINK = '${TOOL_PREFIX}ld')
-env.Append(LINKFLAGS = ['-L', '$BUILD_CFG_DIR'])
+env.Append(LINKFLAGS = ['-L', '$BUILD_CFG_DIR', '--orphan-handling=error'])
 
 env.Append(CPPPATH = ['#/archs/$ARCH', '#/archs/common', '#/$BUILD_CFG_DIR'])
 
