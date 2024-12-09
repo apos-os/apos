@@ -138,7 +138,7 @@ else:
 
 target_env.Replace(AR = '${TOOL_PREFIX}ar')
 target_env.Replace(AS = '${TOOL_PREFIX}as')
-target_env.Replace(LD = '${TOOL_PREFIX}ld')
+target_env.Replace(LINK = '${TOOL_PREFIX}gcc')
 target_env.Replace(RANLIB = '${TOOL_PREFIX}ranlib')
 target_env.Replace(STRIP = '${TOOL_PREFIX}strip')
 target_env.Append(LINKFLAGS = ['-z', 'noexecstack'])
@@ -162,7 +162,6 @@ env.Append(CPPPATH = ['#/archs/$ARCH', '#/archs/common', '#/$BUILD_CFG_DIR'])
 user_env = target_env.Clone()
 user_env.Append(CPPDEFINES='ENABLE_TERM_COLOR=%d' % user_env['TERM_COLOR'])
 if user_env['CLANG']:
-  user_env.Append(LINKFLAGS = ['-target', '$CLANG_TARGET'])
   user_env.Append(CFLAGS =
       ['-isystem', '$HEADER_INSTALL_PREFIX/include'])
 
