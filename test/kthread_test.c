@@ -395,6 +395,79 @@ static void scheduler_wake_test(void) {
   kthread_join(thread3);
 }
 
+typedef struct {
+  kspinlock_t mu;
+  kthread_queue_t q;
+  notification_t done;
+} race_wait_args_t;
+
+static void* race_wait_test(void* arg) {
+  race_wait_args_t* args = (race_wait_args_t*)arg;
+  for (int i = 0; i < 1000 * CONCURRENCY_TEST_ITERS_MULT; ++i) {
+    kspin_lock(&args->mu);
+    scheduler_wait_on_splocked(&args->q, 1, &args->mu);
+    kspin_unlock(&args->mu);
+  }
+  ntfn_notify(&args->done);
+  return NULL;
+}
+
+static void scheduler_wake_race_test(void) {
+  KTEST_BEGIN("scheduler_wake_one() race test");
+  kthread_t thread1;
+
+  race_wait_args_t args;
+  kthread_queue_init(&args.q);
+  ntfn_init(&args.done);
+  args.mu = KSPINLOCK_NORMAL_INIT;
+
+  KEXPECT_EQ(0, kthread_create(&thread1, &race_wait_test, &args));
+  scheduler_make_runnable(thread1);
+
+  sched_enable_preemption_for_test();
+  while (!ntfn_has_been_notified(&args.done)) {
+    kspin_lock(&args.mu);
+    if (kthread_queue_empty(&args.q)) {
+      kspin_unlock(&args.mu);
+      scheduler_yield();
+      kspin_lock(&args.mu);
+    }
+    scheduler_wake_one(&args.q);
+    kspin_unlock(&args.mu);
+  }
+  sched_disable_preemption();
+
+  kthread_join(thread1);
+}
+
+static void scheduler_wake_all_race_test(void) {
+  KTEST_BEGIN("scheduler_wake_all() race test");
+  kthread_t thread1;
+
+  race_wait_args_t args;
+  kthread_queue_init(&args.q);
+  ntfn_init(&args.done);
+  args.mu = KSPINLOCK_NORMAL_INIT;
+
+  KEXPECT_EQ(0, kthread_create(&thread1, &race_wait_test, &args));
+  scheduler_make_runnable(thread1);
+
+  sched_enable_preemption_for_test();
+  while (!ntfn_has_been_notified(&args.done)) {
+    kspin_lock(&args.mu);
+    if (kthread_queue_empty(&args.q)) {
+      kspin_unlock(&args.mu);
+      scheduler_yield();
+      kspin_lock(&args.mu);
+    }
+    scheduler_wake_all(&args.q);
+    kspin_unlock(&args.mu);
+  }
+  sched_disable_preemption();
+
+  kthread_join(thread1);
+}
+
 static void scheduler_interrupt_test(void) {
   KTEST_BEGIN("scheduler_interrupt_thread(): interruptable thread ");
   kthread_t thread1;
@@ -1469,6 +1542,8 @@ void kthread_test(void) {
   queue_test();
   scheduler_wait_on_test();
   scheduler_wake_test();
+  scheduler_wake_race_test();
+  scheduler_wake_all_race_test();
   scheduler_interrupt_test();
   scheduler_interrupt_timeout_test();
   kthread_is_done_test();

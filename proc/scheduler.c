@@ -208,15 +208,19 @@ void scheduler_wait_on_locked_no_signals(kthread_queue_t* queue, kmutex_t* mu) {
 }
 
 void scheduler_wake_one(kthread_queue_t* queue) {
+  PUSH_AND_DISABLE_INTERRUPTS();
   if (!kthread_queue_empty(queue)) {
     scheduler_make_runnable(kthread_queue_pop(queue));
   }
+  POP_INTERRUPTS();
 }
 
 void scheduler_wake_all(kthread_queue_t* queue) {
+  PUSH_AND_DISABLE_INTERRUPTS();
   while (!kthread_queue_empty(queue)) {
     scheduler_make_runnable(kthread_queue_pop(queue));
   }
+  POP_INTERRUPTS();
 }
 
 void sched_disable_preemption(void) {
