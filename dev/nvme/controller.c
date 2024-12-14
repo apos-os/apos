@@ -30,7 +30,6 @@
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/page_alloc.h"
-#include "proc/defint.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/sleep.h"
@@ -126,19 +125,17 @@ static nvme_queue_t* get_queue(nvme_ctrl_t* ctrl, nvme_queue_id_t id) {
 
 int nvme_submit(nvme_ctrl_t* ctrl, nvme_transaction_t* txn) {
   KASSERT(txn->queue >= 0);
+  KASSERT(kspin_is_held(&ctrl->lock));
 
   nvme_queue_t* q = get_queue(ctrl, txn->queue);
-  kspin_lock(&ctrl->lock);
   txn->cmd.cmd_id = q->next_cmd_id++;
   int result = nvmeq_submit(q, &txn->cmd);
   if (result) {
-    kspin_unlock(&ctrl->lock);
     return result;
   }
 
   uint32_t key = txnkey(txn->queue, txn->cmd.cmd_id);
   htbl_put(&ctrl->pending, key, txn);
-  kspin_unlock(&ctrl->lock);
   return 0;
 }
 
@@ -335,15 +332,15 @@ int nvme_submit_blocking(nvme_ctrl_t* ctrl, nvme_transaction_t* txn,
   txn->done_cb = &txn_done;
   txn->cb_arg = &waitq;
 
-  DEFINT_PUSH_AND_DISABLE();
+  kspin_lock(&ctrl->lock);
   int result = nvme_submit(ctrl, txn);
   if (result != 0) {
-    DEFINT_POP();
+    kspin_unlock(&ctrl->lock);
     goto done;
   }
 
-  result = scheduler_wait_on_interruptable(&waitq, timeout_ms);
-  DEFINT_POP();
+  result = scheduler_wait_on_splocked(&waitq, timeout_ms, &ctrl->lock);
+  kspin_unlock(&ctrl->lock);
   if (result != SWAIT_DONE) {
     nvme_abandon(ctrl, txn);
     if (result == SWAIT_TIMEOUT) {

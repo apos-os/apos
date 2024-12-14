@@ -77,6 +77,8 @@ typedef struct nvme_transaction nvme_transaction_t;
 // Submit the given transaction on the controller.  If the transaction is
 // sucessfully submitted, returns 0 and the done callback will later be invoked.
 // On error returns -error (and the callback won't be run).
+//
+// Requires: the controller is locked.
 int nvme_submit(nvme_ctrl_t* ctrl, nvme_transaction_t* txn);
 
 // Abandon a submitted transaction.  Guarantees that when it returns either the
