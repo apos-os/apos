@@ -21,6 +21,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "common/list.h"
 #include "dev/io.h"
 #include "dev/net/nic.h"
 #include "dev/pci/pci-driver.h"
@@ -236,7 +237,7 @@ static void rtl_mc_unsub(nic_t* base, const nic_mac_t* mac) {
   kspin_unlock(&base->lock);
 }
 
-static void rtl_handle_recv_one(rtl8139_t* nic) {
+static void rtl_handle_recv_one(rtl8139_t* nic, list_t* packets) {
   // Read the packet header.
   uint32_t header;
   kmemcpy(&header, nic->rxbuf + nic->rxstart, RTL_RX_PACKET_HDR_SIZE);
@@ -256,7 +257,7 @@ static void rtl_handle_recv_one(rtl8139_t* nic) {
     // worrying about wrapping around the end.
     kmemcpy(pbuf_get(pb), nic->rxbuf + nic->rxstart + RTL_RX_PACKET_HDR_SIZE,
             plen);
-    eth_recv(&nic->public, pb);
+    list_push(packets, &pb->link);
   } else {
     // TODO(aoates): increment stats.
     KLOG(DEBUG, "received bad packet (status: %#x, len: %d)\n",
@@ -279,6 +280,7 @@ static void rtl_handle_recv(void* arg) {
   int packets = 0;
   uint16_t rxbuf_end = ltoh16(io_read16(nic->io, RTLRG_RXBUF_END));
   const int kMaxPackets = 2;
+  list_t packets_list = LIST_INIT;
   while (rxbuf_end != nic->rxstart && packets < kMaxPackets) {
     // TODO(aoates): increment stats?
     packets++;
@@ -290,12 +292,18 @@ static void rtl_handle_recv(void* arg) {
       KLOG(INFO, "recv(%s): data in buffer too small!\n", nic->public.name);
       break;
     }
-    rtl_handle_recv_one(nic);
+    rtl_handle_recv_one(nic, &packets_list);
     rxbuf_end = ltoh16(io_read16(nic->io, RTLRG_RXBUF_END));
   }
   KLOG(DEBUG2, "recv(%s): read %d packets\n", nic->public.name, packets);
   if (rxbuf_end != nic->rxstart) {
     defint_schedule(&rtl_handle_recv, nic);
+  }
+
+  // Dispatch packets.
+  while (!list_empty(&packets_list)) {
+    pbuf_t* pb = LIST_ENTRY(list_pop(&packets_list), pbuf_t, link);
+    eth_recv(&nic->public, pb);
   }
 }
 
