@@ -13212,8 +13212,6 @@ static void sockmap_bind_tests2(void) {
 
 static void sockmap_bind_tests3(void) {
   tcp_sockmap_t sm;
-  tcpsm_init(&sm, AF_INET, 5, 7);
-
   socket_tcp_t s1, s2, s3;
   char local[INET_PRETTY_LEN];
 
@@ -13587,6 +13585,7 @@ static void sockmap_find_ipv6_tests(void) {
   KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
   KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
   KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  tcpsm_cleanup(&sm);
 }
 
 static void sockmap_find_ipv6_tests2(void) {
@@ -13833,8 +13832,6 @@ static void sockmap_bind_ipv6_tests2(void) {
 
 static void sockmap_bind_ipv6_tests3(void) {
   tcp_sockmap_t sm;
-  tcpsm_init(&sm, AF_INET6, 5, 7);
-
   socket_tcp_t s1, s2, s3;
   char local[INET6_PRETTY_LEN];
 
