@@ -16,6 +16,7 @@
 # Given a log file, look for stack traces and symbolize them.
 
 import errno
+import functools
 import re
 import sys
 import subprocess
@@ -45,6 +46,7 @@ def get_tool_prefix():
     sys.exit(1)
   return conf['TOOL_PREFIX']
 
+@functools.cache
 def symbolize(tool_prefix, frame_num, addr):
   p = subprocess.Popen(["%saddr2line" % tool_prefix, "-f", "-s", "-e",
                         "build-scons/kernel.bin", addr],
