@@ -58,6 +58,7 @@ typedef struct {
   void* txbuf[RTL_NUM_TX_DESCS];
   bool txbuf_active[RTL_NUM_TX_DESCS];
   htbl_t multicast_addrs;  // MAC -> rtl_multicast_t* map.
+  kspinlock_t rtl_mu;
 } rtl8139_t;
 
 // PCI configuration registers (all IO-space mapped).
@@ -136,19 +137,19 @@ typedef enum {
 } rtl_rx_header_bits_t;
 
 static int rtl_tx(nic_t* base, pbuf_t* pb) {
-  DEFINT_PUSH_AND_DISABLE();
   rtl8139_t* nic = (rtl8139_t*)base;
+  kspin_lock(&nic->rtl_mu);
 
   // TODO(aoates): queue packets when the NIC is busy.
   if (nic->txbuf_active[nic->txdesc]) {
     KLOG(DEBUG, "tx(%s): unable to tx, next descriptor (%d) is still active\n",
          nic->public.name, nic->txdesc);
-    DEFINT_POP();
+    kspin_unlock(&nic->rtl_mu);
     return -EBUSY;
   }
 
   if (pbuf_size(pb) > RTL_TX_MAX_PACKET_SIZE) {
-    DEFINT_POP();
+    kspin_unlock(&nic->rtl_mu);
     return -EINVAL;
   }
 
@@ -173,9 +174,9 @@ static int rtl_tx(nic_t* base, pbuf_t* pb) {
   io_write32(nic->io, tx_port, pbuf_size(pb));
   nic->txdesc++;
   nic->txdesc %= RTL_NUM_TX_DESCS;
-  pbuf_free(pb);
+  kspin_unlock(&nic->rtl_mu);
 
-  DEFINT_POP();
+  pbuf_free(pb);
   return 0;
 }
 
@@ -203,7 +204,7 @@ static void rtl_update_multicast(rtl8139_t* nic) {
 
 static void rtl_mc_sub(nic_t* base, const nic_mac_t* mac) {
   rtl8139_t* nic = (rtl8139_t*)base;
-  kspin_lock(&base->lock);
+  kspin_lock(&nic->rtl_mu);
   void* value;
   uint32_t hash = fnv_hash_array(&mac->addr, sizeof(mac->addr));
   if (htbl_get(&nic->multicast_addrs, hash, &value) == 0) {
@@ -216,12 +217,12 @@ static void rtl_mc_sub(nic_t* base, const nic_mac_t* mac) {
     htbl_put(&nic->multicast_addrs, hash, entry);
   }
   rtl_update_multicast(nic);
-  kspin_unlock(&base->lock);
+  kspin_unlock(&nic->rtl_mu);
 }
 
 static void rtl_mc_unsub(nic_t* base, const nic_mac_t* mac) {
   rtl8139_t* nic = (rtl8139_t*)base;
-  kspin_lock(&base->lock);
+  kspin_lock(&nic->rtl_mu);
   void* value;
   uint32_t hash = fnv_hash_array(&mac->addr, sizeof(mac->addr));
   if (htbl_get(&nic->multicast_addrs, hash, &value) == 0) {
@@ -234,7 +235,7 @@ static void rtl_mc_unsub(nic_t* base, const nic_mac_t* mac) {
     }
   }
   rtl_update_multicast(nic);
-  kspin_unlock(&base->lock);
+  kspin_unlock(&nic->rtl_mu);
 }
 
 static void rtl_handle_recv_one(rtl8139_t* nic, list_t* packets) {
@@ -277,6 +278,7 @@ static void rtl_handle_recv_one(rtl8139_t* nic, list_t* packets) {
 // Deferred interrupt.
 static void rtl_handle_recv(void* arg) {
   rtl8139_t* nic = (rtl8139_t*)arg;
+  kspin_lock(&nic->rtl_mu);
   int packets = 0;
   uint16_t rxbuf_end = ltoh16(io_read16(nic->io, RTLRG_RXBUF_END));
   const int kMaxPackets = 2;
@@ -299,6 +301,7 @@ static void rtl_handle_recv(void* arg) {
   if (rxbuf_end != nic->rxstart) {
     defint_schedule(&rtl_handle_recv, nic);
   }
+  kspin_unlock(&nic->rtl_mu);
 
   // Dispatch packets.
   while (!list_empty(&packets_list)) {
@@ -324,6 +327,7 @@ const flag_spec_t kTxStatusFlagSpec[] = {
 // Deferred interrupt.
 static void rtl_handle_tx_irq(void* arg) {
   rtl8139_t* nic = (rtl8139_t*)arg;
+  kspin_lock(&nic->rtl_mu);
   for (int i = 0; i < RTL_NUM_TX_DESCS; ++i) {
     const uint16_t tx_status =
         io_read32(nic->io, RTLRG_TXSTATUS0 + (sizeof(uint32_t) * i));
@@ -348,6 +352,7 @@ static void rtl_handle_tx_irq(void* arg) {
       KASSERT_DBG(tx_status & RTL_TSD_OWN);
     }
   }
+  kspin_unlock(&nic->rtl_mu);
 }
 
 static void rtl_irq_handler(void* arg) {
@@ -459,6 +464,7 @@ void pci_rtl8139_init(pci_device_t* pcidev) {
   nic->public.type = NIC_ETHERNET;
   nic->public.ops = &rtl_ops;
   nic->io = pcidev->bar[0].io;
+  nic->rtl_mu = KSPINLOCK_NORMAL_INIT;
 
   // Find the MAC address of the device.
   // N.B.(aoates): the RTL8139 datasheet is contradictory---it says that these
