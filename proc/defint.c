@@ -43,13 +43,13 @@ void defint_schedule(void (*f)(void*), void* arg) {
   defint->f = f;
   defint->arg = arg;
   g_queue_len++;
-  POP_INTERRUPTS_ONLY();
+  POP_INTERRUPTS();
 }
 
 defint_state_t defint_state(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   defint_state_t result = g_defints_enabled;
-  POP_INTERRUPTS_ONLY();
+  POP_INTERRUPTS();
   return result;
 }
 
@@ -57,7 +57,7 @@ defint_state_t defint_set_state(defint_state_t s) {
   PUSH_AND_DISABLE_INTERRUPTS();
   bool old = g_defints_enabled;
   g_defints_enabled = s;
-  POP_INTERRUPTS_ONLY();
+  POP_INTERRUPTS();
   if (s) {
     defint_process_queued(/* force= */ false);
   }
@@ -70,14 +70,14 @@ void defint_process_queued(bool force) {
   }
   PUSH_AND_DISABLE_INTERRUPTS();
   if (!g_defints_enabled) {
-    POP_INTERRUPTS_ONLY();
+    POP_INTERRUPTS();
     return;
   }
   KASSERT_DBG(!g_running_defint);
 
   // Don't process defints early in the boot process.
   if (!kthread_current_thread()) {
-    POP_INTERRUPTS_ONLY();
+    POP_INTERRUPTS();
     return;
   }
 
@@ -106,7 +106,7 @@ void defint_process_queued(bool force) {
   // TODO(aoates): if we would have preempted the process during the defint, do
   // so now (in the scheduler).
   sched_restore_preemption();
-  POP_INTERRUPTS_ONLY();
+  POP_INTERRUPTS();
 }
 
 void _defint_disabled_die(void) {

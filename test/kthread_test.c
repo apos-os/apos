@@ -1503,12 +1503,14 @@ static void* refcount_test_thread(void* arg) {
 
   refcount_test_args_t* args = (refcount_test_args_t*)arg;
   for (int i = 0; i < kNumIters; ++i) {
+    kspin_lock(&args->spin);
     refcount_inc(&args->ref);
     KASSERT(refcount_dec(&args->ref) > 0);
     if (i % 100 == 0) {
       refcount_inc(&args->ref);
       defint_schedule(refcount_test_defint, arg);
     }
+    kspin_unlock(&args->spin);
     if (i % 1000 == 0) {
       ksleep(10);
     }

@@ -22,8 +22,6 @@
 #include "arch/dev/interrupts.h"
 #include "common/debug.h"
 
-void restore_interrupts_and_defints(interrupt_state_t saved);
-
 #if ENABLE_KERNEL_SAFETY_NETS
 // If safety nets are enabled, verify that interrupts are popped properly after
 // every PUSH_AND_DISABLE_INTERRUPTS.  This catches things like early returns
@@ -52,9 +50,6 @@ static inline void _interrupts_cleanup_verify(interrupt_state_t* saved) {
 #endif  // ENABLE_KERNEL_SAFETY_NETS
 
 #define POP_INTERRUPTS() \
-    restore_interrupts_and_defints(_SAVED_INTERRUPTS);
-
-#define POP_INTERRUPTS_ONLY() \
     restore_interrupts(_SAVED_INTERRUPTS);
 
 // Returns true if interrupts are currently enabled.
