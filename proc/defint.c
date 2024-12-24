@@ -31,7 +31,7 @@ typedef struct {
 static defint_data_t g_defint_queue[MAX_QUEUED_DEFINTS];
 static int g_queue_start = 0;
 static int g_queue_len = 0;
-static bool g_defints_enabled = true;
+static bool g_defints_enabled = false;
 static bool g_running_defint = false;
 
 void defint_schedule(void (*f)(void*), void* arg) {
@@ -74,12 +74,6 @@ void defint_process_queued(bool force) {
     return;
   }
   KASSERT_DBG(!g_running_defint);
-
-  // Don't process defints early in the boot process.
-  if (!kthread_current_thread()) {
-    POP_INTERRUPTS();
-    return;
-  }
 
   sched_disable_preemption();
 

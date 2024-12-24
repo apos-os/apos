@@ -33,6 +33,7 @@
 #include "memory/kmalloc.h"
 #include "net/init.h"
 #include "net/socket/tcp/tcp.h"
+#include "proc/defint.h"
 #include "proc/exec.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
@@ -257,6 +258,9 @@ void kmain(boot_info_t* boot, const char* cmdline) {
 
   klog("perftrace_init()\n");
   perftrace_init();
+
+  klog("enabling deferred interrupts\n");
+  defint_set_state(true);
 
   // Initialize devices.
   if (boot->dtree) {
