@@ -33,6 +33,7 @@ srcs = [
   'kthread_pool.c',
   'pmutex.c',
   'preemption_hook.c',
+  'tasklet.c',
   'tcgroup.c',
   'umask.c',
   'user.c',

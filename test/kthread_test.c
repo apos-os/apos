@@ -27,6 +27,7 @@
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "proc/spinlock.h"
+#include "proc/tasklet.h"
 #include "test/ktest.h"
 #include "test/test_params.h"
 
@@ -1555,6 +1556,74 @@ static void refcount_test(void) {
   KEXPECT_EQ(1, args.deletes);
 }
 
+static void tasklet_fn(tasklet_t* tl, void* arg) {
+  (*(int*)arg)++;
+}
+
+static void tasklet_timer(void* arg) {
+  tasklet_schedule((tasklet_t*)arg);
+}
+
+static void tasklet_reent_fn(tasklet_t* tl, void* arg) {
+  int* c = (int*)arg;
+  if (*c < 2) {
+    (*c)++;
+    tasklet_schedule(tl);
+  }
+}
+
+static void tasklet_test(void) {
+  KTEST_BEGIN("tasklet: basic test");
+  tasklet_t tl1;
+  int c1 = 0;
+  kspinlock_t lock = KSPINLOCK_NORMAL_INIT;
+
+  tasklet_init(&tl1, &tasklet_fn, &c1);
+
+  kspin_lock(&lock);
+  tasklet_schedule(&tl1);
+  c1 = 0;
+  kspin_unlock(&lock);
+  KEXPECT_EQ(1, c1);
+
+
+  KTEST_BEGIN("tasklet: multiple runs are coalesced");
+  kspin_lock(&lock);
+  c1 = 0;
+  tasklet_schedule(&tl1);
+  tasklet_schedule(&tl1);
+  tasklet_schedule(&tl1);
+  kspin_unlock(&lock);
+  KEXPECT_EQ(1, c1);
+
+  kspin_lock(&lock);
+  tasklet_schedule(&tl1);
+  tasklet_schedule(&tl1);
+  tasklet_schedule(&tl1);
+  kspin_unlock(&lock);
+  KEXPECT_EQ(2, c1);
+
+
+  KTEST_BEGIN("tasklet: interrupt safety");
+  c1 = 0;
+  KEXPECT_EQ(
+      0, register_event_timer(get_time_ms() + 10, &tasklet_timer, &tl1, NULL));
+  ksleep(20);
+  kspin_lock(&lock);
+  KEXPECT_EQ(1, c1);
+  kspin_unlock(&lock);
+
+
+  KTEST_BEGIN("tasklet: reschedules self");
+  tasklet_t tl2;
+  c1 = 0;
+  tasklet_init(&tl2, tasklet_reent_fn, &c1);
+  tasklet_schedule(&tl2);
+  kspin_lock(&lock);
+  KEXPECT_EQ(2, c1);
+  kspin_unlock(&lock);
+}
+
 // TODO(aoates): add some more involved kmutex tests.
 
 void kthread_test(void) {
@@ -1589,4 +1658,5 @@ void kthread_test(void) {
 #endif
   creation_interrupts_test();
   refcount_test();
+  tasklet_test();
 }
