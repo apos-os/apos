@@ -258,7 +258,7 @@ void int_handler(uint32_t interrupt, uint32_t error, addr_t rbp) {
     klogf("unhandled interrupt: 0x%x  error: 0x%x\n", interrupt, error);
   }
 
-  defint_process_queued();
+  defint_process_queued(/* force */ true);
 
   // Clobber some registers to cause loud failures if we don't restore them
   // properly.

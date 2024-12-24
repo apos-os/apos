@@ -61,10 +61,10 @@ defint_state_t defint_state(void);
 // Most code should use DEFINT_PUSH_AND_DISABLE() and DEFINT_POP() below.
 defint_state_t defint_set_state(defint_state_t s);
 
-// Process any enqueued defints.
-//
-// Requires: interrupts currently disabled.
-void defint_process_queued(void);
+// Process any enqueued defints.  Will not process if interrupts are currently
+// disabled unless |force| is true.  Defints are run with interrupts enabled, so
+// |force| should only be set if it is safe to enable interrupts.
+void defint_process_queued(bool force);
 
 #if ENABLE_KERNEL_SAFETY_NETS
 // If safety nets are enabled, verify that defint state is restorted properly at

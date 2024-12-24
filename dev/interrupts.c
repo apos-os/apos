@@ -14,8 +14,19 @@
 
 #include <stdint.h>
 
+#include "arch/dev/interrupts.h"
 #include "common/kassert.h"
 #include "dev/interrupts.h"
+#include "proc/defint.h"
+
+void restore_interrupts_and_defints(interrupt_state_t saved) {
+  restore_interrupts(saved);
+  // TODO(aoates): evaluate how to make defint scheduling more consistent to run
+  // when threads switch, and get rid of this.
+  if (saved) {
+    defint_process_queued(/* force= */ false);
+  }
+}
 
 void _interrupts_unpopped_die(void) {
   die("Interrupt state saved with PUSH_AND_DISABLE_INTERRUPTS(), but "

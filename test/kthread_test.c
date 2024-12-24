@@ -468,6 +468,31 @@ static void scheduler_wake_all_race_test(void) {
   kthread_join(thread1);
 }
 
+static void slow_defint(void* arg) {
+  bool* done = (bool*)arg;
+  for (volatile int x = 0; x < 1000000; ++x);
+  *done = true;
+}
+
+static void scheduler_spin_lock_race_test(void) {
+  KTEST_BEGIN("scheduler_wait_on_splocked() timeout race test");
+
+  kthread_queue_t q;
+  kthread_queue_init(&q);
+  kspinlock_t lock = KSPINLOCK_NORMAL_INIT;
+  bool done;
+
+  for (int i = 0; i < 5 * CONCURRENCY_TEST_ITERS_MULT; ++i) {
+    kspin_lock(&lock);
+    done = false;
+    defint_schedule(slow_defint, &done);
+    KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_splocked(&q, 1, &lock));
+    // The slow defint should have run.
+    KEXPECT_EQ(true, done);
+    kspin_unlock(&lock);
+  }
+}
+
 static void scheduler_interrupt_test(void) {
   KTEST_BEGIN("scheduler_interrupt_thread(): interruptable thread ");
   kthread_t thread1;
@@ -1544,6 +1569,7 @@ void kthread_test(void) {
   scheduler_wake_test();
   scheduler_wake_race_test();
   scheduler_wake_all_race_test();
+  scheduler_spin_lock_race_test();
   scheduler_interrupt_test();
   scheduler_interrupt_timeout_test();
   kthread_is_done_test();

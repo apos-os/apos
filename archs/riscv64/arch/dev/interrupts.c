@@ -176,7 +176,7 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
     }
   }
 
-  defint_process_queued();
+  defint_process_queued(/* force */ true);
 
   if (!is_kernel) {
     proc_prep_user_return(&copy_ctx, ctx, syscall_ctx);
