@@ -1581,7 +1581,7 @@ static void tasklet_test(void) {
   tasklet_init(&tl1, &tasklet_fn, &c1);
 
   kspin_lock(&lock);
-  tasklet_schedule(&tl1);
+  KEXPECT_TRUE(tasklet_schedule(&tl1));
   c1 = 0;
   kspin_unlock(&lock);
   KEXPECT_EQ(1, c1);
@@ -1590,16 +1590,16 @@ static void tasklet_test(void) {
   KTEST_BEGIN("tasklet: multiple runs are coalesced");
   kspin_lock(&lock);
   c1 = 0;
-  tasklet_schedule(&tl1);
-  tasklet_schedule(&tl1);
-  tasklet_schedule(&tl1);
+  KEXPECT_TRUE(tasklet_schedule(&tl1));
+  KEXPECT_FALSE(tasklet_schedule(&tl1));
+  KEXPECT_FALSE(tasklet_schedule(&tl1));
   kspin_unlock(&lock);
   KEXPECT_EQ(1, c1);
 
   kspin_lock(&lock);
-  tasklet_schedule(&tl1);
-  tasklet_schedule(&tl1);
-  tasklet_schedule(&tl1);
+  KEXPECT_TRUE(tasklet_schedule(&tl1));
+  KEXPECT_FALSE(tasklet_schedule(&tl1));
+  KEXPECT_FALSE(tasklet_schedule(&tl1));
   kspin_unlock(&lock);
   KEXPECT_EQ(2, c1);
 
@@ -1618,7 +1618,7 @@ static void tasklet_test(void) {
   tasklet_t tl2;
   c1 = 0;
   tasklet_init(&tl2, tasklet_reent_fn, &c1);
-  tasklet_schedule(&tl2);
+  KEXPECT_TRUE(tasklet_schedule(&tl2));
   kspin_lock(&lock);
   KEXPECT_EQ(2, c1);
   kspin_unlock(&lock);

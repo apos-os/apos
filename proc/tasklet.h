@@ -33,7 +33,9 @@ void tasklet_init(tasklet_t* tl, tasklet_fn_t fn, void* arg);
 //
 // Tasklets are run in a defint context, and therefore are disabled in the
 // current thread automatically whenever a spinlock is held.
-void tasklet_schedule(tasklet_t* tl);
+//
+// Returns true if a new tasklet is scheduled, false if not.
+bool tasklet_schedule(tasklet_t* tl);
 
 // Tasklet state.  Opaque to users.
 struct tasklet {

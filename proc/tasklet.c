@@ -31,11 +31,14 @@ void tasklet_init(tasklet_t* tl, tasklet_fn_t fn, void* arg) {
   tl->run = false;
 }
 
-void tasklet_schedule(tasklet_t* tl) {
+bool tasklet_schedule(tasklet_t* tl) {
+  bool result = false;
   kspin_lock(&tl->lock);
   if (!tl->run) {
     tl->run = true;
     defint_schedule(&tasklet_defint, tl);
+    result = true;
   }
   kspin_unlock(&tl->lock);
+  return result;
 }
