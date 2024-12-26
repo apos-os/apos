@@ -22,38 +22,36 @@
 #include "memory/kmalloc.h"
 #include "net/link_layer.h"
 #include "net/pbuf.h"
-#include "proc/defint.h"
+#include "proc/tasklet.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
 // Parameters that control the maximum throughput of the loopback device.  Each
-// defint run will only process at most this many packets; if the queue is not
-// exhausted, then another run will be scheduled after LOOPBACK_REDEFINT_DELAY
-// ms.  This prevents the loopback defint loop from starving all other system
+// tasklet run will only process at most this many packets; if the queue is not
+// exhausted, then another run will be scheduled after LOOPBACK_RETASKLET_DELAY
+// ms.  This prevents the loopback tasklet loop from starving all other system
 // work (which can itself cause a positive feedback loop with e.g. TCP
 // retransmits feeding back into the starvation).
 #define LOOPBACK_MAX_PACKETS 50
-#define LOOPBACK_REDEFINT_DELAY 100
+#define LOOPBACK_RETASKLET_DELAY 100
 
 typedef struct {
   nic_t public;
   list_t queue;
-  bool processing;  // Set to true when there is a defint processing packets.
+  tasklet_t tasklet;
 } loopback_nic_t;
 
-static void dispatch_link_local(void* arg);
 static void dispatch_link_local_timer(void* arg) {
-  defint_schedule(&dispatch_link_local, arg);
+  loopback_nic_t* nic = (loopback_nic_t*)arg;
+  tasklet_schedule(&nic->tasklet);
 }
 
-static void dispatch_link_local(void* arg) {
+static void dispatch_link_local(tasklet_t* tl, void* arg) {
   loopback_nic_t* nic = (loopback_nic_t*)arg;
   int num_packets = 0;
   while (num_packets < LOOPBACK_MAX_PACKETS) {
     kspin_lock(&nic->public.lock);
-    nic->processing = true;
     if (list_empty(&nic->queue)) {
-      nic->processing = false;
       kspin_unlock(&nic->public.lock);
       nic_put(&nic->public);
       return;
@@ -71,7 +69,7 @@ static void dispatch_link_local(void* arg) {
   }
 
   // Schedule another to do more work.
-  if (register_event_timer(get_time_ms() + LOOPBACK_REDEFINT_DELAY,
+  if (register_event_timer(get_time_ms() + LOOPBACK_RETASKLET_DELAY,
                            &dispatch_link_local_timer, nic, NULL) != 0) {
     KLOG(WARNING, "Unable to schedule link-local dispatch timer\n");
   }
@@ -86,9 +84,11 @@ void loopback_send(nic_t* public, pbuf_t* pb, ethertype_t protocol) {
   *(ethertype_t*)pbuf_get(pb) = protocol;
 
   kspin_lock(&nic->public.lock);
-  if (!nic->processing && list_empty(&nic->queue)) {
-    nic_ref(&nic->public);
-    defint_schedule(&dispatch_link_local, nic);
+  if (list_empty(&nic->queue)) {
+    // This is not racy because the spinlock is held.
+    if (tasklet_schedule(&nic->tasklet)) {
+      nic_ref(&nic->public);
+    }
   }
   list_push(&nic->queue, &pb->link);
   kspin_unlock(&nic->public.lock);
@@ -120,7 +120,7 @@ nic_t* loopback_create(void) {
   kmemset(&nic->public.mac.addr, 0, NIC_MAC_LEN);
   nic->public.ops = &kLoopbackNicOps;
   nic->queue = LIST_INIT;
-  nic->processing = false;
+  tasklet_init(&nic->tasklet, &dispatch_link_local, nic);
   nic_create(&nic->public, "lo");
   KLOG(INFO, "net: created loopback device %s\n", nic->public.name);
   return &nic->public;
