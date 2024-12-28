@@ -30,8 +30,8 @@
 #include "memory/page_alloc.h"
 #include "net/eth/eth.h"
 #include "net/mac.h"
-#include "proc/defint.h"
 #include "proc/spinlock.h"
+#include "proc/tasklet.h"
 #include "util/flag_printf.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
@@ -59,6 +59,8 @@ typedef struct {
   bool txbuf_active[RTL_NUM_TX_DESCS];
   htbl_t multicast_addrs;  // MAC -> rtl_multicast_t* map.
   kspinlock_t rtl_mu;
+  tasklet_t rx_tasklet;
+  tasklet_t tx_tasklet;
 } rtl8139_t;
 
 // PCI configuration registers (all IO-space mapped).
@@ -276,7 +278,7 @@ static void rtl_handle_recv_one(rtl8139_t* nic, list_t* packets) {
 }
 
 // Deferred interrupt.
-static void rtl_handle_recv(void* arg) {
+static void rtl_handle_recv(tasklet_t* tl, void* arg) {
   rtl8139_t* nic = (rtl8139_t*)arg;
   kspin_lock(&nic->rtl_mu);
   int packets = 0;
@@ -299,7 +301,7 @@ static void rtl_handle_recv(void* arg) {
   }
   KLOG(DEBUG2, "recv(%s): read %d packets\n", nic->public.name, packets);
   if (rxbuf_end != nic->rxstart) {
-    defint_schedule(&rtl_handle_recv, nic);
+    tasklet_schedule(tl);
   }
   kspin_unlock(&nic->rtl_mu);
 
@@ -325,7 +327,7 @@ const flag_spec_t kTxStatusFlagSpec[] = {
 };
 
 // Deferred interrupt.
-static void rtl_handle_tx_irq(void* arg) {
+static void rtl_handle_tx_irq(tasklet_t* tl, void* arg) {
   rtl8139_t* nic = (rtl8139_t*)arg;
   kspin_lock(&nic->rtl_mu);
   for (int i = 0; i < RTL_NUM_TX_DESCS; ++i) {
@@ -369,10 +371,10 @@ static void rtl_irq_handler(void* arg) {
   io_write16(nic->io, RTLRG_INTSTATUS, interrupts);
 
   if (interrupts & RTL_IMR_ROK) {
-    defint_schedule(&rtl_handle_recv, nic);
+    tasklet_schedule(&nic->rx_tasklet);
   }
   if (interrupts & RTL_IMR_TOK) {
-    defint_schedule(&rtl_handle_tx_irq, nic);
+    tasklet_schedule(&nic->tx_tasklet);
   }
   // TODO(aoates): handle other interrupts (in particular, error cases).
 }
@@ -465,6 +467,8 @@ void pci_rtl8139_init(pci_device_t* pcidev) {
   nic->public.ops = &rtl_ops;
   nic->io = pcidev->bar[0].io;
   nic->rtl_mu = KSPINLOCK_NORMAL_INIT;
+  tasklet_init(&nic->rx_tasklet, rtl_handle_recv, nic);
+  tasklet_init(&nic->tx_tasklet, rtl_handle_tx_irq, nic);
 
   // Find the MAC address of the device.
   // N.B.(aoates): the RTL8139 datasheet is contradictory---it says that these
