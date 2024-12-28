@@ -1619,6 +1619,7 @@ static void tasklet_test(void) {
   c1 = 0;
   tasklet_init(&tl2, tasklet_reent_fn, &c1);
   KEXPECT_TRUE(tasklet_schedule(&tl2));
+  defint_process_queued(/* force= */ false);
   kspin_lock(&lock);
   KEXPECT_EQ(2, c1);
   kspin_unlock(&lock);

@@ -35,11 +35,13 @@ void tasklet_init(tasklet_t* tl, tasklet_fn_t fn, void* arg);
 // current thread automatically whenever a spinlock is held.
 //
 // Returns true if a new tasklet is scheduled, false if not.
+//
+// Interrupt-safe.
 bool tasklet_schedule(tasklet_t* tl);
 
 // Tasklet state.  Opaque to users.
 struct tasklet {
-  kspinlock_t lock;
+  kspinlock_intsafe_t lock;
   tasklet_fn_t fn;
   void* arg;
   bool run;  // Whether it is scheduled to run.

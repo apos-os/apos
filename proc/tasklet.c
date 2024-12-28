@@ -18,14 +18,14 @@
 
 static void tasklet_defint(void* arg) {
   tasklet_t* tl = (tasklet_t*)arg;
-  kspin_lock(&tl->lock);
+  kspin_lock_int(&tl->lock);
   tl->run = false;
-  kspin_unlock(&tl->lock);
+  kspin_unlock_int(&tl->lock);
   tl->fn(tl, tl->arg);
 }
 
 void tasklet_init(tasklet_t* tl, tasklet_fn_t fn, void* arg) {
-  tl->lock = KSPINLOCK_NORMAL_INIT;
+  tl->lock = KSPINLOCK_INTERRUPT_SAFE_INIT;
   tl->fn = fn;
   tl->arg = arg;
   tl->run = false;
@@ -33,12 +33,14 @@ void tasklet_init(tasklet_t* tl, tasklet_fn_t fn, void* arg) {
 
 bool tasklet_schedule(tasklet_t* tl) {
   bool result = false;
-  kspin_lock(&tl->lock);
+  kspin_lock_int(&tl->lock);
   if (!tl->run) {
     tl->run = true;
     defint_schedule(&tasklet_defint, tl);
     result = true;
   }
-  kspin_unlock(&tl->lock);
+  kspin_unlock_int(&tl->lock);
+  // Note: if this is called from a non-interrupt context, we won't run the
+  // defint until the next interrupt or spinlock unlock.  That's OK.
   return result;
 }
