@@ -17,10 +17,8 @@
 #include "arch/dev/irq.h"
 #include "common/kassert.h"
 #include "common/klog.h"
-#include "common/kstring.h"
-#include "common/kprintf.h"
-#include "proc/defint.h"
 #include "proc/spinlock.h"
+#include "proc/tasklet.h"
 
 #include "dev/ps2.h"
 #include "dev/keyboard/keyboard.h"
@@ -34,6 +32,7 @@ static vkeyboard_t* g_vkbd = 0x0;
 static uint8_t g_scancode_buf[PS2_SCANCODE_BUF_SIZE];
 static int g_scancode_buf_len = 0;
 static kspinlock_intsafe_t g_scancode_buf_lock;
+static tasklet_t g_ps2_tasklet;
 
 typedef struct {
   uint32_t keycode;
@@ -84,7 +83,7 @@ static int process_scancode_buffer(uint8_t* buf, int len, ps2_kbd_event_t* event
   return i;
 }
 
-static void process_scancodes_defint(void* arg) {
+static void process_scancodes_tasklet(tasklet_t* tl, void* arg) {
   ps2_kbd_event_t event;
   kspin_lock_int(&g_scancode_buf_lock);
   int consumed =
@@ -113,11 +112,12 @@ static void irq_handler(void* arg) {
   KASSERT(g_scancode_buf_len < PS2_SCANCODE_BUF_SIZE);
   g_scancode_buf[g_scancode_buf_len++] = c;
 
-  defint_schedule(&process_scancodes_defint, NULL);
+  tasklet_schedule(&g_ps2_tasklet);
 }
 
 int ps2_keyboard_init(vkeyboard_t* vkbd) {
   g_scancode_buf_lock = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  tasklet_init(&g_ps2_tasklet, &process_scancodes_tasklet, NULL);
 
   if (ps2_get_device_type(PS2_PORT1) != PS2_DEVICE_KEYBOARD) {
     klogf("keyboard initalization FAILED (no keyboard found on port1)\n");
