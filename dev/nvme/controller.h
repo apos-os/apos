@@ -21,6 +21,7 @@
 #include "dev/nvme/queue.h"
 #include "dev/pci/pci-driver.h"
 #include "proc/spinlock.h"
+#include "proc/tasklet.h"
 #include "user/include/apos/dev.h"
 
 typedef uint32_t nvme_nsid_t;
@@ -52,6 +53,7 @@ typedef struct nvme_ctrl {
 
   // Protects the pending transactions and pending table.
   kspinlock_t lock;
+  tasklet_t tasklet;
 
   // Information from the Identify Controller command.
   nvme_admin_identify_ctrl_t info;

@@ -34,6 +34,7 @@
 #include "proc/scheduler.h"
 #include "proc/sleep.h"
 #include "proc/spinlock.h"
+#include "proc/tasklet.h"
 #include "util/flag_printf.h"
 
 #define KLOG(...) klogfm(KL_NVME, __VA_ARGS__)
@@ -206,7 +207,7 @@ static void nvmec_check_queue(nvme_ctrl_t* ctrl, nvme_queue_t* q) {
   }
 }
 
-static void nvmec_defint(void* arg) {
+static void nvmec_tasklet(tasklet_t* tl, void* arg) {
   nvme_ctrl_t* ctrl = (nvme_ctrl_t*)arg;
   KLOG(DEBUG3, "NVMe: handling deferred interrupt\n");
 
@@ -219,12 +220,13 @@ static void nvmec_defint(void* arg) {
 }
 
 static void nvme_irq(void* arg) {
+  nvme_ctrl_t* ctrl = (nvme_ctrl_t*)arg;
   KLOG(DEBUG3, "NVMe: IRQ received\n");
   // The IRQ will keep firing until the queue is emptied; rather than do that
-  // work in the IRQ handler, disable interrupts until the defint runs and
+  // work in the IRQ handler, disable interrupts until the tasklet runs and
   // empties out the queue.  Is this the right model?
-  endisable_interrupts((nvme_ctrl_t*)arg, false);
-  defint_schedule(&nvmec_defint, arg);
+  endisable_interrupts(ctrl, false);
+  tasklet_schedule(&ctrl->tasklet);
 }
 
 // Example CAP contents from riscv64 qemu:
@@ -605,6 +607,7 @@ static nvme_ctrl_t* nvme_ctrl_alloc(void) {
   ctrl->num_ns = 0;
   ctrl->num_io_queues = 0;
   ctrl->io_q = NULL;
+  tasklet_init(&ctrl->tasklet, &nvmec_tasklet, ctrl);
   return ctrl;
 }
 
