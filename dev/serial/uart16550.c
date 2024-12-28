@@ -26,8 +26,8 @@
 #include "dev/serial/serial.h"
 #include "dev/tty.h"
 #include "memory/kmalloc.h"
-#include "proc/defint.h"
 #include "proc/spinlock.h"
+#include "proc/tasklet.h"
 
 #define LEGACY_COM1_IOPORT_BASE 0x3f8
 #define LEGACY_COM1_INTERRUPT 4
@@ -54,10 +54,8 @@ typedef struct {
   ld_t* ld;
   apos_dev_t cdev;
   kspinlock_intsafe_t lock;
-  bool defint_queued;
+  tasklet_t tasklet;
 } u16550_t;
-
-static void uart_defint(void* arg);
 
 static void uart_interrupt(void* arg) {
   u16550_t* uart = (u16550_t*)arg;
@@ -73,14 +71,13 @@ static void uart_interrupt(void* arg) {
     status = io_read8(uart->io, U16550_REG_LINE_STATUS);
   }
 
-  if (data && !uart->defint_queued) {
-    uart->defint_queued = true;
-    defint_schedule(uart_defint, uart);
+  if (data) {
+    tasklet_schedule(&uart->tasklet);
   }
 }
 
 #define DEFINT_BUFSIZE 10
-static void uart_defint(void* arg) {
+static void uart_tasklet(tasklet_t* tl, void* arg) {
   u16550_t* uart = (u16550_t*)arg;
   char buf[DEFINT_BUFSIZE];
 
@@ -88,7 +85,6 @@ static void uart_defint(void* arg) {
   do {
     kspin_lock_int(&uart->lock);
     bytes = circbuf_read(&uart->buf, &buf, DEFINT_BUFSIZE);
-    uart->defint_queued = false;  // New data could come in now.
     kspin_unlock_int(&uart->lock);
     for (ssize_t i = 0; i < bytes; ++i) {
       // TODO(aoates): doing this char by char seems bad, should we pass more?
@@ -112,7 +108,7 @@ static void uart_putc(void* arg, char c) {
 static int u16550_create_internal(u16550_t* uart, apos_dev_t* dev) {
   circbuf_init(&uart->buf, &uart->buf_data, BUFLEN);
   uart->lock = KSPINLOCK_INTERRUPT_SAFE_INIT;
-  uart->defint_queued = false;
+  tasklet_init(&uart->tasklet, &uart_tasklet, uart);
 
   uart->ld = ld_create(LD_BUF_SIZE);
   ld_set_sink(uart->ld, &uart_putc, uart);
