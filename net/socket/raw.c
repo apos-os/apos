@@ -33,6 +33,7 @@
 #include "net/util.h"
 #include "proc/defint.h"
 #include "proc/scheduler.h"
+#include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/vfs/vfs.h"
 
@@ -48,14 +49,15 @@ static const socket_ops_t g_raw_socket_ops;
 // Table of lists of raw sockets, indexed by (ethertype, protocol) pair.
 static htbl_t g_raw_sockets;
 static bool g_raw_sockets_init = false;
+static kspinlock_t g_raw_sockets_mu = KSPINLOCK_NORMAL_INIT_STATIC;
 
 static void init_raw_sockets(void) {
-  DEFINT_PUSH_AND_DISABLE();
+  kspin_lock(&g_raw_sockets_mu);
   if (!g_raw_sockets_init) {
     htbl_init(&g_raw_sockets, 10);
     g_raw_sockets_init = true;
   }
-  DEFINT_POP();
+  kspin_unlock(&g_raw_sockets_mu);
 }
 
 static list_t* get_socket_list(ethertype_t ethertype, int protocol) {
@@ -136,7 +138,7 @@ void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
                        const struct sockaddr* addr, socklen_t addrlen) {
   init_raw_sockets();
 
-  DEFINT_PUSH_AND_DISABLE();
+  kspin_lock(&g_raw_sockets_mu);
   list_t* sock_list = get_socket_list(ethertype, protocol);
   list_link_t* link = sock_list->head;
   while (link) {
@@ -146,7 +148,7 @@ void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
     }
     link = link->next;
   }
-  DEFINT_POP();
+  kspin_unlock(&g_raw_sockets_mu);
 }
 
 int sock_raw_create(int domain, int protocol, socket_t** out) {
@@ -175,12 +177,12 @@ int sock_raw_create(int domain, int protocol, socket_t** out) {
   kthread_queue_init(&sock->wait_queue);
   poll_init_event(&sock->poll_event);
 
-  DEFINT_PUSH_AND_DISABLE();
+  kspin_lock(&g_raw_sockets_mu);
   ethertype_t et = (domain == AF_INET) ? ET_IPV4 : ET_IPV6;
   list_t* sock_list = get_socket_list(et, protocol);
   list_push(sock_list, &sock->link);
   sock->sock_list = sock_list;
-  DEFINT_POP();
+  kspin_unlock(&g_raw_sockets_mu);
 
   *out = &sock->base;
   return 0;
@@ -190,9 +192,9 @@ static void sock_raw_cleanup(socket_t* socket_base) {
   KASSERT(socket_base->s_type == SOCK_RAW);
   socket_raw_t* socket = (socket_raw_t*)socket_base;
 
-  DEFINT_PUSH_AND_DISABLE();
+  kspin_lock(&g_raw_sockets_mu);
   list_remove(socket->sock_list, &socket->link);
-  DEFINT_POP();
+  kspin_unlock(&g_raw_sockets_mu);
 
   while (!list_empty(&socket->rx_queue)) {
     list_link_t* link = list_pop(&socket->rx_queue);
@@ -276,22 +278,23 @@ ssize_t sock_raw_recvfrom(socket_t* socket_base, int fflags, void* buffer,
   KASSERT_DBG(socket_base->s_type == SOCK_RAW);
   socket_raw_t* sock = (socket_raw_t*)socket_base;
 
-  DEFINT_PUSH_AND_DISABLE();
+  kspin_lock(&g_raw_sockets_mu);
   while (list_empty(&sock->rx_queue)) {
     if (fflags & VFS_O_NONBLOCK) {
-      DEFINT_POP();
+      kspin_unlock(&g_raw_sockets_mu);
       return -EAGAIN;
     }
-    int result = scheduler_wait_on_interruptable(&sock->wait_queue, -1);
+    int result =
+        scheduler_wait_on_splocked(&sock->wait_queue, -1, &g_raw_sockets_mu);
     if (result == SWAIT_INTERRUPTED) {
-      DEFINT_POP();
+      kspin_unlock(&g_raw_sockets_mu);
       return -EINTR;
     }
   }
 
   // We have a packet!
   list_link_t* link = list_pop(&sock->rx_queue);
-  DEFINT_POP();
+  kspin_unlock(&g_raw_sockets_mu);
 
   queued_pkt_t* pkt = container_of(link, queued_pkt_t, link);
   if (address && address_len && *address_len >= pkt->src_addr_len) {
@@ -394,7 +397,7 @@ static int sock_raw_poll(socket_t* socket_base, short event_mask,
   KASSERT_DBG(socket_base->s_type == SOCK_RAW);
   socket_raw_t* sock = (socket_raw_t*)socket_base;
 
-  DEFINT_PUSH_AND_DISABLE();
+  kspin_lock(&g_raw_sockets_mu);
   int result;
   const short masked_events = raw_poll_events(sock) & event_mask;
   if (masked_events || !poll) {
@@ -402,7 +405,7 @@ static int sock_raw_poll(socket_t* socket_base, short event_mask,
   } else {
     result = poll_add_event(poll, &sock->poll_event, event_mask);
   }
-  DEFINT_POP();
+  kspin_unlock(&g_raw_sockets_mu);
   return result;
 }
 
