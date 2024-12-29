@@ -1,0 +1,17 @@
+CompileFlags:
+  CompilationDatabase: build-scons/latest
+---
+If:
+  PathMatch: archs/i586/.*
+CompileFlags:
+  CompilationDatabase: build-scons/latest-i586
+---
+If:
+  PathMatch: archs/x86_64/.*
+CompileFlags:
+  CompilationDatabase: build-scons/latest-x86_64
+---
+If:
+  PathMatch: archs/riscv64/.*
+CompileFlags:
+  CompilationDatabase: build-scons/latest-riscv64
