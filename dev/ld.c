@@ -20,7 +20,6 @@
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "dev/char_dev.h"
-#include "dev/interrupts.h"
 #include "dev/ld.h"
 #include "dev/tty_util.h"
 #include "proc/group.h"
@@ -28,7 +27,7 @@
 #include "proc/scheduler.h"
 #include "proc/session.h"
 #include "proc/signal/signal.h"
-#include "proc/sleep.h"
+#include "proc/spinlock.h"
 #include "user/include/apos/termios.h"
 #include "user/include/apos/vfs/vfs.h"
 #include "vfs/poll.h"
@@ -38,6 +37,8 @@
 #define SUPPORTED_OFLAGS (ONLCR)
 
 struct ld {
+  kspinlock_t lock;
+
   // Circular buffer of characters ready to be read.  Indexed by {start, cooked,
   // raw}_idx, which refer to the first character, the end of the cooked region,
   // and the end of the raw region respectively.
@@ -56,6 +57,7 @@ struct ld {
   // Threads that are waiting for cooked data to be available in the buffer.
   kthread_queue_t wait_queue;
 
+  // TODO(SMP): synchronize access to the TTY (if necessary).
   apos_dev_t tty;
   struct ktermios termios;
 
@@ -89,6 +91,7 @@ static void ld_flush_input(ld_t* l) {
 
 ld_t* ld_create(int buf_size) {
   ld_t* l = (ld_t*)kmalloc(sizeof(ld_t));
+  l->lock = KSPINLOCK_NORMAL_INIT;
   l->read_buf = (char*)kmalloc(buf_size);
   l->buf_len = buf_size;
   l->start_idx = l->cooked_idx = l->raw_idx = 0;
@@ -174,18 +177,18 @@ static inline int char_term_len(char c) {
 
 // Send a character to terminal, translating it if necessary.  erased_char is
 // the character erased from the buffer, if any.
-static void ld_term_putc(const ld_t* l, char c, char erased_char,
-                         bool is_echo) {
+static void ld_term_putc(const ld_t* l, ktcflag_t lflag, ktcflag_t oflag,
+                         char c, char erased_char, bool is_echo) {
+  KASSERT(!kspin_is_held(&l->lock));
   // TODO(aoates): use ECHOCTL.
-  if (is_echo && c == '\x7f' && l->termios.c_lflag & ICANON &&
-      l->termios.c_lflag & ECHOE) {
+  if (is_echo && c == '\x7f' && (lflag & ICANON) && (lflag & ECHOE)) {
     KASSERT_DBG(erased_char > 0);
     for (int i = 0; i < char_term_len(erased_char); ++i) {
       l->sink(l->sink_arg, '\b');
       l->sink(l->sink_arg, ' ');
       l->sink(l->sink_arg, '\b');
     }
-  } else if (c == '\n' && l->termios.c_oflag & ONLCR) {
+  } else if (c == '\n' && (oflag & ONLCR)) {
     l->sink(l->sink_arg, '\r');
     l->sink(l->sink_arg, '\n');
   } else if (is_echo && is_ctrl(c)) {
@@ -199,9 +202,11 @@ static void ld_term_putc(const ld_t* l, char c, char erased_char,
 void ld_provide(ld_t* l, char c) {
   KASSERT(l != 0x0);
   KASSERT(l->sink != 0x0);
+  kspin_lock(&l->lock);
 
   // Check for overflow.
   if (c != '\x7f' && circ_inc(l, l->raw_idx) == l->start_idx) {
+    kspin_unlock(&l->lock);
     char buf[2];
     buf[0] = c;
     buf[1] = '\0';
@@ -217,6 +222,7 @@ void ld_provide(ld_t* l, char c) {
     if (c == '\x7f') {
       if (l->cooked_idx == l->raw_idx) {
         // Ignore backspace at start of line.
+        kspin_unlock(&l->lock);
         return;
       }
       l->raw_idx = circ_dec(l, l->raw_idx);
@@ -262,11 +268,6 @@ void ld_provide(ld_t* l, char c) {
     }
   }
 
-  // Echo it to the screen.
-  if (echo) {
-    ld_term_putc(l, echo_char, erased_char, /* is_echo */ true);
-  }
-
   // Cook the buffer, optionally.
   if (c == '\n' || c == l->termios.c_cc[VEOF] ||
       !(l->termios.c_lflag & ICANON)) {
@@ -292,9 +293,19 @@ void ld_provide(ld_t* l, char c) {
       }
     }
   }
+  ktcflag_t lflag = l->termios.c_lflag;
+  ktcflag_t oflag = l->termios.c_oflag;
+  kspin_unlock(&l->lock);
+
+  // Echo it to the screen.
+  if (echo) {
+    ld_term_putc(l, lflag, oflag, echo_char, erased_char, /* is_echo */ true);
+  }
 }
 
 void ld_set_sink(ld_t* l, char_sink_t sink, void* arg) {
+  // TODO(aoates): ideally, assert that this is only ever set once outside of
+  // test code (or rewrite the tests to make this invariant).
   l->sink = sink;
   l->sink_arg = arg;
 }
@@ -308,6 +319,7 @@ apos_dev_t ld_get_tty(const ld_t* l) {
 }
 
 static int ld_do_read(ld_t* l, char* buf, int n) {
+  KASSERT_DBG(kspin_is_held(&l->lock));
   int copied = 0;
   int buf_idx = 0;
   while (l->start_idx != l->cooked_idx && copied < n) {
@@ -325,13 +337,15 @@ static inline size_t readable_bytes(const ld_t* l) {
 
 // Block until ld_read() should return, as determined by the ld's configuration.
 static int ld_read_block(ld_t* l) {
+  KASSERT_DBG(kspin_is_held(&l->lock));
   if (l->termios.c_lflag & ICANON) {
     // Note: this means that if multiple threads are blocking on an ld_read()
     // here, we could return 0 for some of them even though we didn't see an
     // EOF!
     if (l->start_idx == l->cooked_idx) {
       // Block until data is available.
-      int wait_result = scheduler_wait_on_interruptable(&l->wait_queue, -1);
+      int wait_result =
+          scheduler_wait_on_splocked(&l->wait_queue, -1, &l->lock);
       if (wait_result == SWAIT_INTERRUPTED) return -EINTR;
     }
   } else {
@@ -342,7 +356,8 @@ static int ld_read_block(ld_t* l) {
       if (readable_bytes(l) < tmin) {
         // First block until *any* data is available.
         while (readable_bytes(l) == 0) {
-          int wait_result = scheduler_wait_on_interruptable(&l->wait_queue, -1);
+          int wait_result =
+              scheduler_wait_on_splocked(&l->wait_queue, -1, &l->lock);
           if (wait_result == SWAIT_INTERRUPTED) return -EINTR;
         }
       }
@@ -357,8 +372,8 @@ static int ld_read_block(ld_t* l) {
              (readable_bytes(l) == 0 || readable_bytes(l) < tmin)) {
         long timeout_duration =
             (timeout_end == 0) ? -1 : (long)(timeout_end - now);
-        int wait_result =
-            scheduler_wait_on_interruptable(&l->wait_queue, timeout_duration);
+        int wait_result = scheduler_wait_on_splocked(
+            &l->wait_queue, timeout_duration, &l->lock);
         if (wait_result == SWAIT_INTERRUPTED) return -EINTR;
         now = get_time_ms();
       }
@@ -369,7 +384,7 @@ static int ld_read_block(ld_t* l) {
 }
 
 int ld_read(ld_t* l, char* buf, int n, int flags) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock(&l->lock);
 
   if (kminor(l->tty) != DEVICE_ID_UNKNOWN) {
     tty_t* tty = tty_get(l->tty);
@@ -381,7 +396,7 @@ int ld_read(ld_t* l, char* buf, int n, int flags) {
         result = -EINTR;
       }
 
-      POP_INTERRUPTS();
+      kspin_unlock(&l->lock);
       return result;
     }
   }
@@ -396,7 +411,7 @@ int ld_read(ld_t* l, char* buf, int n, int flags) {
   }
   if (result == 0) result = -EAGAIN;
 
-  POP_INTERRUPTS();
+  kspin_unlock(&l->lock);
   return result;
 }
 
@@ -404,15 +419,21 @@ int ld_write(ld_t* l, const char* buf, int n) {
   KASSERT(l != 0x0);
   KASSERT(l->sink != 0x0);
 
+  kspin_lock(&l->lock);
   if (l->termios.c_lflag & TOSTOP && kminor(l->tty) != DEVICE_ID_UNKNOWN) {
     int result = tty_check_write(tty_get(l->tty));
     if (result) {
+      kspin_unlock(&l->lock);
       return result;
     }
   }
 
+  ktcflag_t lflag = l->termios.c_lflag;
+  ktcflag_t oflag = l->termios.c_oflag;
+  kspin_unlock(&l->lock);
+
   for (int i = 0; i < n; ++i) {
-    ld_term_putc(l, buf[i], ' ', /* is_echo */ false);
+    ld_term_putc(l, lflag, oflag, buf[i], ' ', /* is_echo */ false);
   }
 
   return n;
@@ -450,7 +471,10 @@ void ld_init_char_dev(ld_t* l, char_dev_t* dev) {
 }
 
 void ld_get_termios(const ld_t* l, struct ktermios* t) {
+  ld_t* l_mut = (ld_t*)l;
+  kspin_lock(&l_mut->lock);
   kmemcpy(t, &l->termios, sizeof(struct ktermios));
+  kspin_unlock(&l_mut->lock);
 }
 
 int ld_set_termios(ld_t* l, int optional_actions, const struct ktermios* t) {
@@ -470,15 +494,20 @@ int ld_set_termios(ld_t* l, int optional_actions, const struct ktermios* t) {
       optional_actions != TCSAFLUSH)
     return -EINVAL;
 
+  kspin_lock(&l->lock);
   if (kminor(l->tty) != DEVICE_ID_UNKNOWN) {
     int result = tty_check_write(tty_get(l->tty));
-    if (result) return result;
+    if (result) {
+      kspin_unlock(&l->lock);
+      return result;
+    }
   }
 
   if (optional_actions == TCSAFLUSH)
     ld_flush_input(l);
 
   kmemcpy(&l->termios, t, sizeof(struct ktermios));
+  kspin_unlock(&l->lock);
 
   return 0;
 }

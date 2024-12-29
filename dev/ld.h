@@ -51,6 +51,8 @@ static inline void ld_provide_sink(void* arg, char c) {
 // bytes.
 //
 // The character sink MAY block.
+//
+// Must be called only once.
 void ld_set_sink(ld_t* l, char_sink_t sink, void* arg);
 
 // Set the TTY associated with the line discipline.  The TTY will be used to
