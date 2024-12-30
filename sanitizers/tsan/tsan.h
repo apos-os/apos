@@ -1,4 +1,4 @@
-// Copyright 2023 Andrew Oates.  All Rights Reserved.
+// Copyright 2024 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,11 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef APOO_ARCHS_RISCV64_ARCH_PROC_KTHREAD_STACK_H
-#define APOO_ARCHS_RISCV64_ARCH_PROC_KTHREAD_STACK_H
 
-#include "sanitizers/tsan/tsan_defs.h"
+#ifndef APOO_SANITIZERS_TSAN_TSAN_H
+#define APOO_SANITIZERS_TSAN_TSAN_H
 
-#define ARCH_KTHREAD_BASE_STACK_SIZE (STACK_SIZE_MULTIPLIER * 8 * 4096)  // 32k
+// Initialize the TSAN data structures.  Should be called early in the boot
+// process but after kmalloc_init().
+void tsan_init(void);
 
 #endif

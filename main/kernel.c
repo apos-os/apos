@@ -54,6 +54,7 @@
 #include "main/kshell.h"
 #include "memory/page_alloc.h"
 #include "proc/scheduler.h"
+#include "sanitizers/tsan/tsan.h"
 #include "vfs/mount_table.h"
 #include "vfs/vfs.h"
 #include "test/ktest.h"
@@ -241,6 +242,11 @@ void kmain(boot_info_t* boot, const char* cmdline) {
 
   klog("kmalloc_init()\n");
   kmalloc_init();
+
+  if (ENABLE_TSAN) {
+    klog("tsan_init()\n");
+    tsan_init();
+  }
 
   // Initialize proc, thread, and scheduler systems.
   klog("kthread_init()\n");
