@@ -163,6 +163,7 @@ static void create_initial_meminfo(const dt_tree_t* fdt, memory_info_t* meminfo,
   }
   meminfo->heap.base = RSV64_HEAP_START;
   meminfo->heap.len = RSV64_HEAP_LEN;
+  meminfo->heap_size_max = meminfo->heap.len;
 
   // Point kernel_stack_base at the version of the stack in the kernel-mapped
   // space, not the physical map, to match the value of $sp.

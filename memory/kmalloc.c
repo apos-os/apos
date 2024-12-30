@@ -71,9 +71,12 @@ void kmalloc_init(void) {
   }
 
   // Initialize the free list to one giant block consisting of the entire heap.
+  KASSERT(meminfo->heap_size_max <= meminfo->heap.len);
+  KASSERT(meminfo->heap_size_max % PAGE_SIZE == 0);
+  KASSERT(meminfo->heap_size_max >= 1024 * 1024);
   block_t* head = (block_t*)meminfo->heap.base;
   init_block(head);
-  head->length = meminfo->heap.len - sizeof(block_t);
+  head->length = meminfo->heap_size_max - sizeof(block_t);
   g_block_list = head;
   g_initialized = 1;
 }

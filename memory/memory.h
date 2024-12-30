@@ -67,6 +67,11 @@ typedef struct {
   // this rather than a pseudo-hard-coded range.
   smmap_region_t heap;
 
+  // The allocated size of the heap, in bytes.  This may be set smaller than the
+  // virtual range to constrain up-front the amount of heap memory the kernel
+  // can allocate.
+  size_t heap_size_max;
+
   // The base address of the initial kernel stack (used for thread/process 0).
   smmap_region_t thread0_stack;
 

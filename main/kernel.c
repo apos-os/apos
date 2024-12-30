@@ -325,6 +325,9 @@ void kmain(boot_info_t* boot, const char* cmdline) {
         m->phys_maps[0].virt_base);
   klogf("meminfo->phys_map_length:     0x%" PRIxADDR "\n",
         m->phys_maps[0].phys.len);
+  klogf("meminfo->heap.base:           0x%" PRIxADDR "\n", m->heap.base);
+  klogf("meminfo->heap.len:            0x%" PRIxADDR "\n", m->heap.len);
+  klogf("meminfo->heap_size_max:       0x%" PRIxADDR "\n", m->heap_size_max);
 
   // TODO(aoates): reparent processes to the init process rather than the kernel
   // process?  Or run init in the kernel process (exec without fork below)?
