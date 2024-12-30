@@ -33,6 +33,7 @@ SUBDIRS = [
   'memory',
   'net',
   'proc',
+  'sanitizers',
   'syscall',
   'util',
   'vfs',

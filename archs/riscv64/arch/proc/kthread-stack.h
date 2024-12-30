@@ -14,6 +14,16 @@
 #ifndef APOO_ARCHS_RISCV64_ARCH_PROC_KTHREAD_STACK_H
 #define APOO_ARCHS_RISCV64_ARCH_PROC_KTHREAD_STACK_H
 
-#define ARCH_KTHREAD_BASE_STACK_SIZE (8 * 4096)  // 32k
+#if defined(__has_feature)
+#  if __has_feature(thread_sanitizer)
+#    define __TSAN_STACK_MULT 2
+#  endif
+#endif
+
+#ifndef __TSAN_STACK_MULT
+#define __TSAN_STACK_MULT 1
+#endif
+
+#define ARCH_KTHREAD_BASE_STACK_SIZE (__TSAN_STACK_MULT * 8 * 4096)  // 32k
 
 #endif

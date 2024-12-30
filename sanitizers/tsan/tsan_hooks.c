@@ -1,0 +1,48 @@
+// Copyright 2024 Andrew Oates.  All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+typedef unsigned long uptr;
+
+void __tsan_init(void) {}
+
+void __tsan_read1(void* addr) {}
+void __tsan_read2(void* addr) {}
+void __tsan_read4(void* addr) {}
+void __tsan_read8(void* addr) {}
+void __tsan_read16(void* addr) {}
+
+void __tsan_unaligned_read2(void* addr) {}
+void __tsan_unaligned_read4(void* addr) {}
+void __tsan_unaligned_read8(void* addr) {}
+
+void __tsan_write1(void* addr) {}
+void __tsan_write2(void* addr) {}
+void __tsan_write4(void* addr) {}
+void __tsan_write8(void* addr) {}
+void __tsan_write16(void* addr) {}
+
+void __tsan_unaligned_write2(void* addr) {}
+void __tsan_unaligned_write4(void* addr) {}
+void __tsan_unaligned_write8(void* addr) {}
+
+void* __tsan_memcpy(void* dest, const void* src, uptr count) {
+  return __builtin_memcpy(dest, src, count);
+}
+
+void* __tsan_memset(void* dest, int ch, uptr count) {
+  return __builtin_memset(dest, ch, count);
+}
+
+void __tsan_func_entry(void* call_pc) {}
+void __tsan_func_exit(void) {}
