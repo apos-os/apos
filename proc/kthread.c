@@ -32,6 +32,8 @@
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
+#include "sanitizers/tsan/tsan_lock.h"
+#include "sanitizers/tsan/tsan_thread.h"
 
 #define KTHREAD_STACK_PROTECT_LEN PAGE_SIZE
 #define KTHREAD_STACK_SIZE \
@@ -99,6 +101,9 @@ void kthread_init(void) {
   first->stack = (addr_t*)get_global_meminfo()->thread0_stack.base;
   first->stacklen = get_global_meminfo()->thread0_stack.len;
   list_push(&g_all_threads, &first->all_threads_link);
+#if ENABLE_TSAN
+  tsan_thread_create(first);
+#endif
 
   KASSERT_DBG((addr_t)(&first) < (addr_t)first->stack + first->stacklen);
 
@@ -153,6 +158,10 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
   if (kthread_current_thread()->preemption_disables == 0) {
     thread->preemption_disables = 0;
   }
+#if ENABLE_TSAN
+  tsan_thread_create(thread);
+#endif
+
   POP_INTERRUPTS();
   return 0;
 }
@@ -173,6 +182,10 @@ void kthread_destroy(kthread_t thread) {
     kfree(thread->stack);
     thread->stack = 0x0;
   }
+
+#if ENABLE_TSAN
+  tsan_thread_destroy(thread);
+#endif
 
   kfree(thread);
 }
@@ -195,6 +208,9 @@ void* kthread_join(kthread_t thread_ptr) {
     scheduler_wait_on(&thread->join_list);
     thread->join_list_pending--;
   }
+#if ENABLE_TSAN
+  tsan_thread_join(thread_ptr);
+#endif
   KASSERT(thread->state == KTHREAD_DONE);
   void* retval = thread->retval;
   // If we're last, clean up after the thread.
@@ -384,6 +400,10 @@ void kmutex_init(kmutex_t* m) {
     m->priors[i].lru = 0;
   }
 #endif
+
+#if ENABLE_TSAN
+  tsan_lock_init(&m->tsan);
+#endif
 }
 
 void kmutex_lock(kmutex_t* m) {
@@ -403,6 +423,10 @@ void kmutex_lock(kmutex_t* m) {
     m->holder = kthread_current_thread();
   }
   KASSERT(m->locked == 1);
+
+#if ENABLE_TSAN
+  tsan_locked(&m->tsan, TSAN_LOCK);
+#endif
   POP_INTERRUPTS();
 
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
@@ -473,6 +497,9 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) {
     m->locked = 0;
     m->holder = 0x0;
   }
+#if ENABLE_TSAN
+  tsan_unlocked(&m->tsan, TSAN_LOCK);
+#endif
   POP_INTERRUPTS();
 }
 

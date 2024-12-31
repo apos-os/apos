@@ -11,36 +11,76 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include "sanitizers/tsan/tsan_hooks.h"
+
+#include "sanitizers/tsan/tsan_access.h"
 
 typedef unsigned long uptr;
 
 void __tsan_init(void) {}
 
-void __tsan_read1(void* addr) {}
-void __tsan_read2(void* addr) {}
-void __tsan_read4(void* addr) {}
-void __tsan_read8(void* addr) {}
-void __tsan_read16(void* addr) {}
+// TODO(tsan): pass the current PC in all of these.
+void __tsan_read1(void* addr) {
+  tsan_check(0, (addr_t)addr, 1, TSAN_ACCESS_READ);
+}
 
+void __tsan_read2(void* addr) {
+  tsan_check(0, (addr_t)addr, 2, TSAN_ACCESS_READ);
+}
+
+void __tsan_read4(void* addr) {
+  tsan_check(0, (addr_t)addr, 4, TSAN_ACCESS_READ);
+}
+
+void __tsan_read8(void* addr) {
+  tsan_check(0, (addr_t)addr, 8, TSAN_ACCESS_READ);
+}
+
+void __tsan_read16(void* addr) {
+  // TODO(tsan): is this kind of split correct?
+  tsan_check(0, (addr_t)addr, 8, TSAN_ACCESS_READ);
+  tsan_check(0, (addr_t)addr + 8, 8, TSAN_ACCESS_READ);
+}
+
+// TODO(tsan): handle unaligned ops.
 void __tsan_unaligned_read2(void* addr) {}
 void __tsan_unaligned_read4(void* addr) {}
 void __tsan_unaligned_read8(void* addr) {}
 
-void __tsan_write1(void* addr) {}
-void __tsan_write2(void* addr) {}
-void __tsan_write4(void* addr) {}
-void __tsan_write8(void* addr) {}
-void __tsan_write16(void* addr) {}
+void __tsan_write1(void* addr) {
+  tsan_check(0, (addr_t)addr, 1, TSAN_ACCESS_WRITE);
+}
 
+void __tsan_write2(void* addr) {
+  tsan_check(0, (addr_t)addr, 2, TSAN_ACCESS_WRITE);
+}
+
+void __tsan_write4(void* addr) {
+  tsan_check(0, (addr_t)addr, 4, TSAN_ACCESS_WRITE);
+}
+
+void __tsan_write8(void* addr) {
+  tsan_check(0, (addr_t)addr, 8, TSAN_ACCESS_WRITE);
+}
+
+void __tsan_write16(void* addr) {
+  // TODO(tsan): is this kind of split correct?
+  tsan_check(0, (addr_t)addr, 8, TSAN_ACCESS_WRITE);
+  tsan_check(0, (addr_t)addr + 8, 8, TSAN_ACCESS_WRITE);
+}
+
+// TODO(tsan): handle unaligned ops.
 void __tsan_unaligned_write2(void* addr) {}
 void __tsan_unaligned_write4(void* addr) {}
 void __tsan_unaligned_write8(void* addr) {}
 
 void* __tsan_memcpy(void* dest, const void* src, uptr count) {
+  // TODO(tsan): handle whole blocks.
   return __builtin_memcpy(dest, src, count);
 }
 
 void* __tsan_memset(void* dest, int ch, uptr count) {
+  // TODO(tsan): handle whole blocks.
   return __builtin_memset(dest, ch, count);
 }
 

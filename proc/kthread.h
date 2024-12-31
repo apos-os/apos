@@ -28,6 +28,10 @@
 #include "common/types.h"
 #include "dev/timer.h"
 
+#if ENABLE_TSAN
+#include "sanitizers/tsan/tsan_lock.h"
+#endif
+
 typedef struct kthread_data* kthread_t;
 #define KTHREAD_NO_THREAD 0x0
 
@@ -129,6 +133,10 @@ struct kmutex {
   list_link_t link;  // On holder list, for deadlock detection.
   // Mutexes that have been held when this was locked.
   kmutex_prior_t priors[KMUTEX_DEADLOCK_LRU_SIZE];
+#endif
+
+#if ENABLE_TSAN
+  tsan_lock_data_t tsan;
 #endif
 };
 typedef struct kmutex kmutex_t;

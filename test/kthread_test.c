@@ -1645,10 +1645,13 @@ void kthread_test(void) {
   scheduler_interrupt_test();
   scheduler_interrupt_timeout_test();
   kthread_is_done_test();
-  stress_test();
+  if (!ENABLE_TSAN) {
+    // These tests spawn too many threads for TSAN.
+    stress_test();
+    ksleep_test();
+  }
   kmutex_test();
   kmutex_auto_lock_test();
-  ksleep_test();
   preemption_test();
   wait_on_locked_test();
   wait_on_spin_locked_test();

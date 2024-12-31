@@ -41,7 +41,8 @@ _Static_assert(TSAN_SHADOW_CELLS * TSAN_SHADOW_CELL_SIZE /
                    TSAN_SHADOW_MEMORY_MULT,
                "TSAN parameters incorrect");
 
-// How many thread IDs to track in each vector clock.
+// How many thread IDs to track in each vector clock.  This caps the number of
+// simultaneous active threads.
 #define TSAN_THREAD_SLOTS 64
 
 #endif

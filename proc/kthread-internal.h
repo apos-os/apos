@@ -24,6 +24,7 @@
 #include "common/list.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
+#include "sanitizers/tsan/tsan_thread.h"
 #include "user/include/apos/posix_signal.h"
 #include "syscall/context.h"
 
@@ -97,6 +98,10 @@ struct kthread_data {
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   // List of currently-held mutexes.
   list_t mutexes_held;
+#endif
+
+#if ENABLE_TSAN
+  tsan_thread_data_t tsan;
 #endif
 };
 typedef struct kthread_data kthread_data_t;

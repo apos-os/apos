@@ -14,11 +14,19 @@
 
 Import('env AposAddSources')
 
-srcs = []
+srcs = [
+  'tsan_test.c',
+]
+
+tsan_srcs = [
+  'instrumented.c'
+]
+
 subdirs = []
 
-if env['TSAN']:
-  subdirs.append('tsan')
+tsan_env = env.Clone()
+tsan_env.Append(CFLAGS = Split('-fsanitize=thread'))
 
-objects = AposAddSources(env, srcs, subdirs)
+objects = [env.Object(src) for src in srcs]
+objects.append([tsan_env.Object(src) for src in tsan_srcs])
 Return('objects')

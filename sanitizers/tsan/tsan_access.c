@@ -1,0 +1,180 @@
+// Copyright 2024 Andrew Oates.  All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+#include "sanitizers/tsan/tsan_access.h"
+
+#include "common/attributes.h"
+#include "common/hash.h"
+#include "common/kassert.h"
+#include "common/kprintf.h"
+#include "common/kstring.h"
+#include "proc/kthread-internal.h"
+#include "sanitizers/tsan/internal.h"
+#include "sanitizers/tsan/shadow_cell.h"
+#include "sanitizers/tsan/tsan_layout.h"
+#include "sanitizers/tsan/tsan_params.h"
+
+bool g_tsan_log = true;
+
+static ALWAYS_INLINE tsan_shadow_t make_shadow(kthread_t thread, addr_t addr,
+                                               uint8_t size,
+                                               tsan_access_t type) {
+  tsan_shadow_t shadow;
+  shadow.epoch = thread->tsan.clock.ts[thread->tsan.sid];
+  shadow.sid = thread->tsan.sid;
+  shadow.offset = addr % 8;
+  switch (size) {
+    case 1:
+      shadow.size = 0;
+      break;
+    case 2:
+      shadow.size = 1;
+      break;
+    case 4:
+      shadow.size = 2;
+      break;
+    case 8:
+      shadow.size = 3;
+      break;
+  }
+  shadow.is_write = (type == TSAN_ACCESS_WRITE);
+  return shadow;
+}
+
+static ALWAYS_INLINE tsan_shadow_t* get_shadow_cells(addr_t addr) {
+  addr_t offset = addr - TSAN_HEAP_START_ADDR;
+  addr_t shadow = TSAN_SHADOW_START_ADDR + offset;
+  return (tsan_shadow_t*)shadow;
+}
+
+static ALWAYS_INLINE uint8_t get_shadow_mask(addr_t offset, uint8_t log_size) {
+  return (uint8_t)((uint16_t)((1 << (1 << log_size)) - 1) << offset);
+}
+
+static ALWAYS_INLINE void store_shadow(tsan_shadow_t* dst, tsan_shadow_t data) {
+  // TODO(tsan): this should be an atomic store.
+  *dst = data;
+}
+
+// Returns true if the given access can overwrite the other given access.
+static ALWAYS_INLINE bool can_overwrite(tsan_shadow_t a, tsan_shadow_t b) {
+  return a.is_write || !b.is_write;
+}
+
+#define SHADOW_PRETTY_LEN 64
+
+static char* print_shadow(char* buf, tsan_shadow_t s) {
+  if (s.epoch == 0) {
+    kstrcpy(buf, "0");
+    return buf;
+  }
+  ksnprintf(buf, SHADOW_PRETTY_LEN, "{tid=%u@%u offset=%d size=%d is_write=%d}",
+            (uint32_t)(s.sid), s.epoch, s.offset, s.size, s.is_write);
+  return buf;
+}
+
+static void tsan_report_race(kthread_t thread, addr_t addr, tsan_shadow_t old,
+                             tsan_shadow_t new) {
+  uint64_t old_u64 = *(uint64_t*)&old;
+  uint64_t new_u64 = *(uint64_t*)&new;
+  klogfm(KL_GENERAL, FATAL,
+         "TSAN: detected data race on address %" PRIxADDR
+         ": old = %lx new = %lx\n",
+         addr, old_u64, new_u64);
+}
+
+bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_t type) {
+  if (!g_tsan_init) return false;
+
+  if (addr < TSAN_HEAP_START_ADDR || addr >= TSAN_HEAP_START_ADDR +
+      TSAN_HEAP_LEN_ADDR) {
+    // Access outside the heap.  Ignore.
+    return false;
+  }
+
+  // The access should fit within a single shadow cell.
+  KASSERT((addr & ~0x7) == ((addr + size - 1) & ~0x7));
+
+  kthread_t thread = kthread_current_thread();
+  tsan_shadow_t shadow = make_shadow(thread, addr, size, type);
+
+  tsan_shadow_t* shadow_mem = get_shadow_cells(addr);
+  if (g_tsan_log) {
+    char pretty_shadow[4][SHADOW_PRETTY_LEN];
+    klogf("#%d: Access: %d@%d %p/%zd typ=0x%x {%s, %s, %s, %s}\n", thread->id,
+          thread->tsan.sid, thread->tsan.clock.ts[thread->tsan.sid],
+          (void*)addr, (ssize_t)size, (int)type,
+          print_shadow(pretty_shadow[0], shadow_mem[0]),
+          print_shadow(pretty_shadow[1], shadow_mem[1]),
+          print_shadow(pretty_shadow[2], shadow_mem[2]),
+          print_shadow(pretty_shadow[3], shadow_mem[3]));
+  }
+
+  // First check if the exact same access is already stored.
+  for (int i = 0; i < TSAN_SHADOW_CELLS; ++i) {
+    if (shadow2raw(shadow_mem[i]) == shadow2raw(shadow)) {
+      return false;
+    }
+  }
+
+  bool stored = false;
+  for (int i = 0; i < TSAN_SHADOW_CELLS; ++i) {
+    tsan_shadow_t old = shadow_mem[i];
+    if (old.epoch == 0) {
+      // Unused slot --- no need to check any more, and we can store here.
+      if (!stored) {
+        store_shadow(&shadow_mem[i], shadow);
+      }
+      return false;
+    }
+    // Check if the two accesses overlap.
+    uint8_t old_mask = get_shadow_mask(old.offset, old.size);
+    uint8_t new_mask = get_shadow_mask(shadow.offset, shadow.size);
+    if (!(old_mask & new_mask)) {
+      // These accesses don't overlap; safe.
+      continue;
+    }
+    if (old.sid == shadow.sid) {
+      // It was me who previously stored this.  Safe.
+      KASSERT_DBG(old.epoch <= shadow.epoch);
+      // Overwrite if it's the exact same access, and it's not a
+      // write-replacing-read.
+      if (old_mask == new_mask && can_overwrite(shadow, old)) {
+        store_shadow(&shadow_mem[i], shadow);
+        stored = true;
+      }
+      continue;
+    }
+    if (!old.is_write && !shadow.is_write) {
+      // Safe, both are reads.
+      continue;
+    }
+    if (thread->tsan.clock.ts[old.sid] >= old.epoch) {
+      // Safe, we synchronized.
+      continue;
+    }
+
+    tsan_report_race(thread, addr, old, shadow);
+  }
+  if (stored) {
+    return false;
+  }
+
+  // Store in a random slot.
+  // TODO(tsan): come up with a better algorithm for picking.
+  uint32_t hash[3] = {fnv_hash_addr((addr_t)thread), fnv_hash_addr(addr),
+                      thread->tsan.clock.ts[thread->tsan.sid]};
+  int idx = fnv_hash_array(&hash, sizeof(hash)) % TSAN_SHADOW_CELLS;
+  store_shadow(&shadow_mem[idx], shadow);
+  return false;
+}

@@ -97,6 +97,10 @@ static const test_entry_t TESTS[] = {
   { "echo", &net_echo_test, 1 },
   { "arena", &arena_test, 1 },
 
+#if ENABLE_TSAN
+  { "tsan", &tsan_test, 1 },
+#endif
+
 #if ARCH == ARCH_i586
   { "page_alloc_map", &page_alloc_map_test, 1 },
   { "interrupt_clobber", &interrupt_clobber_test, 1 },

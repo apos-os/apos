@@ -20,7 +20,10 @@
 #include "memory/vm.h"
 #include "memory/vm_area.h"
 #include "sanitizers/tsan/tsan_defs.h"
+#include "sanitizers/tsan/tsan_layout.h"
 #include "sanitizers/tsan/tsan_params.h"
+
+bool g_tsan_init = false;
 
 // As with the heap vm_area_t, statically allocate this for the root process to
 // avoid heap allocations during initialization.
@@ -59,4 +62,11 @@ void tsan_init(void) {
       ((uint64_t*)virt)[i] = 0;
     }
   }
+
+  // TODO(tsan): set up shadow mappings and TSAN support for non-heap memory
+  // (.data and .bss sections of the kernel, in particular).
+
+  KASSERT(meminfo->heap.base == TSAN_HEAP_START_ADDR);
+  KASSERT(meminfo->tsan_heap.base == TSAN_SHADOW_START_ADDR);
+  g_tsan_init = true;
 }

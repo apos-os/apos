@@ -16,18 +16,22 @@ Import('env AposAddSources')
 
 srcs = [
   'tsan.c',
+  'tsan_access.c',
   'tsan_hooks.c',
+  'tsan_thread.c',
+  'vector_clock.c',
 ]
 
 subdirs = []
 
 tsan_env = env.Clone()
-tsan_env.Append(CFLAGS = Split('-O3'))
+# TODO(tsan): increase this to -O2 or -O3
+tsan_env.Append(CFLAGS = Split('-O1'))
+tsan_env.Append(CFLAGS = Split('-fno-omit-frame-pointer'))
 
-if env['TSAN']:
-  env.Append(CFLAGS = Split('-fsanitize=thread'))
-  # TODO(aoates): reduce function stack size to eliminate this change.
-  env.Append(CFLAGS = Split('-Wframe-larger-than=2500'))
+# TODO(tsan): enable -fsanitize=thread for env overall here.
+# TODO(aoates): reduce function stack size to eliminate this change.
+env.Append(CFLAGS = Split('-Wframe-larger-than=2500'))
 
 objects = [tsan_env.Object(src) for src in srcs]
 Return('objects')

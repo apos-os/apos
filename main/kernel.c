@@ -243,11 +243,6 @@ void kmain(boot_info_t* boot, const char* cmdline) {
   klog("kmalloc_init()\n");
   kmalloc_init();
 
-  if (ENABLE_TSAN) {
-    klog("tsan_init()\n");
-    tsan_init();
-  }
-
   // Initialize proc, thread, and scheduler systems.
   klog("kthread_init()\n");
   kthread_init();
@@ -264,6 +259,11 @@ void kmain(boot_info_t* boot, const char* cmdline) {
 
   klog("perftrace_init()\n");
   perftrace_init();
+
+  if (ENABLE_TSAN) {
+    klog("tsan_init()\n");
+    tsan_init();
+  }
 
   klog("enabling deferred interrupts\n");
   defint_set_state(true);
