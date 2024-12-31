@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "arch/proc/stack_trace.h"
+#include "common/attributes.h"
 #include "common/debug.h"
 #include "common/klog.h"
 #include "common/kassert.h"
@@ -162,8 +163,22 @@ static block_t* merge_block(block_t* b) {
   return b;
 }
 
+static inline ALWAYS_INLINE size_t default_align(size_t n) {
+  switch (n) {
+    case 1:
+      return 1;
+    case 2:
+      return 2;
+    case 3:
+    case 4:
+      return 4;
+    default:
+      return sizeof(addr_t);
+  }
+}
+
 void* kmalloc(size_t n) {
-  return kmalloc_aligned(n, 1);
+  return kmalloc_aligned(n, default_align(n));
 }
 
 void* kmalloc_alloc(void* arg, size_t n, size_t alignment) {
