@@ -78,6 +78,7 @@ void scheduler_init(void) {
 
 void scheduler_make_runnable(kthread_t thread) {
   PUSH_AND_DISABLE_INTERRUPTS();
+  KASSERT_DBG(thread->state == KTHREAD_PENDING);
   kthread_queue_push(&g_run_queue, thread);
   POP_INTERRUPTS();
 }

@@ -247,12 +247,7 @@ void kthread_exit(void* x) {
   g_current_thread->state = KTHREAD_DONE;
 
   // Schedule all the waiting threads.
-  kthread_data_t* t = kthread_queue_pop(&g_current_thread->join_list);
-  while (t) {
-    KASSERT(t->state == KTHREAD_PENDING);
-    scheduler_make_runnable(t);
-    t = kthread_queue_pop(&g_current_thread->join_list);
-  }
+  scheduler_wake_all(&g_current_thread->join_list);
 
   if (g_current_thread->detached) {
     kthread_queue_push(&g_reap_queue, g_current_thread);

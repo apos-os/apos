@@ -291,6 +291,55 @@ static void tsan_wait_queue_test(void) {
   kfree(val);
 }
 
+static void* fork_test_child_thread(void* arg) {
+  tsan_rw_u64((uint64_t*)arg);
+  return NULL;
+}
+
+static void fork_test_child(void* arg) {
+  uint64_t* vals = (uint64_t*)arg;
+  kthread_t child1, child2;
+  KEXPECT_EQ(0, proc_thread_create(&child1, &fork_test_child_thread, &vals[1]));
+  KEXPECT_EQ(0, proc_thread_create(&child2, &fork_test_child_thread, &vals[2]));
+  kthread_detach(child1);
+  kthread_join(child2);
+  tsan_rw_u64(&vals[0]);
+}
+
+// Test that forks multiple processes, who each also create detached threads.
+// Waiting on the process to exit should be sufficient to synchronize.
+static void tsan_fork_test(void) {
+  KTEST_BEGIN("TSAN: synchronization across process fork/wait");
+  // For each child proc, three values:
+  // 1) for main thread
+  // 2) for an explicitly detached thread
+  // 3) for a joined thread
+  uint64_t* vals = kmalloc(sizeof(uint64_t) * 6);
+  tsan_write64(&vals[0], 5);
+  tsan_write64(&vals[1], 6);
+  tsan_write64(&vals[2], 7);
+  tsan_write64(&vals[3], 8);
+  tsan_write64(&vals[4], 9);
+  tsan_write64(&vals[5], 10);
+
+  kpid_t child1 = proc_fork(fork_test_child, vals);
+  KEXPECT_GE(child1, 0);
+  kpid_t child2 = proc_fork(fork_test_child, vals + 3);
+  KEXPECT_GE(child2, 0);
+
+  KEXPECT_EQ(child1, proc_waitpid(child1, NULL, 0));
+  KEXPECT_EQ(child2, proc_waitpid(child2, NULL, 0));
+
+  KEXPECT_EQ(6, tsan_read64(&vals[0]));
+  KEXPECT_EQ(7, tsan_read64(&vals[1]));
+  KEXPECT_EQ(8, tsan_read64(&vals[2]));
+  KEXPECT_EQ(9, tsan_read64(&vals[3]));
+  KEXPECT_EQ(10, tsan_read64(&vals[4]));
+  KEXPECT_EQ(11, tsan_read64(&vals[5]));
+
+  kfree(vals);
+}
+
 static void basic_tests(void) {
   tsan_basic_sanity_test();
 #if 0
@@ -303,7 +352,10 @@ static void basic_tests(void) {
   size2_safe_test();
   size4_safe_test();
   tsan_wait_queue_test();
+  tsan_fork_test();
 }
+
+// TODO(tsan): test that sleep() doesn't synchronize between two threads.
 
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
