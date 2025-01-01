@@ -15,8 +15,17 @@
 #ifndef APOO_SANITIZERS_TSAN_TSAN_H
 #define APOO_SANITIZERS_TSAN_TSAN_H
 
+#include "sanitizers/tsan/report.h"
+
 // Initialize the TSAN data structures.  Should be called early in the boot
 // process but after kmalloc_init().
 void tsan_init(void);
+
+typedef void (*tsan_report_fn_t)(const tsan_report_t*);
+
+// Set the function to call when a race is detected, or NULL to restore the
+// default (which panics).  Note that the function may be called from an
+// interrupt context.
+void tsan_set_report_func(tsan_report_fn_t fn);
 
 #endif

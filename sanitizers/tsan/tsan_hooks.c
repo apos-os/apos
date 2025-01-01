@@ -16,31 +16,33 @@
 #include "common/kassert.h"
 #include "sanitizers/tsan/tsan_access.h"
 
+#define CALLERPC ((uptr)__builtin_return_address(0))
+
 typedef unsigned long uptr;
 
 void __tsan_init(void) {}
 
 // TODO(tsan): pass the current PC in all of these.
 void __tsan_read1(void* addr) {
-  tsan_check(0, (addr_t)addr, 1, TSAN_ACCESS_READ);
+  tsan_check(CALLERPC, (addr_t)addr, 1, TSAN_ACCESS_READ);
 }
 
 void __tsan_read2(void* addr) {
-  tsan_check(0, (addr_t)addr, 2, TSAN_ACCESS_READ);
+  tsan_check(CALLERPC, (addr_t)addr, 2, TSAN_ACCESS_READ);
 }
 
 void __tsan_read4(void* addr) {
-  tsan_check(0, (addr_t)addr, 4, TSAN_ACCESS_READ);
+  tsan_check(CALLERPC, (addr_t)addr, 4, TSAN_ACCESS_READ);
 }
 
 void __tsan_read8(void* addr) {
-  tsan_check(0, (addr_t)addr, 8, TSAN_ACCESS_READ);
+  tsan_check(CALLERPC, (addr_t)addr, 8, TSAN_ACCESS_READ);
 }
 
 void __tsan_read16(void* addr) {
   // TODO(tsan): is this kind of split correct?
-  tsan_check(0, (addr_t)addr, 8, TSAN_ACCESS_READ);
-  tsan_check(0, (addr_t)addr + 8, 8, TSAN_ACCESS_READ);
+  tsan_check(CALLERPC, (addr_t)addr, 8, TSAN_ACCESS_READ);
+  tsan_check(CALLERPC, (addr_t)addr + 8, 8, TSAN_ACCESS_READ);
 }
 
 // TODO(tsan): handle unaligned ops.
@@ -49,25 +51,25 @@ void __tsan_unaligned_read4(void* addr) { die("unimplemented"); }
 void __tsan_unaligned_read8(void* addr) { die("unimplemented"); }
 
 void __tsan_write1(void* addr) {
-  tsan_check(0, (addr_t)addr, 1, TSAN_ACCESS_WRITE);
+  tsan_check(CALLERPC, (addr_t)addr, 1, TSAN_ACCESS_WRITE);
 }
 
 void __tsan_write2(void* addr) {
-  tsan_check(0, (addr_t)addr, 2, TSAN_ACCESS_WRITE);
+  tsan_check(CALLERPC, (addr_t)addr, 2, TSAN_ACCESS_WRITE);
 }
 
 void __tsan_write4(void* addr) {
-  tsan_check(0, (addr_t)addr, 4, TSAN_ACCESS_WRITE);
+  tsan_check(CALLERPC, (addr_t)addr, 4, TSAN_ACCESS_WRITE);
 }
 
 void __tsan_write8(void* addr) {
-  tsan_check(0, (addr_t)addr, 8, TSAN_ACCESS_WRITE);
+  tsan_check(CALLERPC, (addr_t)addr, 8, TSAN_ACCESS_WRITE);
 }
 
 void __tsan_write16(void* addr) {
   // TODO(tsan): is this kind of split correct?
-  tsan_check(0, (addr_t)addr, 8, TSAN_ACCESS_WRITE);
-  tsan_check(0, (addr_t)addr + 8, 8, TSAN_ACCESS_WRITE);
+  tsan_check(CALLERPC, (addr_t)addr, 8, TSAN_ACCESS_WRITE);
+  tsan_check(CALLERPC, (addr_t)addr + 8, 8, TSAN_ACCESS_WRITE);
 }
 
 // TODO(tsan): handle unaligned ops.

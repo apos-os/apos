@@ -17,4 +17,6 @@
 
 #define ALWAYS_INLINE __attribute__((always_inline))
 
+#define NO_TSAN __attribute__((no_sanitize("thread")))
+
 #endif

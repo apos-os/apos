@@ -187,20 +187,17 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
   if (mu) {
     kmutex_unlock_no_yield(mu);
   }
-  if (!sp && !mu) {
-    // All preemptible code should be using the locked variants of this.
-    // TODO(preemption): enable this assertion (block cache breaks it)
-    // KASSERT(current->preemption_disables > 0);
 #if ENABLE_TSAN
+  if (!sp && !mu && current->preemption_disables > 0) {
     tsan_release(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
-#endif
   }
+#endif
   scheduler_yield_no_reschedule();
   int result = current->wait_status;
   if (timeout_ms > 0 && !current->wait_timeout_ran)
     cancel_event_timer(timeout_handle);
 #if ENABLE_TSAN
-  if (!sp && !mu) {
+  if (!sp && !mu && current->preemption_disables > 0) {
     tsan_acquire(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
   }
 #endif

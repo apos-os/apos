@@ -11,19 +11,82 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "proc/fork.h"
-#include "proc/scheduler.h"
-#include "proc/wait.h"
-#include "test/kernel_tests.h"
-
 #include "common/endian.h"
+#include "common/kassert.h"
+#include "dev/interrupts.h"
 #include "memory/kmalloc.h"
+#include "proc/fork.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
+#include "proc/scheduler.h"
 #include "proc/sleep.h"
+#include "proc/wait.h"
+#include "sanitizers/tsan/tsan.h"
+#include "sanitizers/tsan/tsan_access.h"
+#include "test/kernel_tests.h"
 #include "test/ktest.h"
 #include "test/tsan/instrumented.h"
 
+/***************** Test report interception functions ******************/
+static void test_report_fn(const tsan_report_t* report);
+
+static bool g_found_report = false;
+static tsan_report_t g_report;
+
+// Start interception of TSAN reports for testing.
+static void intercept_reports(void) {
+  KEXPECT_FALSE(g_found_report);  // Safety check.
+  tsan_set_report_func(&test_report_fn);
+}
+
+static void intercept_reports_done(void) {
+  tsan_set_report_func(NULL);
+  g_found_report = false;
+}
+
+static NO_TSAN void test_report_fn(const tsan_report_t* report) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  g_found_report = true;
+  g_report = *report;
+  POP_INTERRUPTS();
+}
+
+static bool type_matches(const char* s, tsan_access_type_t t) {
+  if (kstrcmp(s, "?") == 0) {
+    return true;
+  } else if (kstrcmp(s, "r") == 0) {
+    return (t == TSAN_ACCESS_READ);
+  } else if (kstrcmp(s, "w") == 0) {
+    return (t == TSAN_ACCESS_WRITE);
+  } else {
+    KEXPECT_STREQ("?", s);
+    KTEST_ADD_FAILURE("Invalid type string");
+    return false;
+  }
+}
+
+// Expect that a particular report was found.
+static bool expect_report(void* addr1, int size1, const char* type1,
+                          void* addr2, int size2, const char* type2) {
+  bool v = true;
+  v &= KEXPECT_TRUE(g_found_report);
+  if (!g_found_report) return v;
+  v &= KEXPECT_EQ((addr_t)addr1, g_report.race.cur.addr);
+  v &= KEXPECT_NE(0, g_report.race.cur.pc);
+  v &= KEXPECT_EQ(size1, g_report.race.cur.size);
+  v &= type_matches(type1, g_report.race.cur.type);
+  v &= KEXPECT_EQ((addr_t)addr2, g_report.race.prev.addr);
+  v &= KEXPECT_EQ(0, g_report.race.prev.pc);
+  v &= KEXPECT_EQ(size2, g_report.race.prev.size);
+  v &= type_matches(type2, g_report.race.prev.type);
+  kmemset(&g_report, 0, sizeof(g_report));
+  return v;
+}
+
+#define EXPECT_REPORT(addr1, size1, type1, addr2, size2, type2) \
+    KEXPECT_TRUE(expect_report(addr1, size1, type1, addr2, size2, type2))
+
+/************************** Tests ************************************/
 typedef struct {
   kmutex_t mu;
   uint64_t* val;
@@ -49,15 +112,43 @@ static void* rw_value_thread(void* arg) {
   return NULL;
 }
 
+static void* rw_value_thread_preempt(void* arg) {
+  sched_enable_preemption_for_test();
+  int* x = (int*)arg;
+  tsan_rw_value(x);
+  ksleep(30);
+  return NULL;
+}
+
 static void tsan_basic_sanity_test2(void) {
   KTEST_BEGIN("TSAN: basic R/W heap value instrumentation (two threads)");
   int* x = KMALLOC(int);
+  *x = 0;
+  tsan_rw_value(x);
+
+  // When both are non-preemptible, no race should be detected (for now).
   kthread_t thread;
   KEXPECT_EQ(0, proc_thread_create(&thread, &rw_value_thread, x));
+  ksleep(20);
   tsan_rw_value(x);
   tsan_rw_value(x);
   KEXPECT_EQ(NULL, kthread_join(thread));
-  KEXPECT_EQ(4, *x);
+  KEXPECT_EQ(5, *x);
+
+  // When the other thread is preemptible, it should trigger a race.  Need some
+  // funny sleeps to ensure the other thread starts first and runs (to avoid the
+  // special implicit sync point at the start of each thread).
+  *x = 0;
+  intercept_reports();
+  tsan_rw_value(x);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &rw_value_thread_preempt, x));
+  ksleep(10);
+  tsan_rw_value(x);
+  EXPECT_REPORT(x, 4, "w", x, 4, "?");
+
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  intercept_reports_done();
+
   kfree(x);
 }
 
@@ -342,10 +433,7 @@ static void tsan_fork_test(void) {
 
 static void basic_tests(void) {
   tsan_basic_sanity_test();
-#if 0
-  // TODO(tsan): catch this failure in the test framework.
   tsan_basic_sanity_test2();
-#endif
   tsan_basic_sanity_test3();
   tsan_basic_sanity_test4();
   size1_safe_test();

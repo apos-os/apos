@@ -22,9 +22,9 @@
 typedef enum {
   TSAN_ACCESS_READ = 0,
   TSAN_ACCESS_WRITE = 1,
-} tsan_access_t;
+} tsan_access_type_t;
 
 // Call to check an access from a hook.
-bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_t type);
+bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type);
 
 #endif

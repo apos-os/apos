@@ -18,17 +18,21 @@
 #include "common/kassert.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
+#include "dev/interrupts.h"
 #include "proc/kthread-internal.h"
 #include "sanitizers/tsan/internal.h"
+#include "sanitizers/tsan/report.h"
 #include "sanitizers/tsan/shadow_cell.h"
+#include "sanitizers/tsan/tsan.h"
 #include "sanitizers/tsan/tsan_layout.h"
 #include "sanitizers/tsan/tsan_params.h"
 
 bool g_tsan_log = true;
+static tsan_report_fn_t g_tsan_report_fn = NULL;
 
 static ALWAYS_INLINE tsan_shadow_t make_shadow(kthread_t thread, addr_t addr,
                                                uint8_t size,
-                                               tsan_access_t type) {
+                                               tsan_access_type_t type) {
   tsan_shadow_t shadow;
   shadow.epoch = thread->tsan.clock.ts[thread->tsan.sid];
   shadow.sid = thread->tsan.sid;
@@ -84,19 +88,64 @@ static char* print_shadow(char* buf, tsan_shadow_t s) {
   return buf;
 }
 
-static void tsan_report_race(kthread_t thread, addr_t addr, tsan_shadow_t old,
-                             tsan_shadow_t new) {
+static const char* type2str(tsan_access_type_t t) {
+  switch (t) {
+    case TSAN_ACCESS_READ: return "READ";
+    case TSAN_ACCESS_WRITE: return "WRITE";
+  }
+}
+
+static tsan_access_type_t shadow2type(tsan_shadow_t s) {
+  return s.is_write ? TSAN_ACCESS_WRITE : TSAN_ACCESS_READ;
+}
+
+static void default_report_func(const tsan_report_t* report) {
+  klogfm(KL_GENERAL, FATAL,
+         "TSAN: detected data race: "
+         "%d-byte %s on address 0x%" PRIxADDR " at \n #0 0x%" PRIxADDR "\n"
+         "Previous access was: "
+         "%d-byte %s on address 0x%" PRIxADDR " at \n #0 0x%" PRIxADDR "\n",
+         report->race.cur.size, type2str(report->race.cur.type),
+         report->race.cur.addr, report->race.cur.pc,
+         report->race.prev.size, type2str(report->race.prev.type),
+         report->race.prev.addr, report->race.prev.pc);
+}
+
+static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
+                             tsan_shadow_t old, tsan_shadow_t new) {
   char pretty_shadow[2][SHADOW_PRETTY_LEN];
   uint64_t old_u64 = *(uint64_t*)&old;
   uint64_t new_u64 = *(uint64_t*)&new;
-  klogfm(KL_GENERAL, FATAL,
-         "TSAN: detected data race on address %" PRIxADDR
-         ": old = %s [0x%lx], new = %s [0x%lx]\n",
-         addr, print_shadow(pretty_shadow[0], old), old_u64,
-         print_shadow(pretty_shadow[1], new), new_u64);
+  if (g_tsan_log) {
+    klogfm(KL_GENERAL, INFO,
+           "TSAN: detected data race on address %" PRIxADDR
+           ": old = %s [0x%lx], new = %s [0x%lx]\n",
+           addr, print_shadow(pretty_shadow[0], old), old_u64,
+           print_shadow(pretty_shadow[1], new), new_u64);
+  }
+
+  // Build a report.
+  KASSERT_DBG(addr == ((addr & ~0x7) + new.offset));
+  tsan_report_t report;
+  report.race.cur.addr = addr;
+  report.race.cur.pc = pc;
+  report.race.cur.size = 1 << new.size;
+  report.race.cur.type = shadow2type(new);
+
+  report.race.prev.addr = (addr & ~0x7) + old.offset;
+  report.race.prev.pc = 0;
+  report.race.prev.size = 1 << old.size;
+  report.race.prev.type = shadow2type(old);
+
+  PUSH_AND_DISABLE_INTERRUPTS();
+  tsan_report_fn_t fn = g_tsan_report_fn ? g_tsan_report_fn :
+      default_report_func;
+  POP_INTERRUPTS();
+
+  fn(&report);
 }
 
-bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_t type) {
+bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
   if (!g_tsan_init) return false;
 
   if (addr < TSAN_HEAP_START_ADDR || addr >= TSAN_HEAP_START_ADDR +
@@ -167,7 +216,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_t type) {
       continue;
     }
 
-    tsan_report_race(thread, addr, old, shadow);
+    tsan_report_race(thread, pc, addr, old, shadow);
   }
   if (stored) {
     return false;
@@ -180,4 +229,10 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_t type) {
   int idx = fnv_hash_array(&hash, sizeof(hash)) % TSAN_SHADOW_CELLS;
   store_shadow(&shadow_mem[idx], shadow);
   return false;
+}
+
+void tsan_set_report_func(tsan_report_fn_t fn) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  g_tsan_report_fn = fn;
+  POP_INTERRUPTS();
 }
