@@ -36,3 +36,19 @@ uint8_t tsan_read8(uint8_t* x) {
 void tsan_write8(uint8_t* x, uint8_t val) {
   *x = val;
 }
+
+uint16_t tsan_read16(uint16_t* x) {
+  return *x;
+}
+
+void tsan_write16(uint16_t* x, uint16_t val) {
+  *x = val;
+}
+
+uint32_t tsan_read32(uint32_t* x) {
+  return *x;
+}
+
+void tsan_write32(uint32_t* x, uint32_t val) {
+  *x = val;
+}
