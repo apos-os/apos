@@ -28,3 +28,11 @@ void tsan_rw_u64(uint64_t* x) {
   uint64_t val = *x;
   *x = val + 1;
 }
+
+uint8_t tsan_read8(uint8_t* x) {
+  return *x;
+}
+
+void tsan_write8(uint8_t* x, uint8_t val) {
+  *x = val;
+}

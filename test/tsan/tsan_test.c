@@ -13,6 +13,7 @@
 // limitations under the License.
 #include "test/kernel_tests.h"
 
+#include "common/endian.h"
 #include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
@@ -133,6 +134,53 @@ static void tsan_basic_sanity_test4(void) {
   kfree(args.val);
 }
 
+static void* size1_thread(void* arg) {
+  // Assume that the given pointer is already offset correctly, and just read it
+  // 8 times with a stride of 8 bytes.
+  uint8_t* ptr = (uint8_t*)arg;
+  uint8_t val;
+  for (int i = 0; i < 8; ++i) {
+    uint8_t new_val = tsan_read8(ptr);
+    if (i == 0) {
+      val = new_val;
+    } else {
+      KEXPECT_EQ(val, new_val);
+    }
+    ptr += 8;
+  }
+  return (void*)(intptr_t)val;
+}
+
+// Test independence of each byte within a memory cell.  Concurrent Reads and
+// writes to two different bytes within a uint64_t (one TSAN memory cell) should
+// be OK.
+static void size1_safe_test(void) {
+  KTEST_BEGIN("TSAN: two threads accessing different 1 bytes is safe");
+  uint64_t* vals = kmalloc(sizeof(uint64_t) * 8);
+  uint64_t orig = htob64(0x0123456789abcdefll);
+
+  for (int byte_pos_to_test = 0; byte_pos_to_test < 8; ++byte_pos_to_test) {
+    for (int i = 0; i < 8; ++i) {
+      vals[i] = orig;
+    }
+    // For each byte position to test, have the other thread read that byte
+    // position in all 8 of the test dwords.  This thread will write a different
+    // "second" byte position in each of the test dwords --- none should
+    // conflict.
+    uint8_t* val8 = (uint8_t*)vals;
+    kthread_t thread;
+    KEXPECT_EQ(
+        0, proc_thread_create(&thread, &size1_thread, val8 + byte_pos_to_test));
+    for (int i = 0; i < 8; ++i) {
+      if (i == byte_pos_to_test) continue;
+      tsan_write8(&val8[i * 8 + i], 0x00);
+    }
+    KEXPECT_EQ(((uint8_t*)&orig)[byte_pos_to_test],
+               (intptr_t)kthread_join(thread));
+  }
+  kfree(vals);
+}
+
 static void basic_tests(void) {
   tsan_basic_sanity_test();
 #if 0
@@ -141,6 +189,7 @@ static void basic_tests(void) {
 #endif
   tsan_basic_sanity_test3();
   tsan_basic_sanity_test4();
+  size1_safe_test();
 }
 
 void tsan_test(void) {
