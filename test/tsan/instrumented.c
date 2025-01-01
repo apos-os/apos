@@ -52,3 +52,11 @@ uint32_t tsan_read32(uint32_t* x) {
 void tsan_write32(uint32_t* x, uint32_t val) {
   *x = val;
 }
+
+uint64_t tsan_read64(uint64_t* x) {
+  return *x;
+}
+
+void tsan_write64(uint64_t* x, uint64_t val) {
+  *x = val;
+}

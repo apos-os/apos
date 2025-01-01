@@ -81,6 +81,18 @@ static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
   // Enable deferred interrupts for all new threads.
   defint_set_state(true);
 
+#if ENABLE_TSAN
+  // Acquire the global scheduler lock.  This is to make it so that if a
+  // non-preemptible thread creates a new thread then blocks, the new thread
+  // will see published values after the blocking.  More generally we could
+  // acquire the scheduler implicit lock every time a thread is scheduled ---
+  // this reflects the actual behavior of the underlying system, but might mask
+  // bugs.
+  // TODO(preemption): delete this when all code is preemptible (and uses
+  // locking correctly).
+  scheduler_tsan_acquire();
+#endif
+
   void* retval = start_routine(arg);
   kthread_exit(retval);
   // Should never get here.
@@ -425,7 +437,7 @@ void kmutex_lock(kmutex_t* m) {
   KASSERT(m->locked == 1);
 
 #if ENABLE_TSAN
-  tsan_locked(&m->tsan, TSAN_LOCK);
+  tsan_acquire(&m->tsan, TSAN_LOCK);
 #endif
   POP_INTERRUPTS();
 
@@ -498,7 +510,7 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) {
     m->holder = 0x0;
   }
 #if ENABLE_TSAN
-  tsan_unlocked(&m->tsan, TSAN_LOCK);
+  tsan_release(&m->tsan, TSAN_LOCK);
 #endif
   POP_INTERRUPTS();
 }

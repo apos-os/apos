@@ -31,9 +31,9 @@ typedef enum {
 void tsan_lock_init(tsan_lock_data_t* lock);
 
 // Call when a thread locks a lock.
-void tsan_locked(tsan_lock_data_t* lock, tsan_lock_type_t type);
+void tsan_acquire(tsan_lock_data_t* lock, tsan_lock_type_t type);
 
 // Call when a thread unlocks a lock.
-void tsan_unlocked(tsan_lock_data_t* lock, tsan_lock_type_t type);
+void tsan_release(tsan_lock_data_t* lock, tsan_lock_type_t type);
 
 #endif

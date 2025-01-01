@@ -11,6 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include "proc/fork.h"
+#include "proc/scheduler.h"
+#include "proc/wait.h"
 #include "test/kernel_tests.h"
 
 #include "common/endian.h"
@@ -235,6 +238,59 @@ static void size4_safe_test(void) {
   kfree(vals);
 }
 
+typedef struct {
+  uint64_t* val;
+  kthread_queue_t q;
+} write_and_wake_test_args_t;
+
+static void* write_and_wake_one(void* arg) {
+  write_and_wake_test_args_t* args = (write_and_wake_test_args_t*)arg;
+  tsan_rw_u64(args->val);
+  scheduler_wake_one(&args->q);
+  return NULL;
+}
+
+static void* write_and_wake_all(void* arg) {
+  write_and_wake_test_args_t* args = (write_and_wake_test_args_t*)arg;
+  tsan_rw_u64(args->val);
+  scheduler_wake_all(&args->q);
+  return NULL;
+}
+
+// Test the standard pattern in non-preemptible code of using a thread wait
+// queue to synchronize between threads.
+// TODO(SMP): remove this when this pattern is no longer used.
+static void tsan_wait_queue_test(void) {
+  KTEST_BEGIN("TSAN: synchronization with kthread_queue_t");
+  uint64_t* val = KMALLOC(uint64_t);
+  tsan_write64(val, 5);
+  write_and_wake_test_args_t args;
+  args.val = val;
+  kthread_queue_init(&args.q);
+
+  // Test scheduler_wake_one().
+  kthread_t child;
+  KEXPECT_EQ(0, proc_thread_create(&child, write_and_wake_one, &args));
+
+  tsan_rw_u64(args.val);
+  KEXPECT_EQ(SWAIT_DONE, scheduler_wait_on_interruptable(&args.q, 1000));
+  tsan_rw_u64(args.val);
+
+  KEXPECT_EQ(8, *args.val);
+  KEXPECT_EQ(NULL, kthread_join(child));
+
+  // Test scheduler_wake_all().
+  KEXPECT_EQ(0, proc_thread_create(&child, write_and_wake_all, &args));
+
+  tsan_rw_u64(args.val);
+  KEXPECT_EQ(SWAIT_DONE, scheduler_wait_on_interruptable(&args.q, 1000));
+  tsan_rw_u64(args.val);
+
+  KEXPECT_EQ(11, *args.val);
+  KEXPECT_EQ(NULL, kthread_join(child));
+  kfree(val);
+}
+
 static void basic_tests(void) {
   tsan_basic_sanity_test();
 #if 0
@@ -246,6 +302,7 @@ static void basic_tests(void) {
   size1_safe_test();
   size2_safe_test();
   size4_safe_test();
+  tsan_wait_queue_test();
 }
 
 void tsan_test(void) {

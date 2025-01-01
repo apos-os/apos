@@ -28,6 +28,7 @@
 #include "memory/memory.h"
 #include "proc/scheduler.h"
 #include "proc/spinlock.h"
+#include "sanitizers/tsan/tsan_lock.h"
 
 _Static_assert(!(ENABLE_PROFILING && ENABLE_PROFILE_IDLE),
                "Cannot enable PROFILING and PROFILE_IDLE at the same time");
@@ -36,6 +37,20 @@ static kthread_t g_idle_thread = 0;
 static kthread_queue_t g_run_queue;
 static bool g_idling = false;
 static uint64_t g_idling_start = 0;
+
+#if ENABLE_TSAN
+// An implicit TSAN lock for code that uses scheduler_wait_on() variants without
+// a lock (i.e. non-preemptible code).  This is required so that
+// synchronizations are propagated properly across those calls.  It would be
+// better to use a per-wait-queue vector clock (to get finer-grained analysis),
+// but that blows up the size of all the wait queues significantly, and we want
+// to get rid of all non-lock-based synchronization anyway.  Note that
+// per-wait-queue vector clocks would flag potential future logic issues, but
+// not current correctness ones (as scheduler_wait_on() is a full
+// synchronization point.
+// TODO(tsan): remove this when all wait queue users use explicit locks.
+static tsan_lock_data_t g_implicit_scheduler_tsan_lock;
+#endif
 
 static void* idle_thread_body(void* arg) {
   sched_disable_preemption();
@@ -51,6 +66,9 @@ static void* idle_thread_body(void* arg) {
 void scheduler_init(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_queue_init(&g_run_queue);
+#if ENABLE_TSAN
+  tsan_lock_init(&g_implicit_scheduler_tsan_lock);
+#endif
 
   // Make the idle thread.
   int ret = kthread_create(&g_idle_thread, &idle_thread_body, 0);
@@ -168,10 +186,23 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
   if (mu) {
     kmutex_unlock_no_yield(mu);
   }
+  if (!sp && !mu) {
+    // All preemptible code should be using the locked variants of this.
+    // TODO(preemption): enable this assertion (block cache breaks it)
+    // KASSERT(current->preemption_disables > 0);
+#if ENABLE_TSAN
+    tsan_release(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
+#endif
+  }
   scheduler_yield_no_reschedule();
   int result = current->wait_status;
   if (timeout_ms > 0 && !current->wait_timeout_ran)
     cancel_event_timer(timeout_handle);
+#if ENABLE_TSAN
+  if (!sp && !mu) {
+    tsan_acquire(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
+  }
+#endif
   if (mu) {
     kmutex_lock(mu);
   }
@@ -209,6 +240,9 @@ void scheduler_wait_on_locked_no_signals(kthread_queue_t* queue, kmutex_t* mu) {
 
 void scheduler_wake_one(kthread_queue_t* queue) {
   PUSH_AND_DISABLE_INTERRUPTS();
+#if ENABLE_TSAN
+  tsan_release(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
+#endif
   if (!kthread_queue_empty(queue)) {
     scheduler_make_runnable(kthread_queue_pop(queue));
   }
@@ -217,6 +251,9 @@ void scheduler_wake_one(kthread_queue_t* queue) {
 
 void scheduler_wake_all(kthread_queue_t* queue) {
   PUSH_AND_DISABLE_INTERRUPTS();
+#if ENABLE_TSAN
+  tsan_release(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
+#endif
   while (!kthread_queue_empty(queue)) {
     scheduler_make_runnable(kthread_queue_pop(queue));
   }
@@ -252,3 +289,9 @@ void sched_tick(void) {
     scheduler_yield();
   }
 }
+
+#if ENABLE_TSAN
+void scheduler_tsan_acquire(void) {
+  tsan_acquire(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
+}
+#endif

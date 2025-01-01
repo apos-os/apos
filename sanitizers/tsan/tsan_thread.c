@@ -19,6 +19,7 @@
 #include "proc/kthread.h"
 #include "sanitizers/tsan/internal.h"
 #include "sanitizers/tsan/internal_types.h"
+#include "sanitizers/tsan/tsan_lock.h"
 #include "sanitizers/tsan/vector_clock.h"
 
 // A single thread slot.
@@ -83,15 +84,20 @@ void tsan_thread_join(kthread_t joined) {
 
 void tsan_lock_init(tsan_lock_data_t* lock) {
   tsan_vc_init(&lock->clock);
+  kthread_t thread = kthread_current_thread();
+  if (thread) {
+    // TODO(tsan): write a test for this.
+    tsan_vc_acquire(&lock->clock, &thread->tsan.clock);
+  }
 }
 
-void tsan_locked(tsan_lock_data_t* lock, tsan_lock_type_t type) {
+void tsan_acquire(tsan_lock_data_t* lock, tsan_lock_type_t type) {
   KASSERT(type == TSAN_LOCK);
   kthread_t thread = kthread_current_thread();
   tsan_vc_acquire(&thread->tsan.clock, &lock->clock);
 }
 
-void tsan_unlocked(tsan_lock_data_t* lock, tsan_lock_type_t type) {
+void tsan_release(tsan_lock_data_t* lock, tsan_lock_type_t type) {
   KASSERT(type == TSAN_LOCK);
   kthread_t thread = kthread_current_thread();
   // Publish all our values (and transitive ones) to the lock.
