@@ -52,8 +52,9 @@ static ALWAYS_INLINE tsan_shadow_t make_shadow(kthread_t thread, addr_t addr,
 }
 
 static ALWAYS_INLINE tsan_shadow_t* get_shadow_cells(addr_t addr) {
-  addr_t offset = addr - TSAN_HEAP_START_ADDR;
-  addr_t shadow = TSAN_SHADOW_START_ADDR + offset;
+  addr_t offset = (addr & ~0x7) - TSAN_HEAP_START_ADDR;
+  addr_t shadow = TSAN_SHADOW_START_ADDR +
+                  (offset * sizeof(tsan_shadow_t) * TSAN_SHADOW_CELLS);
   return (tsan_shadow_t*)shadow;
 }
 

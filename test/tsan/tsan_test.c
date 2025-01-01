@@ -11,17 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "proc/kthread.h"
-#include "proc/process.h"
 #include "test/kernel_tests.h"
 
 #include "memory/kmalloc.h"
+#include "proc/kthread.h"
+#include "proc/process.h"
+#include "proc/sleep.h"
 #include "test/ktest.h"
 #include "test/tsan/instrumented.h"
 
 typedef struct {
   kmutex_t mu;
-  int* val;
+  uint64_t* val;
 } mutex_test_args_t;
 
 static void tsan_basic_sanity_test(void) {
@@ -58,11 +59,16 @@ static void tsan_basic_sanity_test2(void) {
 
 static void* rw_value_thread_kmutex(void* arg) {
   mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  // Non-racing accesses.  Should be OK.
+  tsan_rw_u64(&args->val[1]);
+  tsan_rw_u64(&args->val[3]);
+
   kmutex_lock(&args->mu);
-  tsan_rw_value(args->val);
+  tsan_rw_u64(args->val);
   kmutex_unlock(&args->mu);
   kmutex_lock(&args->mu);
-  tsan_rw_value(args->val);
+  tsan_rw_u64(args->val);
   kmutex_unlock(&args->mu);
   return NULL;
 }
@@ -71,23 +77,59 @@ static void tsan_basic_sanity_test3(void) {
   KTEST_BEGIN("TSAN: basic R/W heap value (two threads, locked)");
   mutex_test_args_t args;
   kmutex_init(&args.mu);
-  args.val = KMALLOC(int);
-  *args.val = 0;
+  args.val = kmalloc(sizeof(uint64_t) * 4);
+  for (int i = 0; i < 4; ++i) {
+    args.val[i] = 0;
+    tsan_rw_u64(args.val + i);
+  }
   kthread_t thread;
   KEXPECT_EQ(0, proc_thread_create(&thread, &rw_value_thread_kmutex, &args));
+  // Non-racing access.
+  tsan_rw_u64(&args.val[2]);
 
   kmutex_lock(&args.mu);
-  tsan_rw_value(args.val);
+  tsan_rw_u64(args.val);
   kmutex_unlock(&args.mu);
   kmutex_lock(&args.mu);
-  tsan_rw_value(args.val);
+  tsan_rw_u64(args.val);
   kmutex_unlock(&args.mu);
 
   KEXPECT_EQ(NULL, kthread_join(thread));
   // A join should act as a synchronization point between the threads.
-  tsan_rw_value(args.val);
+  tsan_rw_u64(args.val);
 
-  KEXPECT_EQ(5, *args.val);
+  KEXPECT_EQ(6, args.val[0]);
+  KEXPECT_EQ(2, args.val[1]);
+  KEXPECT_EQ(2, args.val[2]);
+  KEXPECT_EQ(2, args.val[3]);
+  kfree(args.val);
+}
+
+// As above, but sleep after thread creation to test passing values without
+// locking to a new thread (which should be allowed).
+static void tsan_basic_sanity_test4(void) {
+  KTEST_BEGIN("TSAN: basic R/W heap value (two threads, locked, sleep)");
+  mutex_test_args_t args;
+  kmutex_init(&args.mu);
+  args.val = kmalloc(sizeof(uint64_t) * 4);
+  for (int i = 0; i < 4; ++i) {
+    args.val[i] = 0;
+    tsan_rw_u64(args.val + i);
+  }
+  kthread_t thread;
+  KEXPECT_EQ(0, proc_thread_create(&thread, &rw_value_thread_kmutex, &args));
+  ksleep(10);
+
+  kmutex_lock(&args.mu);
+  tsan_rw_u64(args.val);
+  kmutex_unlock(&args.mu);
+
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  // A join should act as a synchronization point between the threads.
+  tsan_rw_u64(args.val);
+
+  KEXPECT_EQ(5, args.val[0]);
+  KEXPECT_EQ(2, args.val[1]);
   kfree(args.val);
 }
 
@@ -98,6 +140,7 @@ static void basic_tests(void) {
   tsan_basic_sanity_test2();
 #endif
   tsan_basic_sanity_test3();
+  tsan_basic_sanity_test4();
 }
 
 void tsan_test(void) {

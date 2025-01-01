@@ -47,6 +47,13 @@ void tsan_thread_create(kthread_t thread) {
 
   g_tsan_slots[sid].thread = thread;
   tsan_vc_init(&thread->tsan.clock);
+  kthread_t me = kthread_current_thread();
+  if (me) {
+    tsan_vc_acquire(&thread->tsan.clock, &me->tsan.clock);
+    // TODO(tsan): this should be redundant with other atomic operations done in
+    // the parent --- remove when that's the case.
+    tsan_thread_epoch_inc(me);
+  }
   thread->tsan.sid = sid;
   thread->tsan.tid = thread->id;
   thread->tsan.clock.ts[sid] = g_tsan_slots[sid].epoch;
