@@ -80,18 +80,20 @@ static char* print_shadow(char* buf, tsan_shadow_t s) {
     return buf;
   }
   ksnprintf(buf, SHADOW_PRETTY_LEN, "{tid=%u@%u offset=%d size=%d is_write=%d}",
-            (uint32_t)(s.sid), s.epoch, s.offset, s.size, s.is_write);
+            (uint32_t)(s.sid), s.epoch, s.offset, 1 << s.size, s.is_write);
   return buf;
 }
 
 static void tsan_report_race(kthread_t thread, addr_t addr, tsan_shadow_t old,
                              tsan_shadow_t new) {
+  char pretty_shadow[2][SHADOW_PRETTY_LEN];
   uint64_t old_u64 = *(uint64_t*)&old;
   uint64_t new_u64 = *(uint64_t*)&new;
   klogfm(KL_GENERAL, FATAL,
          "TSAN: detected data race on address %" PRIxADDR
-         ": old = %lx new = %lx\n",
-         addr, old_u64, new_u64);
+         ": old = %s [0x%lx], new = %s [0x%lx]\n",
+         addr, print_shadow(pretty_shadow[0], old), old_u64,
+         print_shadow(pretty_shadow[1], new), new_u64);
 }
 
 bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_t type) {
