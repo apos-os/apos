@@ -327,6 +327,16 @@ void kthread_switch(kthread_t new_thread) {
   POP_INTERRUPTS();
 }
 
+ktctx_type_t kthread_execution_context(void) {
+  if (is_running_defint() && g_current_thread->interrupt_level <= 1) {
+    return KTCTX_DEFINT;
+  } else if (g_current_thread->interrupt_level > 0) {
+    return KTCTX_INTERRUPT;
+  } else {
+    return KTCTX_THREAD;
+  }
+}
+
 void kthread_queue_init(kthread_queue_t* lst) {
   lst->head = lst->tail = 0x0;
 }

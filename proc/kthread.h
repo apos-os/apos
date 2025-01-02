@@ -86,6 +86,18 @@ void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg);
 void kthread_disable(kthread_t thread);
 void kthread_enable(kthread_t thread);
 
+typedef enum {
+  // Running in a thread context (user or kernel).
+  KTCTX_THREAD = 1,
+  // Running in a defint context (could be inside an interrupt).
+  KTCTX_DEFINT = 2,
+  // Running in an interrupt context.
+  KTCTX_INTERRUPT = 3,
+} ktctx_type_t;
+
+// Returns the current execution context we're running in.
+ktctx_type_t kthread_execution_context(void);
+
 /******************************* Thread Queues ********************************/
 
 // Thread queues are simple linked lists of threads, which can be pushed on the
