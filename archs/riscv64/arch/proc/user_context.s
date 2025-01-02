@@ -21,6 +21,11 @@
 user_context_apply:
   # TODO(aoates): figure out how to share this with interrupts_asm.s code.
 
+  # Reset the interrupts level.
+  mv s0, a0
+  call kthread_reset_interrupt_level
+  mv a0, s0
+
   # Return to user-mode.
   li t1, SSTATUS_SPP
   csrc sstatus, t1

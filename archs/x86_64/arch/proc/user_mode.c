@@ -16,10 +16,13 @@
 #include "arch/proc/user_mode.h"
 #include "common/kassert.h"
 #include "common/types.h"
+#include "proc/kthread-internal.h"
 
 void user_mode_enter(addr_t stack, addr_t entry) {
   _Static_assert(sizeof(addr_t) == sizeof(uint64_t),
                  "Invalid addr_t size for x86-64 code");
+
+  kthread_reset_interrupt_level();
 
   const uint64_t new_data_seg =
       segment_selector(GDT_USER_DATA_SEGMENT_32, RPL_USER);

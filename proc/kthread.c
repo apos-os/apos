@@ -69,6 +69,7 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->spinlocks_held = 0;
   t->all_threads_link = LIST_LINK_INIT;
   t->proc_threads_link = LIST_LINK_INIT;
+  t->interrupt_level = 0;
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   t->mutexes_held = LIST_INIT;
 #endif
@@ -269,6 +270,12 @@ void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg) {
     f(thread, arg);
   }
   POP_INTERRUPTS();
+}
+
+void kthread_reset_interrupt_level(void) {
+  KASSERT(g_current_thread->interrupt_level == 0 ||
+          g_current_thread->interrupt_level == 1);
+  g_current_thread->interrupt_level = 0;
 }
 
 void kthread_disable(kthread_t thread) {

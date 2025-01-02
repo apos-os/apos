@@ -25,6 +25,7 @@
 #include "internal/plic.h"
 #include "memory/vm_page_fault.h"
 #include "proc/defint.h"
+#include "proc/kthread-internal.h"
 #include "proc/signal/signal.h"
 #include "proc/user_prepare.h"
 #include "syscall/syscall_dispatch.h"
@@ -109,6 +110,12 @@ static user_context_t copy_ctx(void* ctx_ptr) {
 
 void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
                  uint64_t is_kernel) {
+  kthread_t thread = kthread_current_thread();
+  if (thread) {
+    thread->interrupt_level++;
+    KASSERT_DBG(thread->interrupt_level == 1 || thread->interrupt_level == 2);
+  }
+
   klogfm(KL_GENERAL, DEBUG3,
          "interrupt: scause: 0x%lx  stval: 0x%lx  sepc: 0x%lx  is_kernel: %d\n",
          scause, stval, ctx->address, (int)is_kernel);
@@ -159,12 +166,15 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
         break;
 
       case RSV_TRAP_ENVCALL_USR:
+        KASSERT_DBG(thread->interrupt_level == 1);
+        thread->interrupt_level = 0;
         enable_interrupts();
         ctx->a0 = syscall_dispatch(ctx->a0, ctx->a1, ctx->a2, ctx->a3, ctx->a4,
                                    ctx->a5, ctx->a6);
         ctx->address += RSV_ECALL_INSTR_LEN;
         syscall_ctx = &kthread_current_thread()->syscall_ctx;
         disable_interrupts();
+        thread->interrupt_level = 1;
         break;
 
       case RSV_TRAP_BREAKPOINT:
@@ -177,6 +187,10 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
   }
 
   defint_process_queued(/* force */ true);
+
+  if (thread) {
+    thread->interrupt_level--;
+  }
 
   if (!is_kernel) {
     proc_prep_user_return(&copy_ctx, ctx, syscall_ctx);

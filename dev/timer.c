@@ -68,6 +68,11 @@ typedef struct {
 static list_t event_timers = LIST_INIT_STATIC;
 
 static void internal_timer_handler(void* arg) {
+  kthread_t thread = kthread_current_thread();
+  if (thread) {
+    KASSERT_DBG(thread->interrupt_level == 1 || thread->interrupt_level == 2);
+  }
+
   time_ms += KTIMESLICE_MS;
   int idx = list_head;
   while (idx >= 0) {

@@ -229,6 +229,12 @@ void interrupts_init(void) {
 }
 
 void int_handler(uint32_t interrupt, uint32_t error, addr_t ebp) {
+  kthread_t thread = kthread_current_thread();
+  if (thread) {
+    thread->interrupt_level++;
+    KASSERT_DBG(thread->interrupt_level == 1 || thread->interrupt_level == 2);
+  }
+
   const int is_user = is_user_interrupt(ebp);
 
   if (g_handlers[interrupt]) {
@@ -252,6 +258,11 @@ void int_handler(uint32_t interrupt, uint32_t error, addr_t ebp) {
 
   if (is_user) {
     proc_prep_user_return(&extract_interrupt_context, &ebp, NULL);
+  }
+
+  if (thread) {
+    thread->interrupt_level--;
+    KASSERT_DBG(thread->interrupt_level == 0 || thread->interrupt_level == 1);
   }
 
   // Note: we may never get here, if there were signals to dispatch.

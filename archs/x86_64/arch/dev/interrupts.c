@@ -250,6 +250,11 @@ void interrupts_init(void) {
 }
 
 void int_handler(uint32_t interrupt, uint32_t error, addr_t rbp) {
+  kthread_t thread = kthread_current_thread();
+  if (thread) {
+    thread->interrupt_level++;
+    KASSERT_DBG(thread->interrupt_level == 1 || thread->interrupt_level == 2);
+  }
   const int is_user = is_user_interrupt(rbp);
 
   if (g_handlers[interrupt]) {
@@ -283,6 +288,11 @@ void int_handler(uint32_t interrupt, uint32_t error, addr_t rbp) {
   }
 
   // Note: we may never get here, if there were signals to dispatch.
+
+  if (thread) {
+    thread->interrupt_level--;
+    KASSERT_DBG(thread->interrupt_level == 0 || thread->interrupt_level == 1);
+  }
 }
 
 void enable_interrupts(void) {
