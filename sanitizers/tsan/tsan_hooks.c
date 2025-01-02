@@ -22,7 +22,6 @@ typedef unsigned long uptr;
 
 void __tsan_init(void) {}
 
-// TODO(tsan): pass the current PC in all of these.
 void __tsan_read1(void* addr) {
   tsan_check(CALLERPC, (addr_t)addr, 1, TSAN_ACCESS_READ);
 }
@@ -53,7 +52,9 @@ void __tsan_unaligned_read4(void* addr) {
   tsan_check_unaligned(0, (addr_t)addr, 4, TSAN_ACCESS_READ);
 }
 
-void __tsan_unaligned_read8(void* addr) { die("unimplemented"); }
+void __tsan_unaligned_read8(void* addr) {
+  tsan_check_unaligned(0, (addr_t)addr, 8, TSAN_ACCESS_READ);
+}
 
 void __tsan_write1(void* addr) {
   tsan_check(CALLERPC, (addr_t)addr, 1, TSAN_ACCESS_WRITE);
@@ -85,8 +86,9 @@ void __tsan_unaligned_write4(void* addr) {
   tsan_check_unaligned(0, (addr_t)addr, 4, TSAN_ACCESS_WRITE);
 }
 
-// TODO(tsan): handle unaligned ops.
-void __tsan_unaligned_write8(void* addr) { die("unimplemented"); }
+void __tsan_unaligned_write8(void* addr) {
+  tsan_check_unaligned(0, (addr_t)addr, 8, TSAN_ACCESS_WRITE);
+}
 
 void* __tsan_memcpy(void* dest, const void* src, uptr count) {
   // TODO(tsan): handle whole blocks.

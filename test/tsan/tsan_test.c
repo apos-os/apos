@@ -471,6 +471,14 @@ static void* access_u32(void* arg) {
   return NULL;
 }
 
+static void* access_u64(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  tsan_unaligned_write64((uint64_t*)arg, 0xabababababababab);
+  sched_disable_preemption();
+  return NULL;
+}
+
 static void unaligned_overlap_2byte_test(void) {
   KTEST_BEGIN("TSAN: unaligned 2-byte access that straddles two shadow cells");
   uint64_t* vals = kmalloc(sizeof(uint64_t) * 2);
@@ -607,6 +615,74 @@ static void unaligned_overlap_4byte_conflict_test(void) {
   kfree(vals);
 }
 
+static void unaligned_overlap_8byte_test(void) {
+  KTEST_BEGIN("TSAN: unaligned 8-byte access that straddles two shadow cells");
+  uint64_t* vals = kmalloc(sizeof(uint64_t) * 2);
+  uint8_t* vals8 = (uint8_t*)vals;
+
+  for (int i = 0; i < 7; ++i) {
+    tsan_write64(vals, 0);
+    tsan_write64(vals + 1, 0);
+
+    // Access the two bytes on either side of the straddled uint64_t.
+    kthread_t threads[3];
+    KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_u8, &vals8[i]));
+    KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u8, &vals8[9 + i]));
+
+    // ...and then access the straddled uint64_t.
+    KEXPECT_EQ(0, proc_thread_create(&threads[2], &access_u64, &vals8[1 + i]));
+
+    KEXPECT_EQ(NULL, kthread_join(threads[0]));
+    KEXPECT_EQ(NULL, kthread_join(threads[1]));
+    KEXPECT_EQ(NULL, kthread_join(threads[2]));
+
+    KEXPECT_EQ(0x01, vals8[i]);
+    KEXPECT_EQ(0xab, vals8[1 + i]);
+    KEXPECT_EQ(0xab, vals8[2 + i]);
+    KEXPECT_EQ(0xab, vals8[3 + i]);
+    KEXPECT_EQ(0xab, vals8[4 + i]);
+    KEXPECT_EQ(0xab, vals8[5 + i]);
+    KEXPECT_EQ(0xab, vals8[6 + i]);
+    KEXPECT_EQ(0xab, vals8[7 + i]);
+    KEXPECT_EQ(0xab, vals8[8 + i]);
+    KEXPECT_EQ(0x01, vals8[9 + i]);
+  }
+  kfree(vals);
+}
+
+static void unaligned_overlap_8byte_conflict_test(void) {
+  KTEST_BEGIN(
+      "TSAN: unaligned 8-byte access that straddles two shadow cells "
+      "(conflict)");
+  uint64_t* vals = kmalloc(sizeof(uint64_t) * 2);
+  uint8_t* vals8 = (uint8_t*)vals;
+
+  for (int i = 0; i < 8; ++i) {
+    tsan_write64(vals, 0);
+    tsan_write64(vals + 1, 0);
+
+    kthread_t threads[2];
+    intercept_reports();
+    KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_u8, &vals8[1 + i]));
+
+    // ...and then access the straddled uint32_t.
+    KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u64, &vals8[1]));
+
+    KEXPECT_EQ(NULL, kthread_join(threads[0]));
+    KEXPECT_EQ(NULL, kthread_join(threads[1]));
+
+    // We should have gotten a conflict.  Note: both will register as one-byte
+    // accesses because we split the access.
+    if (i < 7) {
+      EXPECT_REPORT(&vals8[1 + i], 1, "w", &vals8[1], 7, "w");
+    } else {
+      EXPECT_REPORT(&vals8[1 + i], 1, "w", &vals8[8], 1, "w");
+    }
+    intercept_reports_done();
+  }
+  kfree(vals);
+}
+
 static void basic_tests(void) {
   tsan_basic_sanity_test();
   tsan_basic_sanity_test2();
@@ -623,6 +699,9 @@ static void basic_tests(void) {
 
   unaligned_overlap_4byte_test();
   unaligned_overlap_4byte_conflict_test();
+
+  unaligned_overlap_8byte_test();
+  unaligned_overlap_8byte_conflict_test();
 }
 
 // TODO(tsan): test that sleep() doesn't synchronize between two threads.

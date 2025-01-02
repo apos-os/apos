@@ -40,4 +40,7 @@ void tsan_unaligned_write16(void* x, uint16_t val);
 uint32_t tsan_unaligned_read32(void* x);
 void tsan_unaligned_write32(void* x, uint32_t val);
 
+uint64_t tsan_unaligned_read64(void* x);
+void tsan_unaligned_write64(void* x, uint64_t val);
+
 #endif

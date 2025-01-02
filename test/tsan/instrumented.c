@@ -85,3 +85,11 @@ uint32_t tsan_unaligned_read32(void* x) {
 void tsan_unaligned_write32(void* x, uint32_t val) {
   ((unaligned_data_t*)x)->u32 = val;
 }
+
+uint64_t tsan_unaligned_read64(void* x) {
+  return ((unaligned_data_t*)x)->u64;
+}
+
+void tsan_unaligned_write64(void* x, uint64_t val) {
+  ((unaligned_data_t*)x)->u64 = val;
+}
