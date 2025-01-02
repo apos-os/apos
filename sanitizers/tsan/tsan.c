@@ -19,6 +19,7 @@
 #include "memory/page_alloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
+#include "sanitizers/tsan/internal.h"
 #include "sanitizers/tsan/tsan_defs.h"
 #include "sanitizers/tsan/tsan_layout.h"
 #include "sanitizers/tsan/tsan_params.h"
@@ -68,5 +69,8 @@ void tsan_init(void) {
 
   KASSERT(meminfo->heap.base == TSAN_HEAP_START_ADDR);
   KASSERT(meminfo->tsan_heap.base == TSAN_SHADOW_START_ADDR);
+
+  tsan_per_cpu_init();
+
   g_tsan_init = true;
 }

@@ -14,12 +14,14 @@
 #include "common/endian.h"
 #include "common/kassert.h"
 #include "dev/interrupts.h"
+#include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/sleep.h"
+#include "proc/spinlock.h"
 #include "proc/wait.h"
 #include "sanitizers/tsan/tsan.h"
 #include "sanitizers/tsan/tsan_access.h"
@@ -704,9 +706,124 @@ static void basic_tests(void) {
   unaligned_overlap_8byte_conflict_test();
 }
 
-// TODO(tsan): test that sleep() doesn't synchronize between two threads.
+static void interrupt_fn(void* arg) {
+  int* x = (int*)arg;
+  tsan_rw_value(x);
+}
+
+static void busy_loop(void) { for (volatile int i = 0; i < 10000000; ++i); }
+
+static void interrupt_test1(void) {
+  KTEST_BEGIN("TSAN: interrupt-safety");
+  int* x = KMALLOC(int);
+  *x = 0;
+  tsan_rw_value(x);
+
+  {
+    PUSH_AND_DISABLE_INTERRUPTS();
+    register_event_timer(get_time_ms() + 10, &interrupt_fn, x, NULL);
+    busy_loop();
+    POP_INTERRUPTS();
+    ksleep(10);
+    tsan_rw_value(x);
+    KEXPECT_EQ(3, *x);
+  }
+  kfree(x);
+}
+
+static void interrupt_test1b(void) {
+  KTEST_BEGIN("TSAN: interrupt-safety (with kspinlock_int)");
+  int* x = KMALLOC(int);
+  *x = 0;
+  tsan_rw_value(x);
+
+  kspinlock_intsafe_t mu = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  {
+    kspin_lock_int(&mu);
+    register_event_timer(get_time_ms() + 10, &interrupt_fn, x, NULL);
+    busy_loop();
+    kspin_unlock_int(&mu);
+    ksleep(10);
+    tsan_rw_value(x);
+    KEXPECT_EQ(3, *x);
+  }
+  kfree(x);
+}
+
+static void interrupt_test2(void) {
+  KTEST_BEGIN("TSAN: interrupt-safety (conflict)");
+  int* x = KMALLOC(int);
+  *x = 0;
+
+  intercept_reports();
+  tsan_rw_value(x);
+
+  register_event_timer(get_time_ms() + 10, &interrupt_fn, x, NULL);
+  busy_loop();
+  tsan_rw_value(x);
+  EXPECT_REPORT(x, 4, "r", x, 4, "w");
+  intercept_reports_done();
+  KEXPECT_EQ(3, *x);
+
+  kfree(x);
+}
+
+// Slight variant on the above where we write to the value _after_ we schedule
+// the interrupt.
+static void interrupt_test3(void) {
+  KTEST_BEGIN("TSAN: interrupt-safety (conflict #2)");
+  int* x = KMALLOC(int);
+  *x = 0;
+
+  intercept_reports();
+
+  register_event_timer(get_time_ms() + 10, &interrupt_fn, x, NULL);
+  tsan_rw_value(x);
+  // The interrupt probably runs here and races with the above line.  There is a
+  // small chance it runs first, though (in which case this collapses down to
+  // the same as interrupt_test2() above).
+  busy_loop();
+  EXPECT_REPORT(x, 4, "?", x, 4, "w");
+  intercept_reports_done();
+  KEXPECT_EQ(2, *x);
+
+  kfree(x);
+}
+
+// Combo test where thread 1 races with thread 2 by sleeping in an
+// interrupt-disabled critical section (which, FWIW, is incorrect).
+static void interrupt_test4(void) {
+  KTEST_BEGIN("TSAN: interrupt-safety (conflict #2)");
+  int* x = KMALLOC(int);
+  *x = 0;
+
+  intercept_reports();
+
+  register_event_timer(get_time_ms() + 10, &interrupt_fn, x, NULL);
+  tsan_rw_value(x);
+  // The interrupt probably runs here and races with the above line.  There is a
+  // small chance it runs first, though (in which case this collapses down to
+  // the same as interrupt_test2() above).
+  busy_loop();
+  EXPECT_REPORT(x, 4, "?", x, 4, "w");
+  intercept_reports_done();
+  KEXPECT_EQ(2, *x);
+
+  kfree(x);
+}
+
+// TODO(tsan): test interrupt races with defint that is itself running in an
+// interrupt (and running normally).
+
+static void interrupt_tests(void) {
+  interrupt_test1();
+  interrupt_test1b();
+  interrupt_test2();
+  interrupt_test3();
+}
 
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   basic_tests();
+  interrupt_tests();
 }

@@ -16,4 +16,22 @@
 
 #include "archs/common/arch/dev/interrupts.h"
 
+#include "common/config.h"
+
+// The direct assembly implementations of these functions.  In non-TSAN mode,
+// they should be run directly.
+void enable_interrupts_raw(void);
+void disable_interrupts_raw(void);
+interrupt_state_t save_and_disable_interrupts_raw(void);
+void restore_interrupts_raw(interrupt_state_t saved);
+
+#if !ENABLE_TSAN
+
+#define enable_interrupts enable_interrupts_raw
+#define disable_interrupts disable_interrupts_raw
+#define save_and_disable_interrupts save_and_disable_interrupts_raw
+#define restore_interrupts restore_interrupts_raw
+
+#endif  // !ENABLE_TSAN
+
 #endif

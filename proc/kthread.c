@@ -330,7 +330,7 @@ void kthread_switch(kthread_t new_thread) {
 ktctx_type_t kthread_execution_context(void) {
   if (is_running_defint() && g_current_thread->interrupt_level <= 1) {
     return KTCTX_DEFINT;
-  } else if (g_current_thread->interrupt_level > 0) {
+  } else if (g_current_thread && g_current_thread->interrupt_level > 0) {
     return KTCTX_INTERRUPT;
   } else {
     return KTCTX_THREAD;

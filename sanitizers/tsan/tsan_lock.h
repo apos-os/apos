@@ -25,6 +25,9 @@ typedef struct {
 // Types of mutex locks.
 typedef enum {
   TSAN_LOCK = 1,
+
+  // Special lock type indicating the per-CPU interrupt lock.
+  TSAN_INTERRUPTS = 2,
   // TODO(tsan): implement interrupt and defint special handling.
 } tsan_lock_type_t;
 

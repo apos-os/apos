@@ -32,4 +32,11 @@ static ALWAYS_INLINE void tsan_thread_epoch_inc(kthread_t thread) {
   tsan_epoch_inc(&thread->tsan.clock.ts[thread->tsan.sid]);
 }
 
+void tsan_per_cpu_init(void);
+
+// Returns the current "TSAN thread."  This will be the actual current thread if
+// we're executing in a thread context, or a TSAN-specific virtual thread
+// otherwise.
+kthread_t tsan_current_thread(void);
+
 #endif

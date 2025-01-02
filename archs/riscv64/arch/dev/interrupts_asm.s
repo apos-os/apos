@@ -20,14 +20,14 @@
 .set SSTATUS_SAVE_MASK, SSTATUS_SPIE | SSTATUS_SPP
 
 # void enable_interrupts(void)
-.global enable_interrupts
-enable_interrupts:
+.global enable_interrupts_raw
+enable_interrupts_raw:
   csrsi sstatus, SSTATUS_SIE
   ret
 
 # void disable_interrupts(void)
-.global disable_interrupts
-disable_interrupts:
+.global disable_interrupts_raw
+disable_interrupts_raw:
   csrci sstatus, SSTATUS_SIE
   ret
 
@@ -39,16 +39,16 @@ get_interrupts_state:
   ret
 
 # interrupt_state_t save_and_disable_interrupts(void)
-.global save_and_disable_interrupts
-save_and_disable_interrupts:
+.global save_and_disable_interrupts_raw
+save_and_disable_interrupts_raw:
   # Read sstatus and clear SIE
   csrrci a0, sstatus, SSTATUS_SIE
   andi a0, a0, SSTATUS_SIE
   ret
 
 # void restore_interrupts(interrupt_state_t saved)
-.global restore_interrupts
-restore_interrupts:
+.global restore_interrupts_raw
+restore_interrupts_raw:
   beqz a0, .done
   csrsi sstatus, SSTATUS_SIE
 .done:

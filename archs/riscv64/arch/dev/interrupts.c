@@ -28,6 +28,7 @@
 #include "proc/kthread-internal.h"
 #include "proc/signal/signal.h"
 #include "proc/user_prepare.h"
+#include "sanitizers/tsan/tsan_lock.h"
 #include "syscall/syscall_dispatch.h"
 
 // Interrupt and trap definitions (per values in scause).
@@ -114,6 +115,11 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
   if (thread) {
     thread->interrupt_level++;
     KASSERT_DBG(thread->interrupt_level == 1 || thread->interrupt_level == 2);
+#if ENABLE_TSAN
+    // "Release" the interrupt lock --- everything past this should be
+    // considered a new epoch for the interrupt thread.
+    tsan_release(NULL, TSAN_INTERRUPTS);
+#endif
   }
 
   klogfm(KL_GENERAL, DEBUG3,
@@ -198,3 +204,32 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
 
   // Note: we may never get here, if there were signals to dispatch.
 }
+
+#if ENABLE_TSAN
+void enable_interrupts(void) {
+  tsan_release(NULL, TSAN_INTERRUPTS);
+  enable_interrupts_raw();
+}
+
+void disable_interrupts(void) {
+  disable_interrupts_raw();
+  tsan_acquire(NULL, TSAN_INTERRUPTS);
+}
+
+interrupt_state_t save_and_disable_interrupts(void) {
+  interrupt_state_t ret = save_and_disable_interrupts_raw();
+  tsan_acquire(NULL, TSAN_INTERRUPTS);
+  return ret;
+}
+
+void restore_interrupts(interrupt_state_t saved) {
+  // Be conservative --- only publish values to interrupts if we're actually
+  // enabling interrupts here.  This is not required for correctness, but
+  // correct could should not be sensitive to this.
+  if (saved) {
+    tsan_release(NULL, TSAN_INTERRUPTS);
+  }
+  restore_interrupts_raw(saved);
+}
+
+#endif  // ENABLE_TSAN

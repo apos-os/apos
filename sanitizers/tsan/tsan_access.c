@@ -142,10 +142,10 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
   report.race.prev.size = shadow_size(old);
   report.race.prev.type = shadow2type(old);
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   tsan_report_fn_t fn = g_tsan_report_fn ? g_tsan_report_fn :
       default_report_func;
-  POP_INTERRUPTS();
+  POP_INTERRUPTS_NO_TSAN();
 
   fn(&report);
 }
@@ -162,8 +162,8 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
   // The access should fit within a single shadow cell.
   KASSERT((addr & ~0x7) == ((addr + size - 1) & ~0x7));
 
-  PUSH_AND_DISABLE_INTERRUPTS();
-  kthread_t thread = kthread_current_thread();
+  PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
+  kthread_t thread = tsan_current_thread();
   tsan_shadow_t shadow = make_shadow(thread, addr, size, type);
 
   tsan_shadow_t* shadow_mem = get_shadow_cells(addr);
@@ -181,7 +181,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
   // First check if the exact same access is already stored.
   for (int i = 0; i < TSAN_SHADOW_CELLS; ++i) {
     if (shadow2raw(shadow_mem[i]) == shadow2raw(shadow)) {
-      POP_INTERRUPTS();
+      POP_INTERRUPTS_NO_TSAN();
       return false;
     }
   }
@@ -194,7 +194,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
       if (!stored) {
         store_shadow(&shadow_mem[i], shadow);
       }
-      POP_INTERRUPTS();
+      POP_INTERRUPTS_NO_TSAN();
       return false;
     }
     // Check if the two accesses overlap.
@@ -225,7 +225,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
     tsan_report_race(thread, pc, addr, old, shadow);
   }
   if (stored) {
-    POP_INTERRUPTS();
+    POP_INTERRUPTS_NO_TSAN();
     return false;
   }
 
@@ -235,7 +235,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
                       thread->tsan.clock.ts[thread->tsan.sid]};
   int idx = fnv_hash_array(&hash, sizeof(hash)) % TSAN_SHADOW_CELLS;
   store_shadow(&shadow_mem[idx], shadow);
-  POP_INTERRUPTS();
+  POP_INTERRUPTS_NO_TSAN();
   return false;
 }
 
@@ -256,7 +256,7 @@ bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
 }
 
 void tsan_set_report_func(tsan_report_fn_t fn) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+  PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   g_tsan_report_fn = fn;
-  POP_INTERRUPTS();
+  POP_INTERRUPTS_NO_TSAN();
 }

@@ -42,6 +42,11 @@ static inline void _interrupts_cleanup_verify(interrupt_state_t* saved) {
       __attribute__((cleanup(_interrupts_cleanup_verify))) = \
       save_and_disable_interrupts()
 
+#define PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN() \
+    interrupt_state_t _SAVED_INTERRUPTS_NO_TSAN \
+      __attribute__((cleanup(_interrupts_cleanup_verify))) = \
+      save_and_disable_interrupts_raw()
+
 #else  // ENABLE_KERNEL_SAFETY_NETS
 
 #define PUSH_AND_DISABLE_INTERRUPTS() \
@@ -51,6 +56,9 @@ static inline void _interrupts_cleanup_verify(interrupt_state_t* saved) {
 
 #define POP_INTERRUPTS() \
     restore_interrupts(_SAVED_INTERRUPTS);
+
+#define POP_INTERRUPTS_NO_TSAN() \
+    restore_interrupts_raw(_SAVED_INTERRUPTS_NO_TSAN);
 
 // Returns true if interrupts are currently enabled.
 static inline bool interrupts_enabled(void) {

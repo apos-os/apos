@@ -16,7 +16,7 @@
 
 .global riscv_kthread_trampoline
 riscv_kthread_trampoline:
-  call enable_interrupts
+  call enable_interrupts_raw
   mv a0, s2  # start_routine
   mv a1, s3  # arg
   jr s1
