@@ -161,6 +161,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
   // The access should fit within a single shadow cell.
   KASSERT((addr & ~0x7) == ((addr + size - 1) & ~0x7));
 
+  PUSH_AND_DISABLE_INTERRUPTS();
   kthread_t thread = kthread_current_thread();
   tsan_shadow_t shadow = make_shadow(thread, addr, size, type);
 
@@ -179,6 +180,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
   // First check if the exact same access is already stored.
   for (int i = 0; i < TSAN_SHADOW_CELLS; ++i) {
     if (shadow2raw(shadow_mem[i]) == shadow2raw(shadow)) {
+      POP_INTERRUPTS();
       return false;
     }
   }
@@ -191,6 +193,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
       if (!stored) {
         store_shadow(&shadow_mem[i], shadow);
       }
+      POP_INTERRUPTS();
       return false;
     }
     // Check if the two accesses overlap.
@@ -221,6 +224,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
     tsan_report_race(thread, pc, addr, old, shadow);
   }
   if (stored) {
+    POP_INTERRUPTS();
     return false;
   }
 
@@ -230,6 +234,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
                       thread->tsan.clock.ts[thread->tsan.sid]};
   int idx = fnv_hash_array(&hash, sizeof(hash)) % TSAN_SHADOW_CELLS;
   store_shadow(&shadow_mem[idx], shadow);
+  POP_INTERRUPTS();
   return false;
 }
 
