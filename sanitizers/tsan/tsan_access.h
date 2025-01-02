@@ -27,4 +27,8 @@ typedef enum {
 // Call to check an access from a hook.
 bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type);
 
+// As above, but allowed to be an unaligned load that hits two shadow cells.
+bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
+                          tsan_access_type_t type);
+
 #endif

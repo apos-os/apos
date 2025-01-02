@@ -60,3 +60,20 @@ uint64_t tsan_read64(uint64_t* x) {
 void tsan_write64(uint64_t* x, uint64_t val) {
   *x = val;
 }
+
+// Putting it into a packed struct forces clang to use unaligned loads/stores.
+typedef struct {
+  union {
+    uint16_t u16;
+    uint32_t u32;
+    uint64_t u64;
+  };
+} __attribute__((packed)) unaligned_data_t;
+
+uint16_t tsan_unaligned_read16(void* x) {
+  return ((unaligned_data_t*)x)->u16;
+}
+
+void tsan_unaligned_write16(void* x, uint16_t val) {
+  ((unaligned_data_t*)x)->u16 = val;
+}

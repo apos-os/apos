@@ -18,6 +18,7 @@
 #include "common/kassert.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "dev/interrupts.h"
 #include "proc/kthread-internal.h"
 #include "sanitizers/tsan/internal.h"
@@ -236,6 +237,22 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
   store_shadow(&shadow_mem[idx], shadow);
   POP_INTERRUPTS();
   return false;
+}
+
+bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
+                          tsan_access_type_t type) {
+  addr_t offset = addr & 0x7;
+  addr_t a1_end = min(offset + size, 8);
+  addr_t a1_size = a1_end - offset;
+
+  bool conflict = tsan_check(pc, addr, a1_size, type);
+  if (conflict || a1_size == size) {
+    return conflict;
+  }
+
+  addr_t a2_addr = (addr & ~0x7) + 8;
+  addr_t a2_size = size - a1_size;
+  return tsan_check(pc, a2_addr, a2_size, type);
 }
 
 void tsan_set_report_func(tsan_report_fn_t fn) {

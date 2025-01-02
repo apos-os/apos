@@ -33,4 +33,8 @@ void tsan_write32(uint32_t* x, uint32_t val);
 uint64_t tsan_read64(uint64_t* x);
 void tsan_write64(uint64_t* x, uint64_t val);
 
+// Functions to force unaligned reads/writes at a given address.
+uint16_t tsan_unaligned_read16(void* x);
+void tsan_unaligned_write16(void* x, uint16_t val);
+
 #endif
