@@ -28,11 +28,9 @@
 typedef struct {
   uint32_t epoch;
   uint8_t sid;
-  uint8_t offset:3;
-  uint8_t size:2;
+  uint8_t mask;  // Which bytes were accessed (gets offset and size).
   uint8_t is_write:1;
-  uint8_t _unused:2;
-  uint16_t _unused2;
+  uint16_t _unused2:15;
 } tsan_shadow_t;
 
 _Static_assert(sizeof(tsan_shadow_t) == TSAN_SHADOW_CELL_SIZE,

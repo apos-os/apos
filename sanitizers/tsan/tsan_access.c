@@ -30,29 +30,30 @@
 bool g_tsan_log = true;
 static tsan_report_fn_t g_tsan_report_fn = NULL;
 
+static ALWAYS_INLINE uint8_t make_mask(uint8_t offset, uint8_t size) {
+  KASSERT_DBG(size > 0 && size <= 8);
+  KASSERT_DBG(offset >= 0 && offset < 8);
+  KASSERT_DBG(offset + size <= 8);
+  return (uint8_t)(((1 << size) - 1) << offset);
+}
+
 static ALWAYS_INLINE tsan_shadow_t make_shadow(kthread_t thread, addr_t addr,
                                                uint8_t size,
                                                tsan_access_type_t type) {
   tsan_shadow_t shadow;
   shadow.epoch = thread->tsan.clock.ts[thread->tsan.sid];
   shadow.sid = thread->tsan.sid;
-  shadow.offset = addr % 8;
-  switch (size) {
-    case 1:
-      shadow.size = 0;
-      break;
-    case 2:
-      shadow.size = 1;
-      break;
-    case 4:
-      shadow.size = 2;
-      break;
-    case 8:
-      shadow.size = 3;
-      break;
-  }
+  shadow.mask = make_mask(addr % 8, size);
   shadow.is_write = (type == TSAN_ACCESS_WRITE);
   return shadow;
+}
+
+static ALWAYS_INLINE uint8_t shadow_offset(tsan_shadow_t s) {
+  return __builtin_ctzg(s.mask);
+}
+
+static ALWAYS_INLINE uint8_t shadow_size(tsan_shadow_t s) {
+  return __builtin_popcountg(s.mask);
 }
 
 static ALWAYS_INLINE tsan_shadow_t* get_shadow_cells(addr_t addr) {
@@ -83,8 +84,11 @@ static char* print_shadow(char* buf, tsan_shadow_t s) {
     kstrcpy(buf, "0");
     return buf;
   }
+  uint8_t offset = shadow_offset(s);
+  uint8_t size  = shadow_size(s);
+  KASSERT_DBG(__builtin_clzg(s.mask) + offset + size == 8);
   ksnprintf(buf, SHADOW_PRETTY_LEN, "{tid=%u@%u offset=%d size=%d is_write=%d}",
-            (uint32_t)(s.sid), s.epoch, s.offset, 1 << s.size, s.is_write);
+            (uint32_t)(s.sid), s.epoch, offset, size, s.is_write);
   return buf;
 }
 
@@ -125,16 +129,16 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
   }
 
   // Build a report.
-  KASSERT_DBG(addr == ((addr & ~0x7) + new.offset));
+  KASSERT_DBG(addr == ((addr & ~0x7) + shadow_offset(new)));
   tsan_report_t report;
   report.race.cur.addr = addr;
   report.race.cur.pc = pc;
-  report.race.cur.size = 1 << new.size;
+  report.race.cur.size = shadow_size(new);
   report.race.cur.type = shadow2type(new);
 
-  report.race.prev.addr = (addr & ~0x7) + old.offset;
+  report.race.prev.addr = (addr & ~0x7) + shadow_offset(old);
   report.race.prev.pc = 0;
-  report.race.prev.size = 1 << old.size;
+  report.race.prev.size = shadow_size(old);
   report.race.prev.type = shadow2type(old);
 
   PUSH_AND_DISABLE_INTERRUPTS();
@@ -190,9 +194,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
       return false;
     }
     // Check if the two accesses overlap.
-    uint8_t old_mask = get_shadow_mask(old.offset, old.size);
-    uint8_t new_mask = get_shadow_mask(shadow.offset, shadow.size);
-    if (!(old_mask & new_mask)) {
+    if (!(old.mask & shadow.mask)) {
       // These accesses don't overlap; safe.
       continue;
     }
@@ -201,7 +203,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
       KASSERT_DBG(old.epoch <= shadow.epoch);
       // Overwrite if it's the exact same access, and it's not a
       // write-replacing-read.
-      if (old_mask == new_mask && can_overwrite(shadow, old)) {
+      if (old.mask == shadow.mask && can_overwrite(shadow, old)) {
         store_shadow(&shadow_mem[i], shadow);
         stored = true;
       }
