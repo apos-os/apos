@@ -51,7 +51,9 @@ void tsan_init(void) {
   // heap (actual heap size, not mapped heap size).
   KASSERT(meminfo->heap_size_max % PAGE_SIZE == 0);
   const int mapping_prot = (MEM_PROT_READ | MEM_PROT_WRITE);
-  for (size_t page = 0; page < meminfo->heap_size_max / PAGE_SIZE; ++page) {
+  for (size_t page = 0;
+       page < TSAN_SHADOW_MEMORY_MULT * meminfo->heap_size_max / PAGE_SIZE;
+       ++page) {
     const phys_addr_t phys_addr = page_frame_alloc();
     KASSERT(phys_addr != 0x0);
     const addr_t virt = meminfo->tsan_heap.base + page * PAGE_SIZE;
