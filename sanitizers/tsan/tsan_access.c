@@ -25,6 +25,7 @@
 #include "sanitizers/tsan/report.h"
 #include "sanitizers/tsan/shadow_cell.h"
 #include "sanitizers/tsan/tsan.h"
+#include "sanitizers/tsan/tsan_event.h"
 #include "sanitizers/tsan/tsan_layout.h"
 #include "sanitizers/tsan/tsan_params.h"
 
@@ -150,9 +151,8 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
   fn(&report);
 }
 
-bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
-  if (!g_tsan_init) return false;
-
+static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
+                                tsan_access_type_t type) {
   if (addr < TSAN_HEAP_START_ADDR || addr >= TSAN_HEAP_START_ADDR +
       TSAN_HEAP_LEN_ADDR) {
     // Access outside the heap.  Ignore.
@@ -239,8 +239,21 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
   return false;
 }
 
+bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
+  if (!g_tsan_init) return false;
+
+  kthread_t thread = tsan_current_thread();
+  tsan_log_access(&thread->tsan.log, pc, addr, size, type);
+  return tsan_check_internal(pc, addr, size, type);
+}
+
 bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
                           tsan_access_type_t type) {
+  if (!g_tsan_init) return false;
+
+  kthread_t thread = tsan_current_thread();
+  tsan_log_access(&thread->tsan.log, pc, addr, size, type);
+
   addr_t offset = addr & 0x7;
   addr_t a1_end = min(offset + size, 8);
   addr_t a1_size = a1_end - offset;

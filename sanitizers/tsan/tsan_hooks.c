@@ -14,7 +14,9 @@
 #include "sanitizers/tsan/tsan_hooks.h"
 
 #include "common/kassert.h"
+#include "sanitizers/tsan/internal.h"
 #include "sanitizers/tsan/tsan_access.h"
+#include "sanitizers/tsan/tsan_event.h"
 
 #define CALLERPC ((uptr)__builtin_return_address(0))
 
@@ -100,5 +102,16 @@ void* __tsan_memset(void* dest, int ch, uptr count) {
   return __builtin_memset(dest, ch, count);
 }
 
-void __tsan_func_entry(void* call_pc) {}
-void __tsan_func_exit(void) {}
+void __tsan_func_entry(void* call_pc) {
+  kthread_t thread = tsan_current_thread();
+  if (thread) {
+    tsan_log_func_entry(&thread->tsan.log, (addr_t)call_pc);
+  }
+}
+
+void __tsan_func_exit(void) {
+  kthread_t thread = tsan_current_thread();
+  if (thread) {
+    tsan_log_func_exit(&thread->tsan.log);
+  }
+}

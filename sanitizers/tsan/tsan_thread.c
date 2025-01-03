@@ -21,6 +21,7 @@
 #include "proc/kthread.h"
 #include "sanitizers/tsan/internal.h"
 #include "sanitizers/tsan/internal_types.h"
+#include "sanitizers/tsan/tsan_event.h"
 #include "sanitizers/tsan/tsan_lock.h"
 #include "sanitizers/tsan/vector_clock.h"
 
@@ -104,6 +105,7 @@ void tsan_thread_create(kthread_t thread) {
   thread->tsan.sid = sid;
   thread->tsan.tid = thread->id;
   thread->tsan.clock.ts[sid] = g_tsan_slots[sid].epoch;
+  tsan_event_init(&thread->tsan.log);
   tsan_thread_epoch_inc(thread);
 }
 
