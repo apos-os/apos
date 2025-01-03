@@ -39,4 +39,7 @@ void tsan_thread_destroy(kthread_t thread);
 // Call when a thread is joined.
 void tsan_thread_join(kthread_t joined);
 
+// Convert a slot ID into the corresponding kthread.
+kthread_t tsan_get_thread(tsan_sid_t sid);
+
 #endif

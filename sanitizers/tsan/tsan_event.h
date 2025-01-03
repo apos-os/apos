@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "common/types.h"
+#include "sanitizers/tsan/report.h"
 #include "sanitizers/tsan/shadow_cell.h"
 #include "sanitizers/tsan/tsan_access.h"
 
@@ -45,6 +46,7 @@ _Static_assert(sizeof(tsan_event_t) == 16, "bad tsan_event_t");
 
 typedef struct {
   int pos;
+  int len;
   tsan_event_t events[TSAN_EVENT_LOG_LEN];
 } tsan_event_log_t;
 
@@ -53,5 +55,11 @@ void tsan_log_access(tsan_event_log_t* log, addr_t pc, addr_t addr, int size,
                      tsan_access_type_t type);
 void tsan_log_func_entry(tsan_event_log_t* log, addr_t pc);
 void tsan_log_func_exit(tsan_event_log_t* log);
+
+// Given an access, find it in the event log and reconstruct a stack trace.  It
+// looks for an overlapping but not identical access (as accesses may be split
+// in shadow cells, but represented a single time in the event log).
+int tsan_find_access(const tsan_event_log_t* log, addr_t addr, int size,
+                     tsan_access_type_t type, tsan_access_t* result);
 
 #endif

@@ -83,13 +83,18 @@ static bool expect_report(void* addr1, int size1, const char* type1,
   }
 
   v &= KEXPECT_EQ((addr_t)addr1, g_report.race.cur.addr);
-  v &= KEXPECT_NE(0, g_report.race.cur.pc);
   v &= KEXPECT_EQ(size1, g_report.race.cur.size);
   v &= type_matches(type1, g_report.race.cur.type);
   v &= KEXPECT_EQ((addr_t)addr2, g_report.race.prev.addr);
-  v &= KEXPECT_EQ(0, g_report.race.prev.pc);
   v &= KEXPECT_EQ(size2, g_report.race.prev.size);
   v &= type_matches(type2, g_report.race.prev.type);
+
+  // Crude stack trace checking.
+  v &= KEXPECT_NE(0, g_report.race.cur.trace[0]);
+  v &= KEXPECT_NE(0, g_report.race.cur.trace[1]);
+  v &= KEXPECT_NE(0, g_report.race.prev.trace[0]);
+  v &= KEXPECT_NE(0, g_report.race.prev.trace[1]);
+
   kmemset(&g_report, 0, sizeof(g_report));
   return v;
 }
@@ -528,9 +533,8 @@ static void unaligned_overlap_2byte_conflict_test(void) {
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
 
-  // We should have gotten a conflict.  Note: both will register as one-byte
-  // accesses because we split the access.
-  EXPECT_REPORT(&vals8[7], 1, "w", &vals8[7], 1, "w");
+  // We should have gotten a conflict.
+  EXPECT_REPORT(&vals8[7], 1, "w", &vals8[7], 2, "w");
   intercept_reports_done();
 
 
@@ -545,9 +549,8 @@ static void unaligned_overlap_2byte_conflict_test(void) {
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
 
-  // We should have gotten a conflict.  Note: both will register as one-byte
-  // accesses because we split the access.
-  EXPECT_REPORT(&vals8[8], 1, "w", &vals8[8], 1, "w");
+  // We should have gotten a conflict.
+  EXPECT_REPORT(&vals8[8], 1, "w", &vals8[7], 2, "w");
   intercept_reports_done();
 
   kfree(vals);
@@ -605,13 +608,8 @@ static void unaligned_overlap_4byte_conflict_test(void) {
     KEXPECT_EQ(NULL, kthread_join(threads[0]));
     KEXPECT_EQ(NULL, kthread_join(threads[1]));
 
-    // We should have gotten a conflict.  Note: both will register as one-byte
-    // accesses because we split the access.
-    if (i < 3) {
-      EXPECT_REPORT(&vals8[5 + i], 1, "w", &vals8[5], 3, "w");
-    } else {
-      EXPECT_REPORT(&vals8[5 + i], 1, "w", &vals8[8], 1, "w");
-    }
+    // We should have gotten a conflict.
+    EXPECT_REPORT(&vals8[5 + i], 1, "w", &vals8[5], 4, "w");
     intercept_reports_done();
   }
   kfree(vals);
@@ -673,13 +671,8 @@ static void unaligned_overlap_8byte_conflict_test(void) {
     KEXPECT_EQ(NULL, kthread_join(threads[0]));
     KEXPECT_EQ(NULL, kthread_join(threads[1]));
 
-    // We should have gotten a conflict.  Note: both will register as one-byte
-    // accesses because we split the access.
-    if (i < 7) {
-      EXPECT_REPORT(&vals8[1 + i], 1, "w", &vals8[1], 7, "w");
-    } else {
-      EXPECT_REPORT(&vals8[1 + i], 1, "w", &vals8[8], 1, "w");
-    }
+    // We should have gotten a conflict.
+    EXPECT_REPORT(&vals8[1 + i], 1, "w", &vals8[1], 8, "w");
     intercept_reports_done();
   }
   kfree(vals);

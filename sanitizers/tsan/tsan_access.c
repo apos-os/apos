@@ -28,6 +28,7 @@
 #include "sanitizers/tsan/tsan_event.h"
 #include "sanitizers/tsan/tsan_layout.h"
 #include "sanitizers/tsan/tsan_params.h"
+#include "sanitizers/tsan/tsan_thread.h"
 
 bool g_tsan_log = true;
 static tsan_report_fn_t g_tsan_report_fn = NULL;
@@ -105,16 +106,20 @@ static tsan_access_type_t shadow2type(tsan_shadow_t s) {
   return s.is_write ? TSAN_ACCESS_WRITE : TSAN_ACCESS_READ;
 }
 
+static void log_access(const tsan_access_t* access) {
+  klogfm(KL_GENERAL, INFO, "%d-byte %s on address 0x%" PRIxADDR " at \n",
+         access->size, type2str(access->type), access->addr);
+  if (access->trace[0] == 0) {
+    klogfm(KL_GENERAL, INFO, " ?? (unknown address)\n");
+  } else {
+    for (int i = 0; i < TSAN_MAX_STACK_LEN && access->trace[i] != 0; ++i) {
+      klogfm(KL_GENERAL, INFO, " #%d 0x%" PRIxADDR "\n", i, access->trace[i]);
+    }
+  }
+}
+
 static void default_report_func(const tsan_report_t* report) {
-  klogfm(KL_GENERAL, FATAL,
-         "TSAN: detected data race: "
-         "%d-byte %s on address 0x%" PRIxADDR " at \n #0 0x%" PRIxADDR "\n"
-         "Previous access was: "
-         "%d-byte %s on address 0x%" PRIxADDR " at \n #0 0x%" PRIxADDR "\n",
-         report->race.cur.size, type2str(report->race.cur.type),
-         report->race.cur.addr, report->race.cur.pc,
-         report->race.prev.size, type2str(report->race.prev.type),
-         report->race.prev.addr, report->race.prev.pc);
+  klogfm(KL_GENERAL, FATAL, "TSAN detected data race");
 }
 
 static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
@@ -133,21 +138,21 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
   // Build a report.
   KASSERT_DBG(addr == ((addr & ~0x7) + shadow_offset(new)));
   tsan_report_t report;
-  report.race.cur.addr = addr;
-  report.race.cur.pc = pc;
-  report.race.cur.size = shadow_size(new);
-  report.race.cur.type = shadow2type(new);
-
-  report.race.prev.addr = (addr & ~0x7) + shadow_offset(old);
-  report.race.prev.pc = 0;
-  report.race.prev.size = shadow_size(old);
-  report.race.prev.type = shadow2type(old);
+  tsan_find_access(&thread->tsan.log, addr, shadow_size(new), shadow2type(new),
+                   &report.race.cur);
+  addr_t prev_addr = (addr & ~0x7) + shadow_offset(old);
+  tsan_find_access(&tsan_get_thread(old.sid)->tsan.log, prev_addr,
+                   shadow_size(old), shadow2type(old), &report.race.prev);
 
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   tsan_report_fn_t fn = g_tsan_report_fn ? g_tsan_report_fn :
       default_report_func;
   POP_INTERRUPTS_NO_TSAN();
 
+  klogfm(KL_GENERAL, INFO, "TSAN: detected data race: ");
+  log_access(&report.race.cur);
+  klogfm(KL_GENERAL, INFO, "Previous access was: ");
+  log_access(&report.race.prev);
   fn(&report);
 }
 

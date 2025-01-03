@@ -18,6 +18,8 @@
 #include "common/types.h"
 #include "sanitizers/tsan/tsan_access.h"
 
+#define TSAN_MAX_STACK_LEN 16
+
 // An access recorded or reported by TSAN.
 typedef struct {
   // The address of the access.
@@ -29,8 +31,8 @@ typedef struct {
   // Size of the access (in bytes).
   uint8_t size;
 
-  // The code address (PC) where the access occurred, or zero if unknown.
-  addr_t pc;
+  // The stack trace of the access (0-terminated).
+  addr_t trace[TSAN_MAX_STACK_LEN];
 } tsan_access_t;
 
 // A TSAN race that was detected.

@@ -13,12 +13,18 @@
 // limitations under the License.
 #include "sanitizers/tsan/tsan_event.h"
 
+#include "common/errno.h"
+#include "common/kassert.h"
+#include "common/klog.h"
 #include "dev/interrupts.h"
+#include "sanitizers/tsan/report.h"
 #include "sanitizers/tsan/tsan_access.h"
+#include "vfs/vnode.h"
 
 void tsan_event_init(tsan_event_log_t* log) {
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   log->pos = 0;
+  log->len = 0;
   POP_INTERRUPTS_NO_TSAN();
 }
 
@@ -29,11 +35,14 @@ void tsan_log_access(tsan_event_log_t* log, addr_t pc, addr_t addr, int size,
   event.is_read = (type == TSAN_ACCESS_READ);
   event.addr = addr;
   event.pc = pc;
-  event.size = size;
+  event.size = size - 1;
 
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   log->events[log->pos] = event;
   log->pos = (log->pos + 1) % TSAN_EVENT_LOG_LEN;
+  if (log->len < TSAN_EVENT_LOG_LEN) {
+    log->len++;
+  }
   POP_INTERRUPTS_NO_TSAN();
 }
 
@@ -45,6 +54,9 @@ void tsan_log_func_entry(tsan_event_log_t* log, addr_t pc) {
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   log->events[log->pos] = event;
   log->pos = (log->pos + 1) % TSAN_EVENT_LOG_LEN;
+  if (log->len < TSAN_EVENT_LOG_LEN) {
+    log->len++;
+  }
   POP_INTERRUPTS_NO_TSAN();
 }
 
@@ -56,5 +68,79 @@ void tsan_log_func_exit(tsan_event_log_t* log) {
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   log->events[log->pos] = event;
   log->pos = (log->pos + 1) % TSAN_EVENT_LOG_LEN;
+  if (log->len < TSAN_EVENT_LOG_LEN) {
+    log->len++;
+  }
   POP_INTERRUPTS_NO_TSAN();
+}
+
+int tsan_find_access(const tsan_event_log_t* log, addr_t addr, int size,
+                     tsan_access_type_t type, tsan_access_t* result) {
+  KASSERT(TSAN_ADDR_MAX_BITS == 40);  // Or must adjust constants.
+  const uint64_t upper_bits = 0xffffff0000000000UL;
+  for (int i = 0; i < TSAN_MAX_STACK_LEN; ++i) {
+    result->trace[i] = 0;
+  }
+  result->addr = addr;
+  result->size = size;
+  result->type = type;
+
+  PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
+  // First find the access.
+  int access_idx = -1;
+  int stack_idx = 0;
+
+  for (int i = 1; i <= log->len; ++i) {
+    int idx = (log->pos - i + TSAN_EVENT_LOG_LEN) % TSAN_EVENT_LOG_LEN;
+    if (log->events[idx].type != TSAN_EVENT_ACCESS) continue;
+
+    bool is_read = (type == TSAN_ACCESS_READ);
+    if (log->events[idx].is_read != is_read) continue;
+
+    // The shadow access will always be the same size or smaller than event
+    // size, and start at the same address or higher.
+    addr_t masked_addr = addr & ~upper_bits;
+    if (log->events[idx].size + 1 < size) continue;
+    if (log->events[idx].addr > masked_addr) continue;
+    if (log->events[idx].addr + log->events[idx].size + 1 < masked_addr + size)
+      continue;
+
+    // Update the result with more accurate data.
+    result->addr = log->events[idx].addr | upper_bits;
+    result->size = log->events[idx].size + 1;
+
+    result->trace[stack_idx++] = log->events[idx].pc | upper_bits;
+    access_idx = i;
+    break;
+  }
+
+  if (access_idx < 0) {
+    klogf("Unable to find TSAN access in log for address %" PRIxADDR "\n",
+          addr);
+    POP_INTERRUPTS_NO_TSAN();
+    return -EINVAL;
+  }
+
+  // Now reconstruct the stack trace.
+  int exit_counter = 0;
+  for (int i = access_idx; i <= TSAN_EVENT_LOG_LEN; ++i) {
+    int idx = (log->pos - i + TSAN_EVENT_LOG_LEN) % TSAN_EVENT_LOG_LEN;
+    if (log->events[idx].type != TSAN_EVENT_FUNC) continue;
+
+    if (log->events[idx].pc == 0) {
+      exit_counter++;
+    } else if (exit_counter > 0) {
+      exit_counter--;
+    } else {
+      result->trace[stack_idx] = log->events[idx].pc | upper_bits;
+      stack_idx++;
+
+      if (stack_idx >= TSAN_MAX_STACK_LEN) {
+        klogf("TSAN truncated stack trace after %d entries\n", stack_idx);
+        break;
+      }
+    }
+  }
+  POP_INTERRUPTS_NO_TSAN();
+  return 0;
 }

@@ -23,6 +23,7 @@
 #include "sanitizers/tsan/internal_types.h"
 #include "sanitizers/tsan/tsan_event.h"
 #include "sanitizers/tsan/tsan_lock.h"
+#include "sanitizers/tsan/tsan_params.h"
 #include "sanitizers/tsan/vector_clock.h"
 
 // A single thread slot.
@@ -199,4 +200,9 @@ void tsan_release(tsan_lock_data_t* lock, tsan_lock_type_t type) {
   }
   // Make sure all future writes are _not_ considered published.
   tsan_thread_epoch_inc(thread);
+}
+
+kthread_t tsan_get_thread(tsan_sid_t sid) {
+  KASSERT(sid >= 0 && sid < TSAN_THREAD_SLOTS);
+  return g_tsan_slots[sid].thread;
 }
