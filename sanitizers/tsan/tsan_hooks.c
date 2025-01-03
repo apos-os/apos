@@ -103,15 +103,13 @@ void* __tsan_memset(void* dest, int ch, uptr count) {
 }
 
 void __tsan_func_entry(void* call_pc) {
-  kthread_t thread = tsan_current_thread();
-  if (thread) {
-    tsan_log_func_entry(&thread->tsan.log, (addr_t)call_pc);
+  if (g_tsan_init) {
+    tsan_log_func_entry(&tsan_current_thread()->tsan.log, (addr_t)call_pc);
   }
 }
 
 void __tsan_func_exit(void) {
-  kthread_t thread = tsan_current_thread();
-  if (thread) {
-    tsan_log_func_exit(&thread->tsan.log);
+  if (g_tsan_init) {
+    tsan_log_func_exit(&tsan_current_thread()->tsan.log);
   }
 }
