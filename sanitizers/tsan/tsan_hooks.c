@@ -18,7 +18,10 @@
 #include "sanitizers/tsan/tsan_access.h"
 #include "sanitizers/tsan/tsan_event.h"
 
-#define CALLERPC ((uptr)__builtin_return_address(0) - 4)
+// TODO(tsan): move this into an arch header.
+#define SIZE_OF_JUMP_INSTR 4
+
+#define CALLERPC ((uptr)__builtin_return_address(0) - SIZE_OF_JUMP_INSTR)
 
 typedef unsigned long uptr;
 
@@ -104,7 +107,8 @@ void* __tsan_memset(void* dest, int ch, uptr count) {
 
 void __tsan_func_entry(void* call_pc) {
   if (g_tsan_init) {
-    tsan_log_func_entry(&tsan_current_thread()->tsan.log, (addr_t)call_pc);
+    tsan_log_func_entry(&tsan_current_thread()->tsan.log,
+                        (addr_t)call_pc - SIZE_OF_JUMP_INSTR);
   }
 }
 
