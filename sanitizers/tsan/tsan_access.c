@@ -107,8 +107,9 @@ static tsan_access_type_t shadow2type(tsan_shadow_t s) {
 }
 
 static void log_access(const tsan_access_t* access) {
-  klogfm(KL_GENERAL, INFO, "%d-byte %s on address 0x%" PRIxADDR " at \n",
-         access->size, type2str(access->type), access->addr);
+  klogfm(KL_GENERAL, INFO,
+         "%d-byte %s by thread %d on address 0x%" PRIxADDR " at \n",
+         access->size, type2str(access->type), access->thread_id, access->addr);
   if (access->trace[0] == 0) {
     klogfm(KL_GENERAL, INFO, " ?? (unknown address)\n");
   } else {
@@ -138,9 +139,11 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
   // Build a report.
   KASSERT_DBG(addr == ((addr & ~0x7) + shadow_offset(new)));
   tsan_report_t report;
+  report.race.cur.thread_id = thread->id;
   tsan_find_access(&thread->tsan.log, addr, shadow_size(new), shadow2type(new),
                    &report.race.cur);
   addr_t prev_addr = (addr & ~0x7) + shadow_offset(old);
+  report.race.prev.thread_id = tsan_get_thread(old.sid)->id;
   tsan_find_access(&tsan_get_thread(old.sid)->tsan.log, prev_addr,
                    shadow_size(old), shadow2type(old), &report.race.prev);
 

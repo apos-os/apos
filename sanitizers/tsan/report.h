@@ -22,6 +22,9 @@
 
 // An access recorded or reported by TSAN.
 typedef struct {
+  // The thread that made the access.
+  int thread_id;
+
   // The address of the access.
   addr_t addr;
 
