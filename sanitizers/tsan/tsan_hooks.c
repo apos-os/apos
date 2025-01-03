@@ -47,15 +47,15 @@ void __tsan_read16(void* addr) {
 }
 
 void __tsan_unaligned_read2(void* addr) {
-  tsan_check_unaligned(0, (addr_t)addr, 2, TSAN_ACCESS_READ);
+  tsan_check_unaligned(CALLERPC, (addr_t)addr, 2, TSAN_ACCESS_READ);
 }
 
 void __tsan_unaligned_read4(void* addr) {
-  tsan_check_unaligned(0, (addr_t)addr, 4, TSAN_ACCESS_READ);
+  tsan_check_unaligned(CALLERPC, (addr_t)addr, 4, TSAN_ACCESS_READ);
 }
 
 void __tsan_unaligned_read8(void* addr) {
-  tsan_check_unaligned(0, (addr_t)addr, 8, TSAN_ACCESS_READ);
+  tsan_check_unaligned(CALLERPC, (addr_t)addr, 8, TSAN_ACCESS_READ);
 }
 
 void __tsan_write1(void* addr) {
@@ -81,15 +81,15 @@ void __tsan_write16(void* addr) {
 }
 
 void __tsan_unaligned_write2(void* addr) {
-  tsan_check_unaligned(0, (addr_t)addr, 2, TSAN_ACCESS_WRITE);
+  tsan_check_unaligned(CALLERPC, (addr_t)addr, 2, TSAN_ACCESS_WRITE);
 }
 
 void __tsan_unaligned_write4(void* addr) {
-  tsan_check_unaligned(0, (addr_t)addr, 4, TSAN_ACCESS_WRITE);
+  tsan_check_unaligned(CALLERPC, (addr_t)addr, 4, TSAN_ACCESS_WRITE);
 }
 
 void __tsan_unaligned_write8(void* addr) {
-  tsan_check_unaligned(0, (addr_t)addr, 8, TSAN_ACCESS_WRITE);
+  tsan_check_unaligned(CALLERPC, (addr_t)addr, 8, TSAN_ACCESS_WRITE);
 }
 
 void* __tsan_memcpy(void* dest, const void* src, uptr count) {
