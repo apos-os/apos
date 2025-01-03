@@ -258,14 +258,14 @@ bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
   addr_t a1_end = min(offset + size, 8);
   addr_t a1_size = a1_end - offset;
 
-  bool conflict = tsan_check(pc, addr, a1_size, type);
+  bool conflict = tsan_check_internal(pc, addr, a1_size, type);
   if (conflict || a1_size == size) {
     return conflict;
   }
 
   addr_t a2_addr = (addr & ~0x7) + 8;
   addr_t a2_size = size - a1_size;
-  return tsan_check(pc, a2_addr, a2_size, type);
+  return tsan_check_internal(pc, a2_addr, a2_size, type);
 }
 
 void tsan_set_report_func(tsan_report_fn_t fn) {
