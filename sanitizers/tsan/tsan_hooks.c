@@ -18,7 +18,7 @@
 #include "sanitizers/tsan/tsan_access.h"
 #include "sanitizers/tsan/tsan_event.h"
 
-#define CALLERPC ((uptr)__builtin_return_address(0))
+#define CALLERPC ((uptr)__builtin_return_address(0) - 4)
 
 typedef unsigned long uptr;
 
