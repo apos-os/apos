@@ -61,8 +61,10 @@ static ALWAYS_INLINE uint8_t shadow_size(tsan_shadow_t s) {
 
 static ALWAYS_INLINE tsan_shadow_t* get_shadow_cells(addr_t addr) {
   addr_t offset = (addr & ~0x7) - TSAN_HEAP_START_ADDR;
-  addr_t shadow = TSAN_SHADOW_START_ADDR +
-                  (offset * sizeof(tsan_shadow_t) * TSAN_SHADOW_CELLS);
+  KASSERT_DBG((offset % TSAN_MEMORY_CELL_SIZE) == 0);
+  addr_t shadow =
+      TSAN_SHADOW_START_ADDR + (offset / TSAN_MEMORY_CELL_SIZE *
+                                sizeof(tsan_shadow_t) * TSAN_SHADOW_CELLS);
   return (tsan_shadow_t*)shadow;
 }
 
