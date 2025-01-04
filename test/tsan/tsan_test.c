@@ -29,6 +29,44 @@
 #include "test/ktest.h"
 #include "test/tsan/instrumented.h"
 
+/*********************** Memory allocation helpers *************************/
+
+// We use a special allocator that holds on to memory across tests then frees it
+// all at the end.  If all tests are passing, this is unnecessary --- but if one
+// test fails or misbehaves, then another test reuses the same memory, it can
+// cause confusing results.
+#define TSAN_TEST_MAX_ALLOCS 300
+typedef struct {
+  void* allocs[TSAN_TEST_MAX_ALLOCS];
+  int next;
+} tsan_test_allocs_t;
+static tsan_test_allocs_t g_tsan_test_allocs;
+
+static void* tsan_test_alloc(size_t n) {
+  void* result = kmalloc(n);
+  PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
+  g_tsan_test_allocs.allocs[g_tsan_test_allocs.next++] = result;
+  POP_INTERRUPTS_NO_TSAN();
+  return result;
+}
+
+static void tsan_test_free_all(void) {
+  PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
+  for (int i = 0; i < g_tsan_test_allocs.next; ++i) {
+    kfree(g_tsan_test_allocs.allocs[i]);
+  }
+  g_tsan_test_allocs.next = 0;
+  POP_INTERRUPTS_NO_TSAN();
+}
+
+// No-op hook called at the end of each test.  This could call
+// tsan_test_free_all() to clean up memory and force reuse across tests (which
+// could be an interesting stress test).
+static void tsan_test_maybe_cleanup(void) {
+}
+
+#define TS_MALLOC(_TYPE) ((_TYPE*)tsan_test_alloc(sizeof(_TYPE)));
+
 /***************** Test report interception functions ******************/
 static void test_report_fn(const tsan_report_t* report);
 
@@ -110,7 +148,7 @@ typedef struct {
 
 static void tsan_basic_sanity_test(void) {
   KTEST_BEGIN("TSAN: basic R/W heap value instrumentation");
-  int* x = KMALLOC(int);
+  int* x = TS_MALLOC(int);
   *x = 0;
   tsan_rw_value(x);
   KEXPECT_EQ(1, *x);
@@ -118,7 +156,7 @@ static void tsan_basic_sanity_test(void) {
   KEXPECT_EQ(2, *x);
   tsan_rw_value(x);
   KEXPECT_EQ(3, *x);
-  kfree(x);
+  tsan_test_maybe_cleanup();
 }
 
 static void* rw_value_thread(void* arg) {
@@ -138,7 +176,7 @@ static void* rw_value_thread_preempt(void* arg) {
 
 static void tsan_basic_sanity_test2(void) {
   KTEST_BEGIN("TSAN: basic R/W heap value instrumentation (two threads)");
-  int* x = KMALLOC(int);
+  int* x = TS_MALLOC(int);
   *x = 0;
   tsan_rw_value(x);
 
@@ -165,7 +203,7 @@ static void tsan_basic_sanity_test2(void) {
   KEXPECT_EQ(NULL, kthread_join(thread));
   intercept_reports_done();
 
-  kfree(x);
+  tsan_test_maybe_cleanup();
 }
 
 static void* rw_value_thread_kmutex(void* arg) {
@@ -188,7 +226,7 @@ static void tsan_basic_sanity_test3(void) {
   KTEST_BEGIN("TSAN: basic R/W heap value (two threads, locked)");
   mutex_test_args_t args;
   kmutex_init(&args.mu);
-  args.val = kmalloc(sizeof(uint64_t) * 4);
+  args.val = tsan_test_alloc(sizeof(uint64_t) * 4);
   for (int i = 0; i < 4; ++i) {
     args.val[i] = 0;
     tsan_rw_u64(args.val + i);
@@ -213,7 +251,7 @@ static void tsan_basic_sanity_test3(void) {
   KEXPECT_EQ(2, args.val[1]);
   KEXPECT_EQ(2, args.val[2]);
   KEXPECT_EQ(2, args.val[3]);
-  kfree(args.val);
+  tsan_test_maybe_cleanup();
 }
 
 // As above, but sleep after thread creation to test passing values without
@@ -222,7 +260,7 @@ static void tsan_basic_sanity_test4(void) {
   KTEST_BEGIN("TSAN: basic R/W heap value (two threads, locked, sleep)");
   mutex_test_args_t args;
   kmutex_init(&args.mu);
-  args.val = kmalloc(sizeof(uint64_t) * 4);
+  args.val = tsan_test_alloc(sizeof(uint64_t) * 4);
   for (int i = 0; i < 4; ++i) {
     args.val[i] = 0;
     tsan_rw_u64(args.val + i);
@@ -241,7 +279,7 @@ static void tsan_basic_sanity_test4(void) {
 
   KEXPECT_EQ(5, args.val[0]);
   KEXPECT_EQ(2, args.val[1]);
-  kfree(args.val);
+  tsan_test_maybe_cleanup();
 }
 
 static void* size1_thread(void* arg) {
@@ -266,7 +304,7 @@ static void* size1_thread(void* arg) {
 // be OK.
 static void size1_safe_test(void) {
   KTEST_BEGIN("TSAN: two threads accessing different 1 bytes is safe");
-  uint64_t* vals = kmalloc(sizeof(uint64_t) * 8);
+  uint64_t* vals = tsan_test_alloc(sizeof(uint64_t) * 8);
   uint64_t orig = htob64(0x0123456789abcdefll);
 
   for (int byte_pos_to_test = 0; byte_pos_to_test < 8; ++byte_pos_to_test) {
@@ -288,13 +326,13 @@ static void size1_safe_test(void) {
     KEXPECT_EQ(((uint8_t*)&orig)[byte_pos_to_test],
                (intptr_t)kthread_join(thread));
   }
-  kfree(vals);
+  tsan_test_maybe_cleanup();
 }
 
 // As above, but with concurrent 1-byte/2-byte accesses.
 static void size2_safe_test(void) {
   KTEST_BEGIN("TSAN: two threads accessing different 2 bytes is safe");
-  uint64_t* vals = kmalloc(sizeof(uint64_t) * 8);
+  uint64_t* vals = tsan_test_alloc(sizeof(uint64_t) * 8);
   uint64_t orig = htob64(0x0123456789abcdefll);
 
   for (int byte_pos_to_test = 0; byte_pos_to_test < 8; ++byte_pos_to_test) {
@@ -317,13 +355,13 @@ static void size2_safe_test(void) {
     KEXPECT_EQ(((uint8_t*)&orig)[byte_pos_to_test],
                (intptr_t)kthread_join(thread));
   }
-  kfree(vals);
+  tsan_test_maybe_cleanup();
 }
 
 // As above, but with concurrent 1-byte/4-byte accesses.
 static void size4_safe_test(void) {
   KTEST_BEGIN("TSAN: two threads accessing different 4 bytes is safe");
-  uint64_t* vals = kmalloc(sizeof(uint64_t) * 8);
+  uint64_t* vals = tsan_test_alloc(sizeof(uint64_t) * 8);
   uint64_t orig = htob64(0x0123456789abcdefll);
 
   for (int byte_pos_to_test = 0; byte_pos_to_test < 8; ++byte_pos_to_test) {
@@ -346,7 +384,7 @@ static void size4_safe_test(void) {
     KEXPECT_EQ(((uint8_t*)&orig)[byte_pos_to_test],
                (intptr_t)kthread_join(thread));
   }
-  kfree(vals);
+  tsan_test_maybe_cleanup();
 }
 
 typedef struct {
@@ -373,7 +411,7 @@ static void* write_and_wake_all(void* arg) {
 // TODO(SMP): remove this when this pattern is no longer used.
 static void tsan_wait_queue_test(void) {
   KTEST_BEGIN("TSAN: synchronization with kthread_queue_t");
-  uint64_t* val = KMALLOC(uint64_t);
+  uint64_t* val = TS_MALLOC(uint64_t);
   tsan_write64(val, 5);
   write_and_wake_test_args_t args;
   args.val = val;
@@ -399,7 +437,7 @@ static void tsan_wait_queue_test(void) {
 
   KEXPECT_EQ(11, *args.val);
   KEXPECT_EQ(NULL, kthread_join(child));
-  kfree(val);
+  tsan_test_maybe_cleanup();
 }
 
 static void* fork_test_child_thread(void* arg) {
@@ -425,7 +463,7 @@ static void tsan_fork_test(void) {
   // 1) for main thread
   // 2) for an explicitly detached thread
   // 3) for a joined thread
-  uint64_t* vals = kmalloc(sizeof(uint64_t) * 6);
+  uint64_t* vals = tsan_test_alloc(sizeof(uint64_t) * 6);
   tsan_write64(&vals[0], 5);
   tsan_write64(&vals[1], 6);
   tsan_write64(&vals[2], 7);
@@ -447,8 +485,7 @@ static void tsan_fork_test(void) {
   KEXPECT_EQ(9, tsan_read64(&vals[3]));
   KEXPECT_EQ(10, tsan_read64(&vals[4]));
   KEXPECT_EQ(11, tsan_read64(&vals[5]));
-
-  kfree(vals);
+  tsan_test_maybe_cleanup();
 }
 
 static void* access_u8(void* arg) {
@@ -488,7 +525,7 @@ static void* access_u64(void* arg) {
 
 static void unaligned_overlap_2byte_test(void) {
   KTEST_BEGIN("TSAN: unaligned 2-byte access that straddles two shadow cells");
-  uint64_t* vals = kmalloc(sizeof(uint64_t) * 2);
+  uint64_t* vals = tsan_test_alloc(sizeof(uint64_t) * 2);
   uint8_t* vals8 = (uint8_t*)vals;
   tsan_write64(vals, 0);
   tsan_write64(vals + 1, 0);
@@ -509,14 +546,14 @@ static void unaligned_overlap_2byte_test(void) {
   KEXPECT_EQ(0xab, vals8[7]);
   KEXPECT_EQ(0xcd, vals8[8]);
   KEXPECT_EQ(0x01, vals8[9]);
-  kfree(vals);
+  tsan_test_maybe_cleanup();
 }
 
 static void unaligned_overlap_2byte_conflict_test(void) {
   KTEST_BEGIN(
       "TSAN: unaligned 2-byte access that straddles two shadow cells "
       "(conflict)");
-  uint64_t* vals = kmalloc(sizeof(uint64_t) * 2);
+  uint64_t* vals = tsan_test_alloc(sizeof(uint64_t) * 2);
   uint8_t* vals8 = (uint8_t*)vals;
   tsan_write64(vals, 0);
   tsan_write64(vals + 1, 0);
@@ -552,13 +589,12 @@ static void unaligned_overlap_2byte_conflict_test(void) {
   // We should have gotten a conflict.
   EXPECT_REPORT(&vals8[8], 1, "w", &vals8[7], 2, "w");
   intercept_reports_done();
-
-  kfree(vals);
+  tsan_test_maybe_cleanup();
 }
 
 static void unaligned_overlap_4byte_test(void) {
   KTEST_BEGIN("TSAN: unaligned 4-byte access that straddles two shadow cells");
-  uint64_t* vals = kmalloc(sizeof(uint64_t) * 2);
+  uint64_t* vals = tsan_test_alloc(sizeof(uint64_t) * 2);
   uint8_t* vals8 = (uint8_t*)vals;
 
   for (int i = 0; i < 3; ++i) {
@@ -584,14 +620,14 @@ static void unaligned_overlap_4byte_test(void) {
     KEXPECT_EQ(0x34, vals8[8 + i]);
     KEXPECT_EQ(0x01, vals8[9 + i]);
   }
-  kfree(vals);
+  tsan_test_maybe_cleanup();
 }
 
 static void unaligned_overlap_4byte_conflict_test(void) {
   KTEST_BEGIN(
       "TSAN: unaligned 4-byte access that straddles two shadow cells "
       "(conflict)");
-  uint64_t* vals = kmalloc(sizeof(uint64_t) * 2);
+  uint64_t* vals = tsan_test_alloc(sizeof(uint64_t) * 2);
   uint8_t* vals8 = (uint8_t*)vals;
 
   for (int i = 0; i < 4; ++i) {
@@ -612,12 +648,12 @@ static void unaligned_overlap_4byte_conflict_test(void) {
     EXPECT_REPORT(&vals8[5 + i], 1, "w", &vals8[5], 4, "w");
     intercept_reports_done();
   }
-  kfree(vals);
+  tsan_test_maybe_cleanup();
 }
 
 static void unaligned_overlap_8byte_test(void) {
   KTEST_BEGIN("TSAN: unaligned 8-byte access that straddles two shadow cells");
-  uint64_t* vals = kmalloc(sizeof(uint64_t) * 2);
+  uint64_t* vals = tsan_test_alloc(sizeof(uint64_t) * 2);
   uint8_t* vals8 = (uint8_t*)vals;
 
   for (int i = 0; i < 7; ++i) {
@@ -647,14 +683,14 @@ static void unaligned_overlap_8byte_test(void) {
     KEXPECT_EQ(0xab, vals8[8 + i]);
     KEXPECT_EQ(0x01, vals8[9 + i]);
   }
-  kfree(vals);
+  tsan_test_maybe_cleanup();
 }
 
 static void unaligned_overlap_8byte_conflict_test(void) {
   KTEST_BEGIN(
       "TSAN: unaligned 8-byte access that straddles two shadow cells "
       "(conflict)");
-  uint64_t* vals = kmalloc(sizeof(uint64_t) * 2);
+  uint64_t* vals = tsan_test_alloc(sizeof(uint64_t) * 2);
   uint8_t* vals8 = (uint8_t*)vals;
 
   for (int i = 0; i < 8; ++i) {
@@ -675,7 +711,7 @@ static void unaligned_overlap_8byte_conflict_test(void) {
     EXPECT_REPORT(&vals8[1 + i], 1, "w", &vals8[1], 8, "w");
     intercept_reports_done();
   }
-  kfree(vals);
+  tsan_test_maybe_cleanup();
 }
 
 static void basic_tests(void) {
@@ -712,7 +748,7 @@ static void* busy_loop_thread(void* arg) {
 
 static void interrupt_test1(void) {
   KTEST_BEGIN("TSAN: interrupt-safety");
-  int* x = KMALLOC(int);
+  int* x = TS_MALLOC(int);
   *x = 0;
   tsan_rw_value(x);
 
@@ -725,12 +761,12 @@ static void interrupt_test1(void) {
     tsan_rw_value(x);
     KEXPECT_EQ(3, *x);
   }
-  kfree(x);
+  tsan_test_maybe_cleanup();
 }
 
 static void interrupt_test1b(void) {
   KTEST_BEGIN("TSAN: interrupt-safety (with kspinlock_int)");
-  int* x = KMALLOC(int);
+  int* x = TS_MALLOC(int);
   *x = 0;
   tsan_rw_value(x);
 
@@ -744,26 +780,26 @@ static void interrupt_test1b(void) {
     tsan_rw_value(x);
     KEXPECT_EQ(3, *x);
   }
-  kfree(x);
+  tsan_test_maybe_cleanup();
 }
 
 static void interrupt_test1c(void) {
   KTEST_BEGIN("TSAN: interrupt-safety (with scheduler_wait_on() timeout)");
-  int* x = KMALLOC(int);
+  int* x = TS_MALLOC(int);
   *x = 0;
   tsan_rw_value(x);
 
   kthread_queue_t q;
   kthread_queue_init(&q);
   KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_interruptable(&q, 20));
-  kfree(x);
+  tsan_test_maybe_cleanup();
 }
 
 // As above, but with interrupts disabled (so that POP_INTERRUPTS() calls in
 // scheduler_wait_on_interruptable() don't do anything).
 static void interrupt_test1d(void) {
   KTEST_BEGIN("TSAN: interrupt-safety (with scheduler_wait_on() timeout #2)");
-  int* x = KMALLOC(int);
+  int* x = TS_MALLOC(int);
   *x = 0;
   tsan_rw_value(x);
 
@@ -772,14 +808,14 @@ static void interrupt_test1d(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_interruptable(&q, 20));
   POP_INTERRUPTS();
-  kfree(x);
+  tsan_test_maybe_cleanup();
 }
 
 // As above, but also with an unsynchronized thread that can run while we're
 // waiting.
 static void interrupt_test1e(void) {
   KTEST_BEGIN("TSAN: interrupt-safety (with scheduler_wait_on() timeout #3)");
-  int* x = KMALLOC(int);
+  int* x = TS_MALLOC(int);
   *x = 0;
   tsan_rw_value(x);
 
@@ -794,12 +830,12 @@ static void interrupt_test1e(void) {
   POP_INTERRUPTS();
 
   kthread_join(thread);
-  kfree(x);
+  tsan_test_maybe_cleanup();
 }
 
 static void interrupt_test2(void) {
   KTEST_BEGIN("TSAN: interrupt-safety (conflict)");
-  int* x = KMALLOC(int);
+  int* x = TS_MALLOC(int);
   *x = 0;
 
   intercept_reports();
@@ -812,14 +848,14 @@ static void interrupt_test2(void) {
   intercept_reports_done();
   KEXPECT_EQ(3, *x);
 
-  kfree(x);
+  tsan_test_maybe_cleanup();
 }
 
 // Slight variant on the above where we write to the value _after_ we schedule
 // the interrupt.
 static void interrupt_test3(void) {
   KTEST_BEGIN("TSAN: interrupt-safety (conflict #2)");
-  int* x = KMALLOC(int);
+  int* x = TS_MALLOC(int);
   *x = 0;
 
   intercept_reports();
@@ -834,14 +870,14 @@ static void interrupt_test3(void) {
   intercept_reports_done();
   KEXPECT_EQ(2, *x);
 
-  kfree(x);
+  tsan_test_maybe_cleanup();
 }
 
 // Combo test where thread 1 races with thread 2 by sleeping in an
 // interrupt-disabled critical section (which, FWIW, is incorrect).
 static void interrupt_test4(void) {
   KTEST_BEGIN("TSAN: interrupt-safety (conflict #2)");
-  int* x = KMALLOC(int);
+  int* x = TS_MALLOC(int);
   *x = 0;
 
   intercept_reports();
@@ -856,7 +892,7 @@ static void interrupt_test4(void) {
   intercept_reports_done();
   KEXPECT_EQ(2, *x);
 
-  kfree(x);
+  tsan_test_maybe_cleanup();
 }
 
 // TODO(tsan): test interrupt races with defint that is itself running in an
@@ -876,4 +912,6 @@ void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   basic_tests();
   interrupt_tests();
+
+  tsan_test_free_all();
 }
