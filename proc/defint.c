@@ -21,6 +21,10 @@
 #include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
 
+#if ENABLE_TSAN
+#include "sanitizers/tsan/tsan_lock.h"
+#endif
+
 #define MAX_QUEUED_DEFINTS 100
 
 typedef struct {
@@ -43,6 +47,10 @@ void defint_schedule(void (*f)(void*), void* arg) {
   defint->f = f;
   defint->arg = arg;
   g_queue_len++;
+#if ENABLE_TSAN
+  // Release all this thread's values to the defint as an explicit sync point.
+  tsan_release(NULL, TSAN_DEFINTS);
+#endif
   POP_INTERRUPTS();
 }
 
@@ -54,12 +62,21 @@ defint_state_t defint_state(void) {
 }
 
 defint_state_t defint_set_state(defint_state_t s) {
+#if ENABLE_TSAN
+  if (s) {
+    tsan_release(NULL, TSAN_DEFINTS);
+  }
+#endif
   PUSH_AND_DISABLE_INTERRUPTS();
   bool old = g_defints_enabled;
   g_defints_enabled = s;
   POP_INTERRUPTS();
   if (s) {
     defint_process_queued(/* force= */ false);
+#if ENABLE_TSAN
+  } else {
+    tsan_acquire(NULL, TSAN_DEFINTS);
+#endif
   }
   return old;
 }

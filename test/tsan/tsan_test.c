@@ -16,6 +16,7 @@
 #include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
+#include "proc/defint.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
@@ -59,10 +60,15 @@ static void tsan_test_free_all(void) {
   POP_INTERRUPTS_NO_TSAN();
 }
 
-// No-op hook called at the end of each test.  This could call
+// Hook called at the end of each test that forces synchronization with
+// interrupts and defints to ensure test hermeticity..  This could call
 // tsan_test_free_all() to clean up memory and force reuse across tests (which
 // could be an interesting stress test).
-static void tsan_test_maybe_cleanup(void) {
+static void tsan_test_cleanup(void) {
+  kspinlock_intsafe_t mu = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  kspin_lock_int(&mu);
+  kspin_unlock_int(&mu);
+  // tsan_test_free_all();
 }
 
 #define TS_MALLOC(_TYPE) ((_TYPE*)tsan_test_alloc(sizeof(_TYPE)));
@@ -156,7 +162,7 @@ static void tsan_basic_sanity_test(void) {
   KEXPECT_EQ(2, *x);
   tsan_rw_value(x);
   KEXPECT_EQ(3, *x);
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void* rw_value_thread(void* arg) {
@@ -203,7 +209,7 @@ static void tsan_basic_sanity_test2(void) {
   KEXPECT_EQ(NULL, kthread_join(thread));
   intercept_reports_done();
 
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void* rw_value_thread_kmutex(void* arg) {
@@ -251,7 +257,7 @@ static void tsan_basic_sanity_test3(void) {
   KEXPECT_EQ(2, args.val[1]);
   KEXPECT_EQ(2, args.val[2]);
   KEXPECT_EQ(2, args.val[3]);
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 // As above, but sleep after thread creation to test passing values without
@@ -279,7 +285,7 @@ static void tsan_basic_sanity_test4(void) {
 
   KEXPECT_EQ(5, args.val[0]);
   KEXPECT_EQ(2, args.val[1]);
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void* size1_thread(void* arg) {
@@ -326,7 +332,7 @@ static void size1_safe_test(void) {
     KEXPECT_EQ(((uint8_t*)&orig)[byte_pos_to_test],
                (intptr_t)kthread_join(thread));
   }
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 // As above, but with concurrent 1-byte/2-byte accesses.
@@ -355,7 +361,7 @@ static void size2_safe_test(void) {
     KEXPECT_EQ(((uint8_t*)&orig)[byte_pos_to_test],
                (intptr_t)kthread_join(thread));
   }
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 // As above, but with concurrent 1-byte/4-byte accesses.
@@ -384,7 +390,7 @@ static void size4_safe_test(void) {
     KEXPECT_EQ(((uint8_t*)&orig)[byte_pos_to_test],
                (intptr_t)kthread_join(thread));
   }
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 typedef struct {
@@ -437,7 +443,7 @@ static void tsan_wait_queue_test(void) {
 
   KEXPECT_EQ(11, *args.val);
   KEXPECT_EQ(NULL, kthread_join(child));
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void* fork_test_child_thread(void* arg) {
@@ -485,7 +491,7 @@ static void tsan_fork_test(void) {
   KEXPECT_EQ(9, tsan_read64(&vals[3]));
   KEXPECT_EQ(10, tsan_read64(&vals[4]));
   KEXPECT_EQ(11, tsan_read64(&vals[5]));
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void* access_u8(void* arg) {
@@ -546,7 +552,7 @@ static void unaligned_overlap_2byte_test(void) {
   KEXPECT_EQ(0xab, vals8[7]);
   KEXPECT_EQ(0xcd, vals8[8]);
   KEXPECT_EQ(0x01, vals8[9]);
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void unaligned_overlap_2byte_conflict_test(void) {
@@ -589,7 +595,7 @@ static void unaligned_overlap_2byte_conflict_test(void) {
   // We should have gotten a conflict.
   EXPECT_REPORT(&vals8[8], 1, "w", &vals8[7], 2, "w");
   intercept_reports_done();
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void unaligned_overlap_4byte_test(void) {
@@ -620,7 +626,7 @@ static void unaligned_overlap_4byte_test(void) {
     KEXPECT_EQ(0x34, vals8[8 + i]);
     KEXPECT_EQ(0x01, vals8[9 + i]);
   }
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void unaligned_overlap_4byte_conflict_test(void) {
@@ -648,7 +654,7 @@ static void unaligned_overlap_4byte_conflict_test(void) {
     EXPECT_REPORT(&vals8[5 + i], 1, "w", &vals8[5], 4, "w");
     intercept_reports_done();
   }
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void unaligned_overlap_8byte_test(void) {
@@ -683,7 +689,7 @@ static void unaligned_overlap_8byte_test(void) {
     KEXPECT_EQ(0xab, vals8[8 + i]);
     KEXPECT_EQ(0x01, vals8[9 + i]);
   }
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void unaligned_overlap_8byte_conflict_test(void) {
@@ -711,7 +717,7 @@ static void unaligned_overlap_8byte_conflict_test(void) {
     EXPECT_REPORT(&vals8[1 + i], 1, "w", &vals8[1], 8, "w");
     intercept_reports_done();
   }
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void basic_tests(void) {
@@ -736,6 +742,7 @@ static void basic_tests(void) {
 }
 
 static void interrupt_fn(void* arg) {
+  KASSERT(kthread_execution_context() == KTCTX_INTERRUPT);
   int* x = (int*)arg;
   tsan_rw_value(x);
 }
@@ -761,7 +768,7 @@ static void interrupt_test1(void) {
     tsan_rw_value(x);
     KEXPECT_EQ(3, *x);
   }
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void interrupt_test1b(void) {
@@ -780,7 +787,7 @@ static void interrupt_test1b(void) {
     tsan_rw_value(x);
     KEXPECT_EQ(3, *x);
   }
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void interrupt_test1c(void) {
@@ -792,7 +799,7 @@ static void interrupt_test1c(void) {
   kthread_queue_t q;
   kthread_queue_init(&q);
   KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_interruptable(&q, 20));
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 // As above, but with interrupts disabled (so that POP_INTERRUPTS() calls in
@@ -808,7 +815,7 @@ static void interrupt_test1d(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_interruptable(&q, 20));
   POP_INTERRUPTS();
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 // As above, but also with an unsynchronized thread that can run while we're
@@ -830,7 +837,7 @@ static void interrupt_test1e(void) {
   POP_INTERRUPTS();
 
   kthread_join(thread);
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 static void interrupt_test2(void) {
@@ -848,7 +855,7 @@ static void interrupt_test2(void) {
   intercept_reports_done();
   KEXPECT_EQ(3, *x);
 
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 // Slight variant on the above where we write to the value _after_ we schedule
@@ -870,7 +877,7 @@ static void interrupt_test3(void) {
   intercept_reports_done();
   KEXPECT_EQ(2, *x);
 
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
 // Combo test where thread 1 races with thread 2 by sleeping in an
@@ -892,11 +899,9 @@ static void interrupt_test4(void) {
   intercept_reports_done();
   KEXPECT_EQ(2, *x);
 
-  tsan_test_maybe_cleanup();
+  tsan_test_cleanup();
 }
 
-// TODO(tsan): test interrupt races with defint that is itself running in an
-// interrupt (and running normally).
 
 static void interrupt_tests(void) {
   interrupt_test1();
@@ -908,10 +913,316 @@ static void interrupt_tests(void) {
   interrupt_test3();
 }
 
+static void defint_fn(void* arg) {
+  int* x = (int*)arg;
+  tsan_rw_value(x);
+}
+
+static void defint_test1(void) {
+  KTEST_BEGIN("TSAN: defint safety (DEFINT_PUSH_AND_DISABLE()");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+  tsan_rw_value(x);
+
+  {
+    // TODO(aoates): replace uses of DEFINT_PUSH_AND_DISABLE() with spinlocks,
+    // and delete this test.
+    DEFINT_PUSH_AND_DISABLE();
+    defint_schedule(&defint_fn, x);
+    tsan_rw_value(x);
+    DEFINT_POP();
+    KEXPECT_EQ(3, *x);
+  }
+  tsan_test_cleanup();
+}
+
+static void defint_test2(void) {
+  KTEST_BEGIN("TSAN: defint safety (spinlock)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+  tsan_rw_value(x);
+
+  kspinlock_t mu = KSPINLOCK_NORMAL_INIT;
+  {
+    kspin_lock(&mu);
+    defint_schedule(&defint_fn, x);
+    tsan_rw_value(x);
+    kspin_unlock(&mu);
+    KEXPECT_EQ(3, *x);
+  }
+  tsan_test_cleanup();
+}
+
+static void defint_test3(void) {
+  KTEST_BEGIN("TSAN: defint safety (intsafe spinlock)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+  tsan_rw_value(x);
+
+  kspinlock_intsafe_t mu = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  {
+    kspin_lock_int(&mu);
+    defint_schedule(&defint_fn, x);
+    tsan_rw_value(x);
+    kspin_unlock_int(&mu);
+    busy_loop();  // Make sure the defint runs.
+
+    // Make sure we can see the access the defint did.
+    kspin_lock_int(&mu);
+    tsan_rw_value(x);
+    kspin_unlock_int(&mu);
+    KEXPECT_EQ(4, *x);
+  }
+  tsan_test_cleanup();
+}
+
+static void schedule_defint_fn(void* arg) {
+  KEXPECT_EQ(KTCTX_INTERRUPT, kthread_execution_context());
+  defint_schedule(&defint_fn, arg);
+}
+
+static void defint_test4(void) {
+  KTEST_BEGIN("TSAN: defint safety (defint scheduled from interrupt)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+
+  kspinlock_t mu = KSPINLOCK_NORMAL_INIT;
+  {
+    register_event_timer(get_time_ms() + 10, &schedule_defint_fn, x, NULL);
+    busy_loop();
+    // Note: this is "getting lucky" (we're not explicitly synchronizing with
+    // the defint, but relying on timing to get the ordering right).
+    kspin_lock(&mu);
+    tsan_rw_value(x);
+    kspin_unlock(&mu);
+    tsan_rw_value(x);
+    KEXPECT_EQ(3, *x);
+  }
+  tsan_test_cleanup();
+}
+
+static void defint_test5(void) {
+  KTEST_BEGIN("TSAN: defint safety (scheduling a defint synchronizes)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+
+  tsan_rw_value(x);  // Should be synchronized by defint_schedule().
+  defint_schedule(&defint_fn, x);
+  busy_loop();  // Make sure the defint runs.
+
+  KEXPECT_EQ(2, *x);
+  tsan_test_cleanup();
+}
+
+static void defint_race_test1(void) {
+  KTEST_BEGIN("TSAN: defint race (basic thread context/defint race)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+  tsan_rw_value(x);
+
+  intercept_reports();
+  defint_schedule(&defint_fn, x);
+  busy_loop();  // Make sure the defint runs.
+  tsan_rw_value(x);
+  EXPECT_REPORT(x, 4, "?", x, 4, "w");
+  intercept_reports_done();
+  tsan_test_cleanup();
+}
+
+static void defint_race_test2(void) {
+  KTEST_BEGIN(
+      "TSAN: defint race (basic thread context/interrupt-context defint race)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+
+  intercept_reports();
+  register_event_timer(get_time_ms() + 10, &schedule_defint_fn, x, NULL);
+  busy_loop();
+  tsan_rw_value(x);
+  EXPECT_REPORT(x, 4, "?", x, 4, "w");
+  intercept_reports_done();
+  tsan_test_cleanup();
+}
+
+// Same as above, but races with an access before we register the timer.
+static void defint_race_test3(void) {
+  KTEST_BEGIN(
+      "TSAN: defint race (basic thread context/interrupt-context defint race "
+      "#2)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+  tsan_rw_value(x);
+
+  intercept_reports();
+  register_event_timer(get_time_ms() + 10, &schedule_defint_fn, x, NULL);
+  busy_loop();
+  EXPECT_REPORT(x, 4, "?", x, 4, "w");
+  intercept_reports_done();
+  tsan_test_cleanup();
+}
+
+// Same as defint_race_test2, but try and race in the opposite order.
+static void defint_race_test4(void) {
+  KTEST_BEGIN(
+      "TSAN: defint race (basic thread context/interrupt-context defint race "
+      "#2)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+
+  intercept_reports();
+  register_event_timer(get_time_ms() + 10, &schedule_defint_fn, x, NULL);
+  tsan_rw_value(x);
+  busy_loop();
+  EXPECT_REPORT(x, 4, "?", x, 4, "w");
+  intercept_reports_done();
+  tsan_test_cleanup();
+}
+
+static void defint_int_race_test1(void) {
+  KTEST_BEGIN("TSAN: defint race (interrupt races with thread-ctx defint)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+  kspinlock_t mu = KSPINLOCK_NORMAL_INIT;
+
+  intercept_reports();
+  register_event_timer(get_time_ms() + 10, &interrupt_fn, x, NULL);
+
+  kspin_lock(&mu);
+  defint_schedule(&defint_fn,  x);
+  kspin_unlock(&mu);  // Should run defint synchronously.
+  busy_loop();  // Make sure interrupt fires.
+  busy_loop();
+  EXPECT_REPORT(x, 4, "?", x, 4, "w");
+  intercept_reports_done();
+  KEXPECT_EQ(2, *x);
+  tsan_test_cleanup();
+}
+
+static void slow_racy_defint(void* arg) {
+  tsan_rw_value((int*)arg);
+  busy_loop();
+  tsan_rw_value((int*)arg);
+}
+
+// Similar to the above, but try and force the interrupt to interrupt the
+// defint itself (rather than running before or after).
+static void defint_int_race_test2(void) {
+  KTEST_BEGIN("TSAN: defint race (interrupt INTERRUPTS thread-ctx defint)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+  kspinlock_intsafe_t mu = KSPINLOCK_INTERRUPT_SAFE_INIT;
+
+  intercept_reports();
+  kspin_lock_int(&mu);
+  register_event_timer(get_time_ms() + 10, &interrupt_fn, x, NULL);
+  defint_schedule(&slow_racy_defint,  x);
+  kspin_unlock_int(&mu);
+  defint_process_queued(false);  // Should run defint synchronously.
+  EXPECT_REPORT(x, 4, "?", x, 4, "w");
+  intercept_reports_done();
+  KEXPECT_EQ(3, *x);
+  tsan_test_cleanup();
+}
+
+static void schedule_slow_racy_defint_fn(void* arg) {
+  KEXPECT_EQ(KTCTX_INTERRUPT, kthread_execution_context());
+  defint_schedule(&defint_fn, arg);
+}
+
+static void schedule_slow_racy_defint_fn2(void* arg) {
+  KEXPECT_EQ(KTCTX_INTERRUPT, kthread_execution_context());
+  defint_schedule(&defint_fn, arg);
+  tsan_rw_value((int*)arg);
+}
+
+// Variant of the above where we do the access _before_ scheduling the defint,
+// which is safe.
+static void schedule_slow_racy_defint_fn3(void* arg) {
+  KEXPECT_EQ(KTCTX_INTERRUPT, kthread_execution_context());
+  tsan_rw_value((int*)arg);
+  defint_schedule(&defint_fn, arg);
+}
+
+static void defint_int_race_test3(void) {
+  KTEST_BEGIN("TSAN: defint race (interrupt races with interrupt-ctx defint)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+
+  intercept_reports();
+  register_event_timer(get_time_ms() + 10, &schedule_slow_racy_defint_fn, x,
+                       NULL);
+  register_event_timer(get_time_ms() + 20, &interrupt_fn, x, NULL);
+
+  busy_loop();  // Make sure interrupt fires.
+  busy_loop();
+  EXPECT_REPORT(x, 4, "?", x, 4, "w");
+  intercept_reports_done();
+  // Don't check the value of x --- the rw might be interrupted in a racy way
+  // that causes its value to be either 1 or 2.
+  tsan_test_cleanup();
+}
+
+// As above, but have it be the interrupt that scheduled the defint (and runs
+// it) itself racing with the defint, rather than the defint being interrupted
+// by a different (racing) interrupt.
+static void defint_int_race_test4(void) {
+  KTEST_BEGIN(
+      "TSAN: defint race (interrupt races with interrupt-ctx defint #2)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+
+  intercept_reports();
+  register_event_timer(get_time_ms() + 10, &schedule_slow_racy_defint_fn2, x,
+                       NULL);
+
+  busy_loop();  // Make sure interrupt fires.
+  busy_loop();
+  EXPECT_REPORT(x, 4, "?", x, 4, "w");
+  intercept_reports_done();
+  KEXPECT_EQ(2, *x);
+  tsan_test_cleanup();
+}
+
+// As above, but with a safe version.
+static void defint_int_race_test5(void) {
+  KTEST_BEGIN(
+      "TSAN: defint race (interrupt races with interrupt-ctx defint #3)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+
+  register_event_timer(get_time_ms() + 10, &schedule_slow_racy_defint_fn3, x,
+                       NULL);
+
+  busy_loop();  // Make sure interrupt fires.
+  busy_loop();
+  KEXPECT_EQ(2, *x);
+  tsan_test_cleanup();
+}
+
+static void defint_tests(void) {
+  defint_test1();
+  defint_test2();
+  defint_test3();
+  defint_test4();
+  defint_test5();
+
+  defint_race_test1();
+  defint_race_test2();
+  defint_race_test3();
+  defint_race_test4();
+
+  defint_int_race_test1();
+  defint_int_race_test2();
+  defint_int_race_test3();
+  defint_int_race_test4();
+  defint_int_race_test5();
+}
+
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   basic_tests();
   interrupt_tests();
+  defint_tests();
 
   tsan_test_free_all();
 }

@@ -28,7 +28,9 @@ typedef enum {
 
   // Special lock type indicating the per-CPU interrupt lock.
   TSAN_INTERRUPTS = 2,
-  // TODO(tsan): implement interrupt and defint special handling.
+
+  // Special lock type indicating the per-CPU defint lock.
+  TSAN_DEFINTS = 3,
 } tsan_lock_type_t;
 
 void tsan_lock_init(tsan_lock_data_t* lock);

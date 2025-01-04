@@ -44,8 +44,8 @@ typedef struct {
 // normal threads must use other synchronization constructs (locks, the
 // scheduler implicit lock, etc) to synchronize between each other.
 typedef struct {
-  // TODO(tsan): implement defints
   kthread_t interrupt_thread;
+  kthread_t defint_thread;
 } tsan_cpu_data_t;
 
 // TODO(tsan): protect these slots from concurrent access.  If we only access
@@ -70,13 +70,19 @@ void tsan_per_cpu_init(void) {
   KASSERT(0 == kthread_create(&g_tsan_cpu.interrupt_thread,
                               &tsan_special_thread_body, NULL));
   KASSERT(g_tsan_cpu.interrupt_thread != NULL);
+
+  KASSERT(0 == kthread_create(&g_tsan_cpu.defint_thread,
+                              &tsan_special_thread_body, NULL));
+  KASSERT(g_tsan_cpu.defint_thread != NULL);
 }
 
 kthread_t tsan_current_thread(void) {
   switch (kthread_execution_context()) {
     case KTCTX_THREAD:
-    case KTCTX_DEFINT:
       return kthread_current_thread();
+
+    case KTCTX_DEFINT:
+      return get_cpu_data()->defint_thread;
 
     case KTCTX_INTERRUPT:
       return get_cpu_data()->interrupt_thread;
@@ -143,35 +149,61 @@ void tsan_lock_init(tsan_lock_data_t* lock) {
   }
 }
 
+// Do an acquire operation for a special (interrupt or defint) thread.
+static void do_special_acquire(kthread_t thread, kthread_t special_thread) {
+  // Acquire only the interrupt thread's clock --- only writes made in an
+  // interrupt context are now considered synchronized.
+  PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
+  tsan_sid_t int_sid = special_thread->tsan.sid;
+  thread->tsan.clock.ts[int_sid] = max(thread->tsan.clock.ts[int_sid],
+                                       special_thread->tsan.clock.ts[int_sid]);
+  POP_INTERRUPTS_NO_TSAN();
+}
+
+// Do a release operation for a special (interrupt or defint) thread.
+static void do_special_release(kthread_t thread, kthread_t special_thread) {
+  // Synchronize only my values to the interrupt thread.  Note: this is
+  // incorrect!  We should in theory publish _all_ values I have seen to
+  // the interrupt thread.  However that's redundant currently --- for me to
+  // have seen a value from another thread, that thread must also have
+  // synchronized with the interrupt thread.  Therefore I'm leaving this
+  // more limited version in place for now, in case I'm wrong about that,
+  // to avoid over-synchronization.  If I find a counter example, that
+  // becomes my test case.
+  PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
+  tsan_sid_t my_sid = thread->tsan.sid;
+  special_thread->tsan.clock.ts[my_sid] =
+      max(thread->tsan.clock.ts[my_sid], special_thread->tsan.clock.ts[my_sid]);
+  POP_INTERRUPTS_NO_TSAN();
+}
+
 void tsan_acquire(tsan_lock_data_t* lock, tsan_lock_type_t type) {
   if (!g_tsan_init) return;
 
-  KASSERT(type == TSAN_LOCK || type == TSAN_INTERRUPTS);
+  KASSERT(type == TSAN_LOCK || type == TSAN_INTERRUPTS || type == TSAN_DEFINTS);
   kthread_t thread = tsan_current_thread();
   switch (type) {
     case TSAN_LOCK:
       tsan_vc_acquire(&thread->tsan.clock, &lock->clock);
       break;
 
-    case TSAN_INTERRUPTS: {
+    case TSAN_INTERRUPTS:
       KASSERT_DBG(lock == NULL);
-      // Acquire only the interrupt thread's clock --- only writes made in an
-      // interrupt context are now considered synchronized.
-      PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
-      tsan_sid_t int_sid = get_cpu_data()->interrupt_thread->tsan.sid;
-      thread->tsan.clock.ts[int_sid] =
-          max(thread->tsan.clock.ts[int_sid],
-              get_cpu_data()->interrupt_thread->tsan.clock.ts[int_sid]);
-      POP_INTERRUPTS_NO_TSAN();
+      do_special_acquire(thread, get_cpu_data()->interrupt_thread);
       break;
-    }
+
+    case TSAN_DEFINTS:
+      KASSERT_DBG(lock == NULL);
+      do_special_acquire(thread, get_cpu_data()->defint_thread);
+      break;
+
   }
 }
 
 void tsan_release(tsan_lock_data_t* lock, tsan_lock_type_t type) {
   if (!g_tsan_init) return;
 
-  KASSERT(type == TSAN_LOCK || type == TSAN_INTERRUPTS);
+  KASSERT(type == TSAN_LOCK || type == TSAN_INTERRUPTS || type == TSAN_DEFINTS);
   kthread_t thread = tsan_current_thread();
   // Publish all our values (and transitive ones) to the lock.
   switch (type) {
@@ -179,24 +211,15 @@ void tsan_release(tsan_lock_data_t* lock, tsan_lock_type_t type) {
       tsan_vc_acquire(&lock->clock, &thread->tsan.clock);
       break;
 
-    case TSAN_INTERRUPTS: {
+    case TSAN_INTERRUPTS:
       KASSERT_DBG(lock == NULL);
-      // Synchronize only my values to the interrupt thread.  Note: this is
-      // incorrect!  We should in theory publish _all_ values I have seen to
-      // the interrupt thread.  However that's redundant currently --- for me to
-      // have seen a value from another thread, that thread must also have
-      // synchronized with the interrupt thread.  Therefore I'm leaving this
-      // more limited version in place for now, in case I'm wrong about that,
-      // to avoid over-synchronization.  If I find a counter example, that
-      // becomes my test case.
-      PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
-      tsan_sid_t my_sid = thread->tsan.sid;
-      get_cpu_data()->interrupt_thread->tsan.clock.ts[my_sid] =
-          max(thread->tsan.clock.ts[my_sid],
-              get_cpu_data()->interrupt_thread->tsan.clock.ts[my_sid]);
-      POP_INTERRUPTS_NO_TSAN();
+      do_special_release(thread, get_cpu_data()->interrupt_thread);
       break;
-    }
+
+    case TSAN_DEFINTS:
+      KASSERT_DBG(lock == NULL);
+      do_special_release(thread, get_cpu_data()->defint_thread);
+      break;
   }
   // Make sure all future writes are _not_ considered published.
   tsan_thread_epoch_inc(thread);
