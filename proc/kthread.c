@@ -33,7 +33,10 @@
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "sanitizers/tsan/tsan_lock.h"
+
+#if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_thread.h"
+#endif
 
 #define KTHREAD_STACK_PROTECT_LEN PAGE_SIZE
 #define KTHREAD_STACK_SIZE \

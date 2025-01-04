@@ -24,9 +24,12 @@
 #include "common/list.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
-#include "sanitizers/tsan/tsan_thread.h"
 #include "user/include/apos/posix_signal.h"
 #include "syscall/context.h"
+
+#if ENABLE_TSAN
+#include "sanitizers/tsan/tsan_thread.h"
+#endif
 
 typedef enum {
   KTHREAD_RUNNING = 0,    // Currently running.
