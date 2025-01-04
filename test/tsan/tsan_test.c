@@ -705,6 +705,10 @@ static void interrupt_fn(void* arg) {
 }
 
 static void busy_loop(void) { for (volatile int i = 0; i < 10000000; ++i); }
+static void* busy_loop_thread(void* arg) {
+  for (volatile int i = 0; i < 10000000; ++i);
+  return NULL;
+}
 
 static void interrupt_test1(void) {
   KTEST_BEGIN("TSAN: interrupt-safety");
@@ -740,6 +744,56 @@ static void interrupt_test1b(void) {
     tsan_rw_value(x);
     KEXPECT_EQ(3, *x);
   }
+  kfree(x);
+}
+
+static void interrupt_test1c(void) {
+  KTEST_BEGIN("TSAN: interrupt-safety (with scheduler_wait_on() timeout)");
+  int* x = KMALLOC(int);
+  *x = 0;
+  tsan_rw_value(x);
+
+  kthread_queue_t q;
+  kthread_queue_init(&q);
+  KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_interruptable(&q, 20));
+  kfree(x);
+}
+
+// As above, but with interrupts disabled (so that POP_INTERRUPTS() calls in
+// scheduler_wait_on_interruptable() don't do anything).
+static void interrupt_test1d(void) {
+  KTEST_BEGIN("TSAN: interrupt-safety (with scheduler_wait_on() timeout #2)");
+  int* x = KMALLOC(int);
+  *x = 0;
+  tsan_rw_value(x);
+
+  kthread_queue_t q;
+  kthread_queue_init(&q);
+  PUSH_AND_DISABLE_INTERRUPTS();
+  KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_interruptable(&q, 20));
+  POP_INTERRUPTS();
+  kfree(x);
+}
+
+// As above, but also with an unsynchronized thread that can run while we're
+// waiting.
+static void interrupt_test1e(void) {
+  KTEST_BEGIN("TSAN: interrupt-safety (with scheduler_wait_on() timeout #3)");
+  int* x = KMALLOC(int);
+  *x = 0;
+  tsan_rw_value(x);
+
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, busy_loop_thread, NULL));
+  scheduler_make_runnable(thread);
+
+  kthread_queue_t q;
+  kthread_queue_init(&q);
+  PUSH_AND_DISABLE_INTERRUPTS();
+  KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_interruptable(&q, 20));
+  POP_INTERRUPTS();
+
+  kthread_join(thread);
   kfree(x);
 }
 
@@ -811,6 +865,9 @@ static void interrupt_test4(void) {
 static void interrupt_tests(void) {
   interrupt_test1();
   interrupt_test1b();
+  interrupt_test1c();
+  interrupt_test1d();
+  interrupt_test1e();
   interrupt_test2();
   interrupt_test3();
 }
