@@ -557,6 +557,27 @@ static void interrupted_defint_test(void) {
   }
 }
 
+// As above, but with a defint that's run synchronously (not from an interrupt
+// context).  Makes sure that (a) it can be interrupted (easy) and (b) the
+// execution context is tracked correctly (subtle and was buggy).
+static void interrupted_defint_test2(void) {
+  KTEST_BEGIN("Deferred interrupt can be interrupted (synchronous)");
+  bool done = false;
+
+  kspinlock_t mu = KSPINLOCK_NORMAL_INIT;
+  kspin_lock(&mu);
+  defint_schedule(&slow_defint_interrupted, &done);
+  kspin_unlock(&mu);  // Should run the defint synchronously, and it should be
+                      // interrupted.
+
+  // Block interrupts for safety, though it isn't necessary if the test worked
+  {
+    PUSH_AND_DISABLE_INTERRUPTS();
+    KEXPECT_TRUE(done);
+    POP_INTERRUPTS();
+  }
+}
+
 static void scheduler_interrupt_test(void) {
   KTEST_BEGIN("scheduler_interrupt_thread(): interruptable thread ");
   kthread_t thread1;
@@ -1709,6 +1730,7 @@ void kthread_test(void) {
   scheduler_wake_all_race_test();
   scheduler_spin_lock_race_test();
   interrupted_defint_test();
+  interrupted_defint_test2();
   scheduler_interrupt_test();
   scheduler_interrupt_timeout_test();
   kthread_is_done_test();

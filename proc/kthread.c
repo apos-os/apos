@@ -331,12 +331,18 @@ void kthread_switch(kthread_t new_thread) {
 }
 
 ktctx_type_t kthread_execution_context(void) {
-  if (is_running_defint() && g_current_thread->interrupt_level <= 1) {
-    return KTCTX_DEFINT;
-  } else if (g_current_thread && g_current_thread->interrupt_level > 0) {
-    return KTCTX_INTERRUPT;
+  // Before kthread is initialized, just assume we're always in a thread ctx.
+  if (!g_current_thread) return KTCTX_THREAD;
+
+  defint_running_t s = defint_running_state();
+  int int_level = g_current_thread->interrupt_level;
+  if (s == DEFINT_NONE) {
+    return (int_level > 0) ? KTCTX_INTERRUPT : KTCTX_THREAD;
+  } else if (s == DEFINT_THREAD_CTX) {
+    return (int_level > 0) ? KTCTX_INTERRUPT : KTCTX_DEFINT;
   } else {
-    return KTCTX_THREAD;
+    KASSERT_DBG(s == DEFINT_INTERRUPT_CTX);
+    return (int_level > 1) ? KTCTX_INTERRUPT : KTCTX_DEFINT;
   }
 }
 
@@ -436,7 +442,7 @@ void kmutex_init(kmutex_t* m) {
 void kmutex_lock(kmutex_t* m) {
   // We should never be blocking if we're holding a spinlock.
   KASSERT_DBG(kthread_current_thread()->spinlocks_held == 0);
-  KASSERT_DBG(!is_running_defint());
+  KASSERT_DBG(defint_running_state() == DEFINT_NONE);
   PUSH_AND_DISABLE_INTERRUPTS();
   if (m->locked) {
     // Mutexes are non-reentrant, so this would deadlock.

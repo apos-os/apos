@@ -88,6 +88,15 @@ static inline void _defint_cleanup_verify(defint_state_t* saved) {
 
 #define DEFINT_POP() defint_set_state(_defint_state)
 
-bool is_running_defint(void);
+typedef enum {
+  DEFINT_NONE,        // We're not running a defint.
+  DEFINT_THREAD_CTX,  // We're running a defint triggered synchronously from a
+                      // thread context.
+  DEFINT_INTERRUPT_CTX,  // We're running a defint triggered from an interrupt
+                         // context
+} defint_running_t;
+
+// Return whether we're running a defint and if so, how it was triggered.
+defint_running_t defint_running_state(void);
 
 #endif
