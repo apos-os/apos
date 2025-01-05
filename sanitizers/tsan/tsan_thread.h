@@ -42,4 +42,8 @@ void tsan_thread_join(kthread_t joined);
 // Convert a slot ID into the corresponding kthread.
 kthread_t tsan_get_thread(tsan_sid_t sid);
 
+// Returns true if the given sid corresponds to a special stack-stomping thread
+// (e.g. interrupt or defint virtual thread).
+bool tsan_is_stack_stomper(tsan_sid_t sid);
+
 #endif

@@ -68,6 +68,13 @@ static ALWAYS_INLINE tsan_shadow_t* get_shadow_cells(addr_t addr) {
   return (tsan_shadow_t*)shadow;
 }
 
+static ALWAYS_INLINE tsan_page_metadata_t* get_page_md(addr_t addr) {
+  addr_t heap_page = (addr - TSAN_HEAP_START_ADDR) / PAGE_SIZE;
+  addr_t md_addr =
+      TSAN_PAGE_METADATA_START + (heap_page * sizeof(tsan_page_metadata_t));
+  return (tsan_page_metadata_t*)md_addr;
+}
+
 static ALWAYS_INLINE uint8_t get_shadow_mask(addr_t offset, uint8_t log_size) {
   return (uint8_t)((uint16_t)((1 << (1 << log_size)) - 1) << offset);
 }
@@ -197,6 +204,7 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
   }
 
   bool stored = false;
+  const tsan_page_metadata_t* page_md = get_page_md(addr);
   for (int i = 0; i < TSAN_SHADOW_CELLS; ++i) {
     tsan_shadow_t old = shadow_mem[i];
     if (old.epoch == 0) {
@@ -229,6 +237,13 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
     }
     if (thread->tsan.clock.ts[old.sid] >= old.epoch) {
       // Safe, we synchronized.
+      continue;
+    }
+    if (page_md->is_stack && (tsan_is_stack_stomper(old.sid) ||
+                              tsan_is_stack_stomper(shadow.sid))) {
+      // This is a thread's stack address, and one of the accesses is from a
+      // stack-stomping thread.  It is not _definitely_ safe, but most likely is
+      // harmless stack-space reuse, so suppress the race report.
       continue;
     }
 
@@ -282,4 +297,16 @@ void tsan_set_report_func(tsan_report_fn_t fn) {
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   g_tsan_report_fn = fn;
   POP_INTERRUPTS_NO_TSAN();
+}
+
+void tsan_mark_stack(addr_t start, size_t len, bool is_stack) {
+  KASSERT(start % PAGE_SIZE == 0);
+  KASSERT(len % PAGE_SIZE == 0);
+  KASSERT(start >= TSAN_HEAP_START_ADDR);
+  KASSERT(len < TSAN_HEAP_LEN_ADDR);
+  KASSERT(start + len < TSAN_HEAP_START_ADDR + TSAN_HEAP_LEN_ADDR);
+
+  for (addr_t addr = start; addr < start + len; addr += PAGE_SIZE) {
+    get_page_md(addr)->is_stack = is_stack;
+  }
 }

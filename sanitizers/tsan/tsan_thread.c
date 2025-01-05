@@ -21,6 +21,7 @@
 #include "proc/kthread.h"
 #include "sanitizers/tsan/internal.h"
 #include "sanitizers/tsan/internal_types.h"
+#include "sanitizers/tsan/tsan_access.h"
 #include "sanitizers/tsan/tsan_event.h"
 #include "sanitizers/tsan/tsan_lock.h"
 #include "sanitizers/tsan/tsan_params.h"
@@ -114,6 +115,15 @@ void tsan_thread_create(kthread_t thread) {
   thread->tsan.clock.ts[sid] = g_tsan_slots[sid].epoch;
   tsan_event_init(&thread->tsan.log);
   tsan_thread_epoch_inc(thread);
+
+  // Mark the stack as stack space.  Note --- we won't be able to do this for
+  // the root thread, because (a) this is called on the root thread before TSAN
+  // is initialized, and (b) the root thread stack isn't contained in the heap.
+  if (g_tsan_init) {
+    KASSERT_DBG((addr_t)thread->stack % PAGE_SIZE == 0);
+    KASSERT_DBG(thread->stacklen % PAGE_SIZE == 0);
+    tsan_mark_stack((addr_t)thread->stack, thread->stacklen, true);
+  }
 }
 
 void tsan_thread_destroy(kthread_t thread) {
@@ -128,6 +138,8 @@ void tsan_thread_destroy(kthread_t thread) {
   g_tsan_slots[sid].epoch = thread->tsan.clock.ts[sid];
   g_tsan_slots[sid].thread = NULL;
   kmemset(&thread->tsan, 0, sizeof(thread->tsan));
+
+  tsan_mark_stack((addr_t)thread->stack, thread->stacklen, false);
 }
 
 // TODO(tsan): protect all of these from interrupts, defints, and other
@@ -228,4 +240,9 @@ void tsan_release(tsan_lock_data_t* lock, tsan_lock_type_t type) {
 kthread_t tsan_get_thread(tsan_sid_t sid) {
   KASSERT(sid >= 0 && sid < TSAN_THREAD_SLOTS);
   return g_tsan_slots[sid].thread;
+}
+
+bool tsan_is_stack_stomper(tsan_sid_t sid) {
+  return sid == g_tsan_cpu.interrupt_thread->tsan.sid ||
+         sid == g_tsan_cpu.defint_thread->tsan.sid;
 }

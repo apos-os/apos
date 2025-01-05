@@ -20,6 +20,7 @@
 #include "memory/page_alloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
+#include "proc/kthread-internal.h"
 #include "sanitizers/tsan/internal.h"
 #include "sanitizers/tsan/shadow_cell.h"
 #include "sanitizers/tsan/tsan_defs.h"

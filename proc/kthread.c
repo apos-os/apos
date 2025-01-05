@@ -188,6 +188,10 @@ void kthread_destroy(kthread_t thread) {
   list_remove(&g_all_threads, &thread->all_threads_link);
   POP_INTERRUPTS();
 
+#if ENABLE_TSAN
+  tsan_thread_destroy(thread);
+#endif
+
   // Write gargbage to crash anyone that tries to use the thread later.
   kmemset(&thread->context, 0xAB, sizeof(kthread_arch_context_t));
   thread->state = KTHREAD_DESTROYED;
@@ -198,10 +202,6 @@ void kthread_destroy(kthread_t thread) {
     kfree(thread->stack);
     thread->stack = 0x0;
   }
-
-#if ENABLE_TSAN
-  tsan_thread_destroy(thread);
-#endif
 
   kfree(thread);
 }

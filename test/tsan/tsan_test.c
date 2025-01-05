@@ -1218,11 +1218,78 @@ static void defint_tests(void) {
   defint_int_race_test5();
 }
 
+static void interrupt_stack_writer(void* arg) {
+  int vals[5];
+  tsan_rw_value(&vals[0]);
+  tsan_rw_value(&vals[1]);
+  tsan_rw_value(&vals[2]);
+  tsan_rw_value(&vals[3]);
+  tsan_rw_value(&vals[4]);
+}
+
+static void interrupt_schedule_defint_stack_writer(void* arg) {
+  defint_schedule(&interrupt_stack_writer, arg);
+}
+
+static void recurse_stack_writer(int n) {
+  if (n == 0) return;
+  recurse_stack_writer(n - 1);
+
+  int vals[5];
+  tsan_rw_value(&vals[0]);
+  tsan_rw_value(&vals[1]);
+  tsan_rw_value(&vals[2]);
+  tsan_rw_value(&vals[3]);
+  tsan_rw_value(&vals[4]);
+}
+
+static void interrupt_stack_test(void) {
+  KTEST_BEGIN("TSAN: interrupt runs then function uses stack");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+
+  register_event_timer(get_time_ms() + 10, &interrupt_stack_writer, x, NULL);
+  // Get the interrupt to run on our current stack.
+  busy_loop();
+  busy_loop();
+
+  // Now use the stack.
+  recurse_stack_writer(20);
+
+  tsan_test_cleanup();
+}
+
+static void defint_stack_test(void) {
+  KTEST_BEGIN("TSAN: defint runs then function uses stack");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+
+  register_event_timer(get_time_ms() + 10,
+                       &interrupt_schedule_defint_stack_writer, x, NULL);
+  // Get the interrupt/defint to run on our current stack.
+  busy_loop();
+  busy_loop();
+
+  // Now use the stack.
+  recurse_stack_writer(20);
+
+  tsan_test_cleanup();
+}
+
+// TODO(tsan): write a test for the opposite race --- a thread uses its stack,
+// then an interrupt fires.  Hard to do currently.
+
+static void stack_tests(void) {
+  interrupt_stack_test();
+  defint_stack_test();
+}
+
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   basic_tests();
   interrupt_tests();
   defint_tests();
+  stack_tests();
 
   tsan_test_free_all();
 }
