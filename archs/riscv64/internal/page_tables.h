@@ -121,6 +121,9 @@ void rsv_sfence(void);
 void rsv_set_pte_addr(rsv_sv39_pte_t* pte, phys_addr_t phys,
                       rsv_mapsize_t size);
 
+// Returns the physical address of the given PTE.
+phys_addr_t rsv_get_pte_addr(const rsv_sv39_pte_t* pte);
+
 // Returns the index of the virtual address in the page table at the given level
 size_t rsv_pte_index(addr_t virt, rsv_mapsize_t level);
 
