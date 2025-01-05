@@ -73,8 +73,8 @@ typedef struct {
   size_t heap_size_max;
 
   // If TSAN is enabled (and supported), the virtual memory range used for the
-  // shadow heap.
-  smmap_region_t tsan_heap;
+  // shadow heap and other TSAN data structures.
+  smmap_region_t tsan_region;
 
   // The base address of the initial kernel stack (used for thread/process 0).
   smmap_region_t thread0_stack;

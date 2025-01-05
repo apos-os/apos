@@ -34,17 +34,17 @@ void tsan_init(void) {
   KASSERT(ENABLE_TSAN);
 
   const memory_info_t* meminfo = get_global_meminfo();
-  KASSERT(meminfo->tsan_heap.base != 0);
-  KASSERT(meminfo->tsan_heap.len >=
+  KASSERT(meminfo->tsan_region.base != 0);
+  KASSERT(meminfo->tsan_region.len >=
           meminfo->heap.len * TSAN_SHADOW_MEMORY_MULT);
   // Sanity checks:
   KASSERT(meminfo->heap_size_max >= 1024 * 1024);
   KASSERT(meminfo->heap_size_max <= meminfo->heap.len);
-  KASSERT(MEM_LAST_MAPPABLE_ADDR - meminfo->tsan_heap.len >=
-          meminfo->tsan_heap.base);
+  KASSERT(MEM_LAST_MAPPABLE_ADDR - meminfo->tsan_region.len >=
+          meminfo->tsan_region.base);
 
-  vm_create_kernel_mapping(&g_root_tsan_heap_vm_area, meminfo->tsan_heap.base,
-                           meminfo->tsan_heap.len,
+  vm_create_kernel_mapping(&g_root_tsan_heap_vm_area, meminfo->tsan_region.base,
+                           meminfo->tsan_region.len,
                            false /* allow_allocation */);
 
   // Force-allocate enough pages in the TSAN heap region to cover the entire
@@ -56,7 +56,7 @@ void tsan_init(void) {
        ++page) {
     const phys_addr_t phys_addr = page_frame_alloc();
     KASSERT(phys_addr != 0x0);
-    const addr_t virt = meminfo->tsan_heap.base + page * PAGE_SIZE;
+    const addr_t virt = meminfo->tsan_region.base + page * PAGE_SIZE;
     page_frame_map_virtual(virt, phys_addr, mapping_prot,
                            MEM_ACCESS_KERNEL_ONLY, MEM_GLOBAL);
 
@@ -70,7 +70,7 @@ void tsan_init(void) {
   // (.data and .bss sections of the kernel, in particular).
 
   KASSERT(meminfo->heap.base == TSAN_HEAP_START_ADDR);
-  KASSERT(meminfo->tsan_heap.base == TSAN_SHADOW_START_ADDR);
+  KASSERT(meminfo->tsan_region.base == TSAN_SHADOW_START_ADDR);
 
   tsan_per_cpu_init();
 

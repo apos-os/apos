@@ -169,8 +169,8 @@ static void create_initial_meminfo(const dt_tree_t* fdt, memory_info_t* meminfo,
     meminfo->heap_size_max =
         mainmem_len / TSAN_HEAP_FRACTION / (TSAN_SHADOW_MEMORY_MULT + 1);
     meminfo->heap_size_max = align_up(meminfo->heap_size_max, PAGE_SIZE);
-    meminfo->tsan_heap.base = RSV64_TSAN_HEAP_START;
-    meminfo->tsan_heap.len = RSV64_TSAN_HEAP_LEN;
+    meminfo->tsan_region.base = RSV64_TSAN_REGION_START;
+    meminfo->tsan_region.len = RSV64_TSAN_REGION_LEN;
   } else {
     meminfo->heap_size_max = meminfo->heap.len;
   }

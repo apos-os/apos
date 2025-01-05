@@ -21,6 +21,6 @@
 // optimized, and because in practice they are always set the same.
 #define TSAN_HEAP_START_ADDR RSV64_HEAP_START
 #define TSAN_HEAP_LEN_ADDR RSV64_HEAP_LEN
-#define TSAN_SHADOW_START_ADDR RSV64_TSAN_HEAP_START
+#define TSAN_SHADOW_START_ADDR RSV64_TSAN_REGION_START
 
 #endif
