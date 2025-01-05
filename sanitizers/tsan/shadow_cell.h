@@ -45,4 +45,12 @@ static ALWAYS_INLINE uint64_t shadow2raw(tsan_shadow_t s) {
   return ((tsan_shadow_punner_t)s).raw;
 }
 
+// Metadata about an entire page of memory.
+typedef struct {
+  uint32_t is_stack : 1;
+} tsan_page_metadata_t;
+
+_Static_assert(sizeof(tsan_page_metadata_t) == sizeof(uint32_t),
+               "Bad tsan_page_metadata_t");
+
 #endif

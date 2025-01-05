@@ -16,11 +16,17 @@
 #define APOO_SANITIZERS_TSAN_TSAN_LAYOUT_H
 
 #include "arch/memory/layout.h"
+#include "sanitizers/tsan/tsan_defs.h"
 
 // Hard-coded memory layout parameters.  We hard-code so that they can be easily
 // optimized, and because in practice they are always set the same.
 #define TSAN_HEAP_START_ADDR RSV64_HEAP_START
 #define TSAN_HEAP_LEN_ADDR RSV64_HEAP_LEN
-#define TSAN_SHADOW_START_ADDR RSV64_TSAN_REGION_START
+#define TSAN_SHADOW_HEAP_START_ADDR RSV64_TSAN_REGION_START
+#define TSAN_SHADOW_HEAP_LEN (RSV64_HEAP_LEN * TSAN_SHADOW_MEMORY_MULT)
+
+// Per-page metadata block.
+#define TSAN_PAGE_METADATA_START \
+  (TSAN_SHADOW_HEAP_START_ADDR + TSAN_SHADOW_HEAP_LEN)
 
 #endif
