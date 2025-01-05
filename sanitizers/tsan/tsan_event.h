@@ -20,7 +20,6 @@
 
 #include "common/types.h"
 #include "sanitizers/tsan/report.h"
-#include "sanitizers/tsan/shadow_cell.h"
 #include "sanitizers/tsan/tsan_access.h"
 
 // All addresses and PC values are assumed to be at most this many bits.
