@@ -22,8 +22,11 @@
 #include "common/list.h"
 #include "dev/interrupts.h"
 #include "dev/timer.h"
-#include "proc/scheduler.h"
 #include "memory/kmalloc.h"
+#include "proc/scheduler.h"
+#include "proc/spinlock.h"
+
+static kspinlock_intsafe_t g_timer_lock = KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC;
 
 // TODO(aoates): clean this up and unify the one-shot and recurring timers.
 
@@ -128,9 +131,9 @@ void timer_init(void) {
 
 int register_timer_callback(int period, int limit,
                             timer_handler_t cb, void* arg) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock_int(&g_timer_lock);
   if (num_timers >= KMAX_TIMERS) {
-    POP_INTERRUPTS();
+    kspin_unlock_int(&g_timer_lock);
     return -ENOMEM;
   }
   // Find a free slot.
@@ -161,13 +164,13 @@ int register_timer_callback(int period, int limit,
   timers[idx].handler = cb;
   timers[idx].handler_arg = arg;
   timers[idx].limit = limit;
-  POP_INTERRUPTS();
+  kspin_unlock_int(&g_timer_lock);
   return 0;
 }
 
 int register_event_timer(apos_ms_t deadline_ms, timer_handler_t cb, void* arg,
                          timer_handle_t* handle) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock_int(&g_timer_lock);
 
   event_timer_t* timer = (event_timer_t*)kmalloc(sizeof(event_timer_t));
   timer->deadline_ms = deadline_ms;
@@ -193,7 +196,7 @@ int register_event_timer(apos_ms_t deadline_ms, timer_handler_t cb, void* arg,
     *handle = timer;
   }
 
-  POP_INTERRUPTS();
+  kspin_unlock_int(&g_timer_lock);
   return 0;
 }
 
@@ -203,7 +206,7 @@ void cancel_event_timer(timer_handle_t handle) {
   KASSERT(timer->valid_magic == kEventTimerValidMagic);
 #endif
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock_int(&g_timer_lock);
 
   list_remove(&event_timers, &timer->link);
 #if ENABLE_KERNEL_SAFETY_NETS
@@ -211,7 +214,7 @@ void cancel_event_timer(timer_handle_t handle) {
 #endif
   kfree(timer);
 
-  POP_INTERRUPTS();
+  kspin_unlock_int(&g_timer_lock);
 }
 
 void cancel_all_event_timers_for_tests(void) {
