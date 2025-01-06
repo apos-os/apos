@@ -36,7 +36,7 @@ struct cbfs_inode {
   // If type == VNODE_DIRECTORY.
   list_t entries;
   cbfs_getdents_t getdents_cb;
-  char static_entries[sizeof(cbfs_entry_t) * 2 + 5];
+  char static_entries[sizeof(cbfs_entry_t) * 2 + 16];
 
   // If type == VNODE_SYMLINK.
   cbfs_readlink_t readlink_cb;
@@ -216,6 +216,7 @@ static void create_directory_entries(int parent_num, cbfs_inode_t* dir) {
   const int inos[] = {dir->num, parent_num};
   size_t offset = 0;
   for (int i = 0; i < 2; ++i) {
+    offset = align_up(offset, sizeof(addr_t));
     KASSERT_DBG(offset + cbfs_entry_size(kNames[i]) <=
                 sizeof(dir->static_entries));
     cbfs_entry_t* entry =
