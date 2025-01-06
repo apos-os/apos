@@ -116,10 +116,11 @@ void tsan_thread_create(kthread_t thread) {
   tsan_event_init(&thread->tsan.log);
   tsan_thread_epoch_inc(thread);
 
-  // Mark the stack as stack space.  Note --- we won't be able to do this for
-  // the root thread, because (a) this is called on the root thread before TSAN
-  // is initialized, and (b) the root thread stack isn't contained in the heap.
-  if (g_tsan_init) {
+  // If the thread is not the root thread, mark the stack as stack space.  The
+  // root thread's stack is not in kernel heap, so can't (yet) be checked by
+  // TSAN.
+  // TODO(tsan): when non-heap kernel memory is supported, change this.
+  if (thread->id != 0) {
     KASSERT_DBG((addr_t)thread->stack % PAGE_SIZE == 0);
     KASSERT_DBG(thread->stacklen % PAGE_SIZE == 0);
     tsan_mark_stack((addr_t)thread->stack, thread->stacklen, true);

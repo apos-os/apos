@@ -17,6 +17,12 @@
 
 #include "sanitizers/tsan/report.h"
 
+// Phase 1 of TSAN initialization --- only sets up appropriate memory mappings
+// for shadow memory and initializes them, but no other data structures.  Can be
+// called very early in the boot process, only requires virtual memory to be set
+// up so we can create page mappings.
+void tsan_init_shadow_mem(void);
+
 // Initialize the TSAN data structures.  Should be called early in the boot
 // process but after kmalloc_init().
 void tsan_init(void);

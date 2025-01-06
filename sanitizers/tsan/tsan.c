@@ -21,12 +21,14 @@
 #include "memory/vm.h"
 #include "memory/vm_area.h"
 #include "proc/kthread-internal.h"
+#include "proc/kthread.h"
 #include "sanitizers/tsan/internal.h"
 #include "sanitizers/tsan/shadow_cell.h"
 #include "sanitizers/tsan/tsan_defs.h"
 #include "sanitizers/tsan/tsan_layout.h"
 #include "sanitizers/tsan/tsan_params.h"
 
+static bool g_tsan_mem_init = false;
 bool g_tsan_init = false;
 
 // As with the heap vm_area_t, statically allocate this for the root process to
@@ -56,8 +58,10 @@ static void tsan_alloc_pages(addr_t start, size_t num_pages) {
   }
 }
 
-void tsan_init(void) {
+void tsan_init_shadow_mem(void) {
   KASSERT(ENABLE_TSAN);
+  KASSERT(!g_tsan_mem_init);
+  KASSERT(!g_tsan_init);
 
   const memory_info_t* meminfo = get_global_meminfo();
   KASSERT(meminfo->tsan_region.base != 0);
@@ -91,6 +95,13 @@ void tsan_init(void) {
 
   KASSERT(meminfo->heap.base == TSAN_HEAP_START_ADDR);
   KASSERT(meminfo->tsan_region.base == TSAN_SHADOW_HEAP_START_ADDR);
+  g_tsan_mem_init = true;
+}
+
+void tsan_init(void) {
+  KASSERT(ENABLE_TSAN);
+  KASSERT(g_tsan_mem_init);
+  KASSERT(!g_tsan_init);
 
   tsan_per_cpu_init();
 

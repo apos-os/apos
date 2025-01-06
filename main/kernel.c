@@ -240,6 +240,11 @@ void kmain(boot_info_t* boot, const char* cmdline) {
   klog("proc_init_stage1()\n");
   proc_init_stage1();
 
+  if (ENABLE_TSAN) {
+    klog("tsan_init_shadow_mem()\n");
+    tsan_init_shadow_mem();
+  }
+
   klog("kmalloc_init()\n");
   kmalloc_init();
 
