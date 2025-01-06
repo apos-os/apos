@@ -22,6 +22,8 @@ typedef struct {
   tsan_vc_t clock;
 } tsan_lock_data_t;
 
+#define TSAN_LOCK_DATA_INIT { TSAN_VC_INIT }
+
 // Types of mutex locks.
 typedef enum {
   TSAN_LOCK = 1,

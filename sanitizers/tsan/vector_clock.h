@@ -24,6 +24,8 @@ typedef struct {
   tsan_epoch_t ts[TSAN_THREAD_SLOTS];
 } tsan_vc_t;
 
+#define TSAN_VC_INIT {{0}}
+
 // Initialize a vector clock.
 void tsan_vc_init(tsan_vc_t* vc);
 

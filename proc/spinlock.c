@@ -18,6 +18,10 @@
 #include "common/kassert.h"
 #include "proc/scheduler.h"
 
+#if ENABLE_TSAN
+#include "sanitizers/tsan/tsan_lock.h"
+#endif
+
 const kspinlock_t KSPINLOCK_NORMAL_INIT = KSPINLOCK_NORMAL_INIT_STATIC;
 const kspinlock_intsafe_t KSPINLOCK_INTERRUPT_SAFE_INIT =
     KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC;
@@ -27,6 +31,10 @@ static void kspin_lock_internal(kspinlock_impl_t* l) {
   kthread_t me = kthread_current_thread();
   l->holder = me->id;
   me->spinlocks_held++;
+
+#if ENABLE_TSAN
+  tsan_acquire(&l->tsan, TSAN_LOCK);
+#endif
 }
 
 static void kspin_unlock_internal(kspinlock_impl_t* l) {
@@ -35,6 +43,10 @@ static void kspin_unlock_internal(kspinlock_impl_t* l) {
   KASSERT(me->spinlocks_held > 0);
   l->holder = -1;
   me->spinlocks_held--;
+
+#if ENABLE_TSAN
+  tsan_release(&l->tsan, TSAN_LOCK);
+#endif
 }
 
 void kspin_lock(kspinlock_t* l) {
