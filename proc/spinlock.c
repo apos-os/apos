@@ -18,10 +18,6 @@
 #include "common/kassert.h"
 #include "proc/scheduler.h"
 
-#if ENABLE_TSAN
-#include "sanitizers/tsan/tsan_lock.h"
-#endif
-
 const kspinlock_t KSPINLOCK_NORMAL_INIT = KSPINLOCK_NORMAL_INIT_STATIC;
 const kspinlock_intsafe_t KSPINLOCK_INTERRUPT_SAFE_INIT =
     KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC;
@@ -57,10 +53,6 @@ void kspin_lock_int(kspinlock_intsafe_t* l) {
   // code _could_ change the defint state on its own (which would be
   // ill-advised), but it won't matter since interrupts are disabled.
   interrupt_state_t int_state = save_and_disable_interrupts();
-#if ENABLE_TSAN
-  // Must do this explicitly so TSAN sees the defint synchronization.
-  tsan_acquire(NULL, TSAN_DEFINTS);
-#endif
   l->int_state = int_state;
   kspin_lock_internal(&l->_lock);
 }
@@ -76,10 +68,6 @@ void kspin_unlock(kspinlock_t* l) {
 void kspin_unlock_int(kspinlock_intsafe_t* l) {
   interrupt_state_t int_state = l->int_state;
   kspin_unlock_internal(&l->_lock);
-#if ENABLE_TSAN
-  // Must do this explicitly so TSAN sees the defint synchronization.
-  tsan_release(NULL, TSAN_DEFINTS);
-#endif
   KASSERT_DBG(interrupts_enabled() == false);
   restore_interrupts(int_state);
 }

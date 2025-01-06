@@ -976,6 +976,30 @@ static void defint_test3(void) {
   tsan_test_cleanup();
 }
 
+static void defint_test3b(void) {
+  KTEST_BEGIN("TSAN: defint safety (legacy interrupt disabling)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+  tsan_rw_value(x);
+
+  {
+    PUSH_AND_DISABLE_INTERRUPTS();
+    defint_schedule(&defint_fn, x);
+    tsan_rw_value(x);
+    POP_INTERRUPTS();
+    busy_loop();  // Make sure the defint runs.
+  }
+
+  {
+    // Make sure we can see the access the defint did.
+    PUSH_AND_DISABLE_INTERRUPTS();
+    tsan_rw_value(x);
+    POP_INTERRUPTS();
+    KEXPECT_EQ(4, *x);
+  }
+  tsan_test_cleanup();
+}
+
 static void schedule_defint_fn(void* arg) {
   KEXPECT_EQ(KTCTX_INTERRUPT, kthread_execution_context());
   defint_schedule(&defint_fn, arg);
@@ -1044,7 +1068,8 @@ static void defint_race_test2(void) {
   tsan_test_cleanup();
 }
 
-// Same as above, but races with an access before we register the timer.
+// Same as above, but races with an access before we register the timer.  This
+// is safe.
 static void defint_race_test3(void) {
   KTEST_BEGIN(
       "TSAN: defint race (basic thread context/interrupt-context defint race "
@@ -1053,11 +1078,10 @@ static void defint_race_test3(void) {
   *x = 0;
   tsan_rw_value(x);
 
-  intercept_reports();
   register_event_timer(get_time_ms() + 10, &schedule_defint_fn, x, NULL);
   busy_loop();
-  EXPECT_REPORT(x, 4, "?", x, 4, "w");
-  intercept_reports_done();
+  // Safe -- the write above happens-before registering the timer, which
+  // happens-before the interrupt, and therefore happens-before the defint.
   tsan_test_cleanup();
 }
 
@@ -1126,12 +1150,12 @@ static void defint_int_race_test2(void) {
 
 static void schedule_slow_racy_defint_fn(void* arg) {
   KEXPECT_EQ(KTCTX_INTERRUPT, kthread_execution_context());
-  defint_schedule(&defint_fn, arg);
+  defint_schedule(&slow_racy_defint, arg);
 }
 
 static void schedule_slow_racy_defint_fn2(void* arg) {
   KEXPECT_EQ(KTCTX_INTERRUPT, kthread_execution_context());
-  defint_schedule(&defint_fn, arg);
+  defint_schedule(&slow_racy_defint, arg);
   tsan_rw_value((int*)arg);
 }
 
@@ -1140,7 +1164,7 @@ static void schedule_slow_racy_defint_fn2(void* arg) {
 static void schedule_slow_racy_defint_fn3(void* arg) {
   KEXPECT_EQ(KTCTX_INTERRUPT, kthread_execution_context());
   tsan_rw_value((int*)arg);
-  defint_schedule(&defint_fn, arg);
+  defint_schedule(&slow_racy_defint, arg);
 }
 
 static void defint_int_race_test3(void) {
@@ -1179,7 +1203,7 @@ static void defint_int_race_test4(void) {
   busy_loop();
   EXPECT_REPORT(x, 4, "?", x, 4, "w");
   intercept_reports_done();
-  KEXPECT_EQ(2, *x);
+  KEXPECT_EQ(3, *x);
   tsan_test_cleanup();
 }
 
@@ -1195,7 +1219,7 @@ static void defint_int_race_test5(void) {
 
   busy_loop();  // Make sure interrupt fires.
   busy_loop();
-  KEXPECT_EQ(2, *x);
+  KEXPECT_EQ(3, *x);
   tsan_test_cleanup();
 }
 
@@ -1203,6 +1227,7 @@ static void defint_tests(void) {
   defint_test1();
   defint_test2();
   defint_test3();
+  defint_test3b();
   defint_test4();
   defint_test5();
 

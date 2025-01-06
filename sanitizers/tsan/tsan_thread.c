@@ -203,7 +203,8 @@ void tsan_acquire(tsan_lock_data_t* lock, tsan_lock_type_t type) {
     case TSAN_INTERRUPTS:
       KASSERT_DBG(lock == NULL);
       do_special_acquire(thread, get_cpu_data()->interrupt_thread);
-      break;
+      // Fall through --- synchronizing with interrupts implicitly synchronizes
+      // with deferred interrupts as well.
 
     case TSAN_DEFINTS:
       KASSERT_DBG(lock == NULL);
@@ -227,7 +228,8 @@ void tsan_release(tsan_lock_data_t* lock, tsan_lock_type_t type) {
     case TSAN_INTERRUPTS:
       KASSERT_DBG(lock == NULL);
       do_special_release(thread, get_cpu_data()->interrupt_thread);
-      break;
+      // Fall through --- synchronizing with interrupts implicitly synchronizes
+      // with deferred interrupts as well.
 
     case TSAN_DEFINTS:
       KASSERT_DBG(lock == NULL);
