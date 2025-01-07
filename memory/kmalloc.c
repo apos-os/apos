@@ -13,29 +13,30 @@
 // limitations under the License.
 
 #include "memory/kmalloc.h"
-#include "memory/allocator.h"
-#include "memory/kmalloc-internal.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 
+#include "arch/dev/interrupts.h"
 #include "arch/proc/stack_trace.h"
 #include "common/attributes.h"
 #include "common/debug.h"
-#include "common/klog.h"
 #include "common/kassert.h"
-#include "common/kstring.h"
+#include "common/klog.h"
 #include "common/math.h"
 #include "common/stack_trace_table.h"
-#include "dev/interrupts.h"
+#include "memory/allocator.h"
+#include "memory/kmalloc-internal.h"
 #include "memory/memory.h"
-#include "memory/page_alloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
+#include "proc/kthread-internal.h"
 #include "proc/process.h"
+#include "proc/spinlock.h"
 
 #define KLOG(...) klogfm(KL_KMALLOC, __VA_ARGS__)
 
-static int g_initialized = 0;
+static bool g_initialized = false;
 
 // Global block list.
 static block_t* g_block_list = 0;
@@ -43,7 +44,30 @@ static block_t* g_block_list = 0;
 // Root process vm_area_t for the heap.
 static vm_area_t g_root_heap_vm_area;
 
+static kspinlock_intsafe_t g_kmalloc_mu =
+    KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC;
+
 static int g_test_mode = 0;
+
+static inline ALWAYS_INLINE interrupt_state_t _kmalloc_lock(void) {
+  if (kthread_current_thread()) {
+    kspin_lock_int(&g_kmalloc_mu);
+    return 0;
+  } else {
+    return save_and_disable_interrupts();
+  }
+}
+
+static inline ALWAYS_INLINE void _kmalloc_unlock(interrupt_state_t s) {
+  if (kthread_current_thread()) {
+    kspin_unlock_int(&g_kmalloc_mu);
+  } else {
+    restore_interrupts(s);
+  }
+}
+
+#define KMALLOC_LOCK() interrupt_state_t _SAVED_INTERRUPTS = _kmalloc_lock()
+#define KMALLOC_UNLOCK() _kmalloc_unlock(_SAVED_INTERRUPTS);
 
 static void init_block(block_t* b) {
   b->magic = KALLOC_MAGIC;
@@ -191,7 +215,7 @@ void* kmalloc_alloc(void* arg, size_t n, size_t alignment) {
   const trace_id_t stack_trace_id = tracetbl_put(stack_trace, stack_trace_len);
 #endif
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  KMALLOC_LOCK();
   // Try to find a free block that's big enough.
   block_t* cblock = g_block_list;
   addr_t block_addr, next_aligned;
@@ -209,7 +233,7 @@ void* kmalloc_alloc(void* arg, size_t n, size_t alignment) {
   }
 
   if (!cblock || cblock->length < n) {
-    POP_INTERRUPTS();
+    KMALLOC_UNLOCK();
     return 0;
   }
 
@@ -233,7 +257,7 @@ void* kmalloc_alloc(void* arg, size_t n, size_t alignment) {
   cblock->stack_trace = stack_trace_id;
 #endif
 
-  POP_INTERRUPTS();
+  KMALLOC_UNLOCK();
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
     fill_block(cblock, 0xAAAAAAAA);
@@ -281,13 +305,13 @@ void kfree(void* x) {
     fill_block(b, 0xDEADBEEF);
   }
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  KMALLOC_LOCK();
   b->free = true;
 #if ENABLE_KMALLOC_HEAP_PROFILE
   if (b->stack_trace >= 0) tracetbl_unref(b->stack_trace);
 #endif
   merge_block(b);
-  POP_INTERRUPTS();
+  KMALLOC_UNLOCK();
 }
 
 void kmalloc_log_state(void) {
@@ -315,7 +339,7 @@ void kmalloc_log_state(void) {
 }
 
 void kmalloc_log_heap_profile(void) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+  KMALLOC_LOCK();
   size_t total_objects = 0, total_bytes = 0;
 
   block_t* cblock = g_block_list;
@@ -353,7 +377,7 @@ void kmalloc_log_heap_profile(void) {
 
   KLOG(INFO, "#### heap profile end ####\n");
 
-  POP_INTERRUPTS();
+  KMALLOC_UNLOCK();
 }
 
 void kmalloc_enable_test_mode(void) {
