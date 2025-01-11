@@ -24,6 +24,7 @@
 #include "common/kstring.h"
 #include "common/math.h"
 #include "common/types.h"
+#include "common/unaligned.h"
 
 // FDT tokens.
 #define FDT_BEGIN_NODE 1
@@ -275,7 +276,7 @@ static uint64_t print_consume32(const char** buf) {
 }
 
 static uint64_t print_consume64(const char** buf) {
-  uint64_t val = btoh64(*(const uint64_t*)*buf);
+  uint64_t val = btoh64(read_unaligned_u64(*buf));
   *buf += sizeof(uint64_t);
   return val;
 }
