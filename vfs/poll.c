@@ -18,6 +18,7 @@
 #include "dev/dev.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
+#include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "vfs/vfs_internal.h"
 
@@ -59,6 +60,7 @@ int poll_add_event(poll_state_t* poll, pollable_t* event, short event_mask) {
 }
 
 void poll_trigger_event(pollable_t* event, short events) {
+  KASSERT_DBG(kthread_execution_context() != KTCTX_INTERRUPT);
   PUSH_AND_DISABLE_INTERRUPTS();
   list_link_t* link = event->refs.head;
   while (link != NULL) {

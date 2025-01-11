@@ -16,6 +16,7 @@
 #include "common/kprintf.h"
 #include "dev/dev.h"
 #include "memory/kmalloc.h"
+#include "proc/defint.h"
 #include "proc/fork.h"
 #include "proc/sleep.h"
 #include "proc/signal/signal.h"
@@ -160,15 +161,23 @@ static int cd_fake_dev_poll(char_dev_t* dev, short event_mask,
     return poll_add_event(poll, &fdev->event, event_mask);
 }
 
-static void do_trigger_fake_dev(void* arg) {
+static void do_trigger_fake_dev_defint(void* arg) {
   fake_dev_t* fdev = (fake_dev_t*)arg;
   fdev->events = fdev->future_events;
   poll_trigger_event(&fdev->event, fdev->events);
 }
 
-static void do_non_trigger_fake_dev(void* arg) {
+static void do_trigger_fake_dev(void* arg) {
+  defint_schedule(&do_trigger_fake_dev_defint, arg);
+}
+
+static void do_non_trigger_fake_dev_defint(void* arg) {
   fake_dev_t* fdev = (fake_dev_t*)arg;
   fdev->events = fdev->future_events;
+}
+
+static void do_non_trigger_fake_dev(void* arg) {
+  defint_schedule(&do_non_trigger_fake_dev_defint, arg);
 }
 
 // Trigger a fake_dev's event, either synchronously or in the future.
@@ -192,9 +201,13 @@ static void fake_dev_non_trigger_event(fake_dev_t* fdev, short events,
 
 // As above, but doesn't update the events (to simulate triggering the event,
 // but someone else consuming it before the poll() gets around).
-static void do_trigger_fake_devB(void* arg) {
+static void do_trigger_fake_devB_defint(void* arg) {
   fake_dev_t* fdev = (fake_dev_t*)arg;
   poll_trigger_event(&fdev->event, fdev->future_events);
+}
+
+static void do_trigger_fake_devB(void* arg) {
+  defint_schedule(&do_trigger_fake_devB_defint, arg);
 }
 
 static void basic_cd_test(chardev_args_t* args) {

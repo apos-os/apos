@@ -61,7 +61,7 @@ int poll_add_event(poll_state_t* poll, pollable_t* event, short event_mask);
 // that the resource owning the poll_event_t is going away, and the event must
 // not be referenced again.
 //
-// May be called from interrupts.
+// May be called from defints/tasklets, but not interrupts.
 void poll_trigger_event(pollable_t* event, short events);
 
 // Perform a poll, as per the poll() syscall.
