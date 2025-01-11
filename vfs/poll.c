@@ -20,6 +20,7 @@
 #include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/spinlock.h"
 #include "vfs/vfs_internal.h"
 
 // Events that are always triggered, even if not requested by the caller.
@@ -37,6 +38,9 @@ typedef struct {
   list_link_t event_link;
 } poll_ref_t;
 
+// TODO(aoates): move to more fine-grained locking.
+static kspinlock_t g_poll_lock = KSPINLOCK_NORMAL_INIT_STATIC;
+
 void poll_init_event(pollable_t* event) {
   event->refs = LIST_INIT;
 }
@@ -52,16 +56,16 @@ int poll_add_event(poll_state_t* poll, pollable_t* event, short event_mask) {
   ref->event_link = LIST_LINK_INIT;
   ref->poll_link = LIST_LINK_INIT;
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock(&g_poll_lock);
   list_push(&poll->refs, &ref->poll_link);
   list_push(&event->refs, &ref->event_link);
-  POP_INTERRUPTS();
+  kspin_unlock(&g_poll_lock);
   return 0;
 }
 
 void poll_trigger_event(pollable_t* event, short events) {
   KASSERT_DBG(kthread_execution_context() != KTCTX_INTERRUPT);
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock(&g_poll_lock);
   list_link_t* link = event->refs.head;
   while (link != NULL) {
     poll_ref_t* ref = container_of(link, poll_ref_t, event_link);
@@ -78,11 +82,11 @@ void poll_trigger_event(pollable_t* event, short events) {
       link = link->next;
     }
   }
-  POP_INTERRUPTS();
+  kspin_unlock(&g_poll_lock);
 }
 
 void poll_cancel(poll_state_t* poll) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock(&g_poll_lock);
   poll->triggered = false;
   while (!list_empty(&poll->refs)) {
     list_link_t* link = list_pop(&poll->refs);
@@ -92,7 +96,7 @@ void poll_cancel(poll_state_t* poll) {
     list_remove(&ref->event->refs, &ref->event_link);
     kfree(ref);
   }
-  POP_INTERRUPTS();
+  kspin_unlock(&g_poll_lock);
 }
 
 // Helper for vfs_poll().  Performs a poll() on a single file descriptor.
@@ -190,13 +194,14 @@ int vfs_poll(struct apos_pollfd fds[], apos_nfds_t nfds, int timeout_ms) {
 
     now = get_time_ms();
     if (timeout_ms < 0 || now < end_time) {
-      PUSH_AND_DISABLE_INTERRUPTS();
+      kspin_lock(&g_poll_lock);
       if (poll.triggered)
         result = SWAIT_DONE;
       else
-        result = scheduler_wait_on_interruptable(
-            &poll.q, timeout_ms < 0 ? -1 : (long)(end_time - now));
-      POP_INTERRUPTS();
+        result = scheduler_wait_on_splocked(
+            &poll.q, timeout_ms < 0 ? -1 : (long)(end_time - now),
+            &g_poll_lock);
+      kspin_unlock(&g_poll_lock);
 
       if (result == SWAIT_INTERRUPTED) {
         result = -EINTR;
