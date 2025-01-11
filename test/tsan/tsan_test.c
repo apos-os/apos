@@ -1026,6 +1026,7 @@ static void interrupt_tests(void) {
   interrupt_test1e();
   interrupt_test2();
   interrupt_test3();
+  interrupt_test4();
 }
 
 static void defint_fn(void* arg) {
