@@ -1531,6 +1531,7 @@ int vfs_getdents(int fd, kdirent_t* buf, int count) {
       kdirent_t* ent = buf;
       int bufpos = 0;
       while (bufpos < result) {
+        ASSERT_ALIGNED(ent, kdirent_t);
         ent = (kdirent_t*)((char*)buf + bufpos);
         bufpos += ent->d_reclen;
       }

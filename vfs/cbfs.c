@@ -14,6 +14,8 @@
 
 #include "vfs/cbfs.h"
 
+#include <stdalign.h>
+
 #include "common/errno.h"
 #include "common/hashtable.h"
 #include "common/kassert.h"
@@ -684,7 +686,8 @@ static int getdents_from_list(const list_t* list, const int entries_to_skip,
     if (!n) break;
     cbfs_entry_t* entry = container_of(n, cbfs_entry_t, link);
 
-    const int dirent_len = sizeof(kdirent_t) + kstrlen(entry->name) + 1;
+    const int dirent_len = align_up(
+        sizeof(kdirent_t) + kstrlen(entry->name) + 1, alignof(kdirent_t));
     if (bytes_written + dirent_len > outbufsize) break;
 
     kdirent_t* d = (kdirent_t*)(((const char*)outbuf) + bytes_written);

@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stdalign.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "common/config.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "common/time.h"
 #include "memory/kmalloc.h"
 #include "memory/mmap.h"
@@ -132,7 +134,8 @@ int vfs_getdents_32(int fd, kdirent_32_t* buf_in, int count) {
     kdirent_32_t* d32 = (kdirent_32_t*)(buf32 + out_offset);
     d32->d_ino = d64->d_ino;
     d32->d_offset = d64->d_offset;
-    d32->d_reclen = sizeof(kdirent_32_t) + kstrlen(d64->d_name) + 1;
+    d32->d_reclen = align_up(sizeof(kdirent_32_t) + kstrlen(d64->d_name) + 1,
+                             alignof(kdirent_32_t));
     kstrcpy(d32->d_name, d64->d_name);
     in_offset += d64->d_reclen;
     out_offset += d32->d_reclen;
