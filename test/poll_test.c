@@ -128,7 +128,7 @@ static void poll_dir_test(void) {
 #define CHARDEV_NUM_DEVS 3
 
 typedef struct {
-  poll_event_t event;
+  pollable_t event;
   short events;
   short future_events;
   int poll_sleep_ms;

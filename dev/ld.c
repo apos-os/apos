@@ -61,7 +61,7 @@ struct ld {
   apos_dev_t tty;
   struct ktermios termios;
 
-  poll_event_t poll_event;
+  pollable_t poll_event;
 };
 
 // Note: keep this in sync with the version in getty.c.

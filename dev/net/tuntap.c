@@ -58,7 +58,7 @@ typedef struct {
   ssize_t tx_queued;
   htbl_t multicast;
 
-  poll_event_t poll_event;
+  pollable_t poll_event;
   kthread_queue_t wait;
 } tuntap_dev_t;
 

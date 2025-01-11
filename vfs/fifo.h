@@ -44,7 +44,7 @@ typedef struct {
   int num_readers;
   int num_writers;
 
-  poll_event_t poll_event;
+  pollable_t poll_event;
   bool hup;  // Have we ever had a writer?
 } apos_fifo_t;
 

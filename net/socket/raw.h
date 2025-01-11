@@ -40,7 +40,7 @@ typedef struct socket_raw {
   // Wait queue for packets to be received.
   kthread_queue_t wait_queue;
 
-  poll_event_t poll_event;
+  pollable_t poll_event;
 
   // Link on raw socket linked list.
   list_t* sock_list;

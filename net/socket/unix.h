@@ -62,7 +62,7 @@ typedef struct socket_unix {
   kthread_queue_t read_wait_queue;  // Is there data in _our_ buffer?
   kthread_queue_t write_wait_queue;  // Is there room in _their_ buffer?
 
-  poll_event_t poll_event;
+  pollable_t poll_event;
 } socket_unix_t;
 
 int sock_unix_create(int type, int protocol, socket_t** out);

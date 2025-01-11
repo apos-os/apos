@@ -31,16 +31,16 @@ void poll_cancel(poll_state_t* poll);
 typedef struct {
   short event_mask;
   poll_state_t* poll;
-  poll_event_t* event;
+  pollable_t* event;
   list_link_t poll_link;
   list_link_t event_link;
 } poll_ref_t;
 
-void poll_init_event(poll_event_t* event) {
+void poll_init_event(pollable_t* event) {
   event->refs = LIST_INIT;
 }
 
-int poll_add_event(poll_state_t* poll, poll_event_t* event, short event_mask) {
+int poll_add_event(poll_state_t* poll, pollable_t* event, short event_mask) {
   KASSERT_DBG(poll != NULL);
   poll_ref_t* ref = kmalloc(sizeof(poll_ref_t));
   if (!ref) return -ENOMEM;
@@ -58,7 +58,7 @@ int poll_add_event(poll_state_t* poll, poll_event_t* event, short event_mask) {
   return 0;
 }
 
-void poll_trigger_event(poll_event_t* event, short events) {
+void poll_trigger_event(pollable_t* event, short events) {
   PUSH_AND_DISABLE_INTERRUPTS();
   list_link_t* link = event->refs.head;
   while (link != NULL) {

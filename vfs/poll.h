@@ -45,16 +45,16 @@ typedef struct {
   list_t refs;
 } poll_state_t;
 
-// An event that can be polled.  Generally corresponds (and is embedded in) a
+// An object that can be polled.  Generally corresponds (and is embedded in) a
 // file, FIFO, etc.
 typedef struct {
   list_t refs;
-} poll_event_t;
+} pollable_t;
 
-void poll_init_event(poll_event_t* event);
+void poll_init_event(pollable_t* event);
 
 // Add the given event to the poll (presumably to be triggered later).
-int poll_add_event(poll_state_t* poll, poll_event_t* event, short event_mask);
+int poll_add_event(poll_state_t* poll, pollable_t* event, short event_mask);
 
 // Trigger the given event, triggering each poll that is waiting on it whose
 // event mask contains the event(s) in question.  Passing KPOLLNVAL indicates
@@ -62,7 +62,7 @@ int poll_add_event(poll_state_t* poll, poll_event_t* event, short event_mask);
 // not be referenced again.
 //
 // May be called from interrupts.
-void poll_trigger_event(poll_event_t* event, short events);
+void poll_trigger_event(pollable_t* event, short events);
 
 // Perform a poll, as per the poll() syscall.
 int vfs_poll(struct apos_pollfd fds[], apos_nfds_t nfds, int timeout);
