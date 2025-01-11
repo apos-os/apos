@@ -24,6 +24,18 @@
 // Events that are always triggered, even if not requested by the caller.
 #define ALWAYS_EVENTS (KPOLLHUP | KPOLLERR | KPOLLNVAL)
 
+// Cancel all the poll_ref_t's that are outstanding on the given poll.
+void poll_cancel(poll_state_t* poll);
+
+// A hook between a poll_state_t and a poll_event_t that it is waiting on.
+typedef struct {
+  short event_mask;
+  poll_state_t* poll;
+  poll_event_t* event;
+  list_link_t poll_link;
+  list_link_t event_link;
+} poll_ref_t;
+
 void poll_init_event(poll_event_t* event) {
   event->refs = LIST_INIT;
 }

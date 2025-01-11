@@ -51,15 +51,6 @@ typedef struct {
   list_t refs;
 } poll_event_t;
 
-// A hook between a poll_state_t and a poll_event_t that it is waiting on.
-typedef struct {
-  short event_mask;
-  poll_state_t* poll;
-  poll_event_t* event;
-  list_link_t poll_link;
-  list_link_t event_link;
-} poll_ref_t;
-
 void poll_init_event(poll_event_t* event);
 
 // Add the given event to the poll (presumably to be triggered later).
@@ -72,9 +63,6 @@ int poll_add_event(poll_state_t* poll, poll_event_t* event, short event_mask);
 //
 // May be called from interrupts.
 void poll_trigger_event(poll_event_t* event, short events);
-
-// Cancel all the poll_ref_t's that are outstanding on the given poll.
-void poll_cancel(poll_state_t* poll);
 
 // Perform a poll, as per the poll() syscall.
 int vfs_poll(struct apos_pollfd fds[], apos_nfds_t nfds, int timeout);
