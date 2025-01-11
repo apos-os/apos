@@ -12,13 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_COMMON_UNALIGNED_H
-#define APOO_COMMON_UNALIGNED_H
+#ifndef APOO_COMMON_ALIGNMENT_H
+#define APOO_COMMON_ALIGNMENT_H
 
+#include <stdalign.h>
 #include <stdint.h>
 
 #include "common/attributes.h"
 #include "common/kstring.h"
+
+// Asserts that the given pointer is aligned correctly for the given type.
+#define ASSERT_ALIGNED(ptr, type) KASSERT((addr_t)(ptr) % alignof(type) == 0)
 
 // TODO(aoates): allow optimizations of this on platforms that have fast
 // unaligned accesses.
@@ -28,6 +32,5 @@ static inline ALWAYS_INLINE uint64_t read_unaligned_u64(const void* ptr) {
   kmemcpy(&value, ptr, sizeof(uint64_t));
   return value;
 }
-
 
 #endif

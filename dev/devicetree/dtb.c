@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "common/alignment.h"
 #include "common/config.h"
 #include "common/endian.h"
 #include "common/errno.h"
@@ -24,7 +25,6 @@
 #include "common/kstring.h"
 #include "common/math.h"
 #include "common/types.h"
-#include "common/unaligned.h"
 
 // FDT tokens.
 #define FDT_BEGIN_NODE 1
