@@ -21,6 +21,9 @@
 #include "common/attributes.h"
 #include "common/kstring.h"
 
+// Evaluates true if the given pointer is aligned properly for the given type.
+#define IS_ALIGNED(ptr, type) ((addr_t)(ptr) % alignof(type) == 0)
+
 // Asserts that the given pointer is aligned correctly for the given type.
 #define ASSERT_ALIGNED(ptr, type) KASSERT((addr_t)(ptr) % alignof(type) == 0)
 

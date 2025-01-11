@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "common/alignment.h"
 #include "common/config.h"
 #include "common/errno.h"
 #include "common/kassert.h"
@@ -1509,6 +1510,10 @@ koff_t vfs_seek(int fd, koff_t offset, int whence) {
 }
 
 int vfs_getdents(int fd, kdirent_t* buf, int count) {
+  if (!IS_ALIGNED(buf, kdirent_t)) {
+    return -EINVAL;
+  }
+
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
   if (result) return result;

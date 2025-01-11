@@ -1445,6 +1445,13 @@ static void getdents_test(void) {
   kfree(buf);
   vfs_close(fd);
 
+  KTEST_BEGIN("vfs_getdents(): unaligned buffer");
+  fd = vfs_open(".", VFS_O_RDONLY);
+  char* unaligned_buf = kmalloc(100);
+  KEXPECT_EQ(-EINVAL, vfs_getdents(fd, (kdirent_t*)(unaligned_buf + 1), 50));
+  kfree(unaligned_buf);
+  vfs_close(fd);
+
   // TODO(aoates): test:
   // buffer too small for one dirent
   // multiple calls to getdents
@@ -3747,8 +3754,9 @@ static void pipe_test(void) {
 
 
   KTEST_BEGIN("vfs_pipe(): vfs_getdents() on pipe fd");
-  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[0], (kdirent_t*)buf, 10));
-  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[1], (kdirent_t*)buf, 10));
+  kdirent_t kdbuf;
+  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[0], &kdbuf, 10));
+  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[1], &kdbuf, 10));
 
 
   KTEST_BEGIN("vfs_pipe(): vfs_isatty() on pipe fd");
