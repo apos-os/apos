@@ -20,8 +20,16 @@
 
 // TODO(tsan): move this into an arch header.
 #define SIZE_OF_JUMP_INSTR 4
+#define TSAN_CHECK_ALIGNMENT 1
 
 #define CALLERPC ((uptr)__builtin_return_address(0) - SIZE_OF_JUMP_INSTR)
+
+#if TSAN_CHECK_ALIGNMENT
+# define CHECK_ALIGNMENT(ptr, align) \
+    KASSERT((addr_t)(ptr) % (align) == 0)
+#else
+# define CHECK_ALIGNMENT(ptr, align)
+#endif
 
 typedef unsigned long uptr;
 
@@ -32,18 +40,22 @@ void __tsan_read1(void* addr) {
 }
 
 void __tsan_read2(void* addr) {
+  CHECK_ALIGNMENT(addr, 2);
   tsan_check(CALLERPC, (addr_t)addr, 2, TSAN_ACCESS_READ);
 }
 
 void __tsan_read4(void* addr) {
+  CHECK_ALIGNMENT(addr, 4);
   tsan_check(CALLERPC, (addr_t)addr, 4, TSAN_ACCESS_READ);
 }
 
 void __tsan_read8(void* addr) {
+  CHECK_ALIGNMENT(addr, 8);
   tsan_check(CALLERPC, (addr_t)addr, 8, TSAN_ACCESS_READ);
 }
 
 void __tsan_read16(void* addr) {
+  CHECK_ALIGNMENT(addr, 8);
   // TODO(tsan): is this kind of split correct?
   tsan_check(CALLERPC, (addr_t)addr, 8, TSAN_ACCESS_READ);
   tsan_check(CALLERPC, (addr_t)addr + 8, 8, TSAN_ACCESS_READ);
@@ -66,18 +78,22 @@ void __tsan_write1(void* addr) {
 }
 
 void __tsan_write2(void* addr) {
+  CHECK_ALIGNMENT(addr, 2);
   tsan_check(CALLERPC, (addr_t)addr, 2, TSAN_ACCESS_WRITE);
 }
 
 void __tsan_write4(void* addr) {
+  CHECK_ALIGNMENT(addr, 4);
   tsan_check(CALLERPC, (addr_t)addr, 4, TSAN_ACCESS_WRITE);
 }
 
 void __tsan_write8(void* addr) {
+  CHECK_ALIGNMENT(addr, 8);
   tsan_check(CALLERPC, (addr_t)addr, 8, TSAN_ACCESS_WRITE);
 }
 
 void __tsan_write16(void* addr) {
+  CHECK_ALIGNMENT(addr, 8);
   // TODO(tsan): is this kind of split correct?
   tsan_check(CALLERPC, (addr_t)addr, 8, TSAN_ACCESS_WRITE);
   tsan_check(CALLERPC, (addr_t)addr + 8, 8, TSAN_ACCESS_WRITE);
