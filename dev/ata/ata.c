@@ -28,6 +28,7 @@
 #include "dev/interrupts.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/tasklet.h"
 
 static ata_t g_ata;
 static int g_init = 0;
@@ -286,15 +287,19 @@ static void handle_interrupt(ata_channel_t* channel) {
   scheduler_wake_one(&channel->channel_waiters);
 }
 
+static void ata_tasklet(tasklet_t* tl, void* arg) {
+  handle_interrupt((ata_channel_t*)arg);
+}
+
 // IRQ handlers for the primary and secondary channels.
 static void irq_handler_primary(void* arg) {
   //klogf("IRQ for primary ATA device\n");
-  handle_interrupt(&g_ata.primary);
+  tasklet_schedule(&g_ata.primary.tasklet);
 }
 
 static void irq_handler_secondary(void* arg) {
   //klogf("IRQ for secondary ATA device\n");
-  handle_interrupt(&g_ata.secondary);
+  tasklet_schedule(&g_ata.secondary.tasklet);
 }
 
 static void ata_do_op(ata_disk_op_t* op) {
@@ -453,6 +458,8 @@ static void ata_init_internal(const ata_t* ata) {
   // Set up IRQs.
   register_irq_handler(g_ata.primary.irq, &irq_handler_primary, 0x0);
   register_irq_handler(g_ata.secondary.irq, &irq_handler_secondary, 0x0);
+  tasklet_init(&g_ata.primary.tasklet, &ata_tasklet, &g_ata.primary);
+  tasklet_init(&g_ata.secondary.tasklet, &ata_tasklet, &g_ata.secondary);
 
   // TODO(aoates): enable interrupts with device control register
 }

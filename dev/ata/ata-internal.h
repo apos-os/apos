@@ -19,6 +19,7 @@
 
 #include "dev/io.h"
 #include "proc/kthread.h"
+#include "proc/tasklet.h"
 
 #define ATA_DRIVE_MASTER 0
 #define ATA_DRIVE_SLAVE  1
@@ -42,6 +43,8 @@ struct ata_channel {
 
   // Threads waiting for the channel to be free.
   kthread_queue_t channel_waiters;
+
+  tasklet_t tasklet;
 };
 typedef struct ata_channel ata_channel_t;
 
