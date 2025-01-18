@@ -233,21 +233,23 @@ static kthread_t g_flush_queue_thread;
 static void* flush_queue_thread(void* arg) {
   sched_enable_preemption_for_test();
   const int kMaxFlushesPerCycle = 1000;
+  kmutex_lock(&g_mu);
   while (1) {
-    int result = scheduler_wait_on_interruptable(&g_flush_queue_wakeup_queue,
-                                                 g_flush_queue_period_ms);
+    int result = scheduler_wait_on_locked(&g_flush_queue_wakeup_queue,
+                                          g_flush_queue_period_ms, &g_mu);
     KASSERT(result != SWAIT_INTERRUPTED);
     int flushed = 0;
     while (flushed < kMaxFlushesPerCycle) {
-      KMUTEX_AUTO_LOCK(lock, &g_mu);
       bc_entry_internal_t* entry = cache_entry_pop(&g_flush_queue, flushq);
       if (!entry) break;
+      // NOTE: this will unlock and relock g_mu.
       flush_cache_entry(entry);
       flushed++;
     }
     if (flushed > 0)
       KLOG(DEBUG, "<block cache flushed %d entries>\n", flushed);
   }
+  die("unreachable");
   return 0x0;
 }
 
