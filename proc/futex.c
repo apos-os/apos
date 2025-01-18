@@ -22,11 +22,14 @@
 #include "memory/vm.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/spinlock.h"
 
 #define FUTEX_TABLE_INITIAL_ENTRIES 10
 static htbl_t g_futex_table;
+static kspinlock_t g_futex_initialized_mu = KSPINLOCK_NORMAL_INIT_STATIC;
 static bool g_futex_initialized = false;
-static kspinlock_t g_futex_lock = KSPINLOCK_NORMAL_INIT_STATIC;
+// TODO(aoates): make mutexes statically initable.
+static kmutex_t g_futex_lock;
 
 typedef struct {
   kthread_queue_t queue;
@@ -52,18 +55,21 @@ int futex_wait(uint32_t* uaddr, uint32_t val,
       /*is_write=*/false, /*is_user=*/true, &entry, &resolved);
   if (result) return result;
 
-  kspin_lock(&g_futex_lock);
+  kspin_lock(&g_futex_initialized_mu);
   if (!g_futex_initialized) {
+    kmutex_init(&g_futex_lock);
     htbl_init(&g_futex_table, FUTEX_TABLE_INITIAL_ENTRIES);
     g_futex_initialized = true;
   }
+  kspin_unlock(&g_futex_initialized_mu);
+  kmutex_lock(&g_futex_lock);
 
   // First check current value.
   // TODO(SMP): do a proper atomic operation here.
   // TODO(SMP): likely need some sort of barrier as well.
   uint32_t cur_val = *uaddr;
   if (cur_val != val) {
-    kspin_unlock(&g_futex_lock);
+    kmutex_unlock(&g_futex_lock);
     block_cache_put(entry, BC_FLUSH_NONE);
     return -EAGAIN;
   }
@@ -85,15 +91,13 @@ int futex_wait(uint32_t* uaddr, uint32_t val,
 
   KASSERT_DBG(f->waiters >= 0);
   f->waiters++;
-  kspin_unlock(&g_futex_lock);
   block_cache_put(entry, BC_FLUSH_NONE);
 
   long timeout_ms = timeout_relative ? timespec2ms(timeout_relative) : 0;
   // TODO(aoates): fix timeout handling so we don't need this hack.
   if (timeout_ms == 0 && timeout_relative != NULL) timeout_ms = 1;
-  result = scheduler_wait_on_interruptable(&f->queue, timeout_ms);
+  result = scheduler_wait_on_locked(&f->queue, timeout_ms, &g_futex_lock);
 
-  kspin_lock(&g_futex_lock);
   // Safety check --- table should be consistent.
   KASSERT_DBG(htbl_get(&g_futex_table, tbl_key, &tbl_val) == 0);
   KASSERT_DBG((futex_t*)tbl_val == f);
@@ -102,7 +106,7 @@ int futex_wait(uint32_t* uaddr, uint32_t val,
     KASSERT(0 == htbl_remove(&g_futex_table, tbl_key));
     kfree(f);
   }
-  kspin_unlock(&g_futex_lock);
+  kmutex_unlock(&g_futex_lock);
 
   if (result == SWAIT_INTERRUPTED) {
     return -EINTR;
@@ -125,18 +129,20 @@ int futex_wake(uint32_t* uaddr, uint32_t val) {
       /*is_write=*/false, /*is_user=*/true, &entry, &resolved);
   if (result) return result;
 
-  kspin_lock(&g_futex_lock);
+  kspin_lock(&g_futex_initialized_mu);
   if (!g_futex_initialized) {
-    kspin_unlock(&g_futex_lock);
+    kspin_unlock(&g_futex_initialized_mu);
     block_cache_put(entry, BC_FLUSH_NONE);
     return 0;
   }
+  kspin_unlock(&g_futex_initialized_mu);
+  kmutex_lock(&g_futex_lock);
 
   void* tbl_val;
   const uint32_t tbl_key = futex_key(resolved);
   if (htbl_get(&g_futex_table, tbl_key, &tbl_val) < 0) {
     // No futex associated with this address.  We're done.
-    kspin_unlock(&g_futex_lock);
+    kmutex_unlock(&g_futex_lock);
     block_cache_put(entry, BC_FLUSH_NONE);
     return 0;
   }
@@ -148,7 +154,7 @@ int futex_wake(uint32_t* uaddr, uint32_t val) {
     woken++;
   }
 
-  kspin_unlock(&g_futex_lock);
+  kmutex_unlock(&g_futex_lock);
   block_cache_put(entry, BC_FLUSH_NONE);
   return woken;
 }
