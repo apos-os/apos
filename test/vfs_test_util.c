@@ -62,6 +62,7 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
   VFS_PUT_AND_CLEAR(root_vnode);
 
   while (1) {
+    kmemset(kd_buf, 0xab, kBufSize);
     const int len = vfs_getdents(fd, (kdirent_t*)(&buf[0]), kBufSize);
     if (len < 0) {
       KEXPECT_GE(len, -0);

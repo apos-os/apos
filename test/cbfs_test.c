@@ -87,10 +87,30 @@ static void basic_file_test(fs_t* fs) {
                                  (void*)0x1, VFS_S_IRWXU));
 
   KTEST_BEGIN("cbfs: basic getdents");
-  KEXPECT_EQ(0, compare_dirents_p(
-                    "cbfs_test_root", 4,
-                    (edirent_t[]) {
-                        {-1, "."}, {-1, ".."}, {-1, "file"}, {-1, "file2"}}));
+  KEXPECT_EQ(0, cbfs_create_file(fs, "file3", &basic_file_read_test, (void*)0x1,
+                                 VFS_S_IRWXU));
+  KEXPECT_EQ(0,
+             cbfs_create_file(fs, "long_filename_file", &basic_file_read_test,
+                              (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(0,
+             cbfs_create_file(fs, "long_filename_file2", &basic_file_read_test,
+                              (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(0,
+             cbfs_create_file(fs, "long_filename_file3", &basic_file_read_test,
+                              (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(0,
+             cbfs_create_file(fs, "long_filename_file4", &basic_file_read_test,
+                              (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(0, compare_dirents_p("cbfs_test_root", 9,
+                                  (edirent_t[]){{-1, "."},
+                                                {-1, ".."},
+                                                {-1, "file"},
+                                                {-1, "file2"},
+                                                {-1, "file3"},
+                                                {-1, "long_filename_file"},
+                                                {-1, "long_filename_file2"},
+                                                {-1, "long_filename_file3"},
+                                                {-1, "long_filename_file4"}}));
 
   KTEST_BEGIN("cbfs: cannot create file at '/'");
   KEXPECT_EQ(-EEXIST, cbfs_create_file(fs, "/", &basic_file_read_test, 0x0,
@@ -670,7 +690,7 @@ static void changing_getdents_test(void) {
   KEXPECT_EQ(
       0,
       compare_dirents_p(
-          "cbfs_test_root", 4,
+          "cbfs_test_root", 5,
           (edirent_t[]) {
               {-1, "."}, {-1, ".."}, {-1, "dir1"}, {-1, "file"}, {-1, "A"}}));
 

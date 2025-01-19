@@ -715,9 +715,10 @@ static int cbfs_getdents(vnode_t* vnode, const int offset, void* outbuf,
 
   int bytes_written = 0;
   int entries_seen = 0;
-  result =
-      getdents_from_list(&inode->entries, offset, offset,
-                         outbuf, outbufsize, bytes_written, &entries_seen);
+  result = getdents_from_list(&inode->entries,
+                              offset,  // Skip |offset| entries
+                              0,       // Don't double-count the offset.
+                              outbuf, outbufsize, bytes_written, &entries_seen);
   if (result < 0) return result;
   bytes_written = result;
 
@@ -732,9 +733,11 @@ static int cbfs_getdents(vnode_t* vnode, const int offset, void* outbuf,
     if (result < 0) return result;
     entries_seen += num_dynamic_to_skip;
 
-    result = getdents_from_list(
-        &list, 0 /* entries to skip already accounted for by the getdents_cb */,
-        entries_seen, outbuf, outbufsize, bytes_written, &entries_seen);
+    result =
+        getdents_from_list(&list,
+                           0,  // Don't skip entries (getdents_cb already did)
+                           entries_seen,  // ...but set the offset correctly.
+                           outbuf, outbufsize, bytes_written, &entries_seen);
     if (result < 0) return result;
     bytes_written = result;
   }
