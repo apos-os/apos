@@ -21,11 +21,13 @@
 #include "memory/kmalloc.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
+#include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "proc/wait.h"
 #include "test/ktest.h"
+#include "test/proc_util.h"
 
 static void basic_test(block_dev_t* bd) {
   KTEST_BEGIN("block device test");
@@ -144,6 +146,8 @@ static void do_op(void* arg) {
     }
   }
   if (!success) {
+    // TODO(aoates): update all block devices to support this, then make this a
+    // test failure.
     klogfm(KL_TEST, WARNING,
            "block device interrupt test was unable to get EINTR or ETIMEDOUT "
            "after %d iterations\n",
@@ -160,6 +164,18 @@ static void interrupt_op_test(block_dev_t* bd) {
   ksleep(10);
   proc_kill(child, SIGKILL);
   KEXPECT_EQ(child, proc_wait(NULL));
+
+
+  KTEST_BEGIN("block device interrupted read test (multi-thread)");
+  child = proc_fork(&do_op, bd);
+  KEXPECT_GE(child, 0);
+  kpid_t child2 = proc_fork(&do_op, bd);
+  KEXPECT_GE(child2, 0);
+  ksleep(10);
+  proc_kill(child, SIGKILL);
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+  proc_kill(child2, SIGKILL);
+  KEXPECT_EQ(child2, proc_waitpid(child2, NULL, 0));
 }
 
 void bd_standard_test(block_dev_t* bd) {
