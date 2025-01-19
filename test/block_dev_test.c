@@ -216,6 +216,29 @@ void* bd_thread_test_func(void* arg) {
            block, t->dev_num, t->id, t->bd->sector_size, result);
       return (void*)1;
     }
+
+    // Occasionally issue a read as well.
+    kmemset(buf, 0xff, t->bd->sector_size);
+    if (i % 3 == 0) {
+      result = t->bd->read(t->bd, block, buf, t->bd->sector_size, 0);
+      if (result != t->bd->sector_size) {
+        KLOG(
+            "failed: block %d on dev %d in thread %d didn't match: "
+            "read failed (expected %d, got %d)\n",
+            block, t->dev_num, t->id, t->bd->sector_size, result);
+        return (void*)1;
+      }
+
+      for (uint32_t j = 0; j < t->bd->sector_size / sizeof(uint32_t); ++j) {
+        if (buf[j] != val) {
+          KTEST_ADD_FAILUREF(
+              "thread %d block %d index %d was 0x%x, expected 0x%x\n", t->id,
+              block, j, buf[j], val);
+          break;
+        }
+      }
+    }
+
     scheduler_yield();
   }
 
