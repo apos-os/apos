@@ -19,10 +19,12 @@
 #include "proc/exit.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
+#include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/wait.h"
 #include "test/ktest.h"
+#include "test/test_params.h"
 #include "vfs/fifo.h"
 
 static bool has_sigpipe(void) {
@@ -874,9 +876,93 @@ static void write_test(void) {
   kfree(big_buf2);
 }
 
+typedef struct {
+  apos_fifo_t fifo;
+} fifo_mt_args_t;
+
+static void* fifo_mt_thread_read(void* arg) {
+  sched_enable_preemption_for_test();
+  fifo_mt_args_t* args = (fifo_mt_args_t*)arg;
+  KEXPECT_EQ(0, fifo_open(&args->fifo, FIFO_READ, true, false));
+  char c;
+  int i = 0;
+  uintptr_t read = 0;
+  while (1) {
+    i++;
+    bool block = (i % 2 == 0);
+    c = '?';
+    int result = fifo_read(&args->fifo, &c, 1, block);
+    if (result == -EINTR) break;
+    if (block) {
+      KEXPECT_EQ(1, result);
+    } else {
+      KEXPECT_TRUE(result == 1 || result == -EAGAIN);
+    }
+    if (result > 0) {
+      KEXPECT_EQ('x', c);
+      read += result;
+    }
+  }
+  fifo_close(&args->fifo, FIFO_READ);
+  return (void*)read;
+}
+
+static void* fifo_mt_thread_write(void* arg) {
+  sched_enable_preemption_for_test();
+  fifo_mt_args_t* args = (fifo_mt_args_t*)arg;
+  KEXPECT_EQ(0, fifo_open(&args->fifo, FIFO_WRITE, true, false));
+  uintptr_t i = 0;
+  for (i = 0; i < 100 * CONCURRENCY_TEST_ITERS_MULT; /* nop */) {
+    bool block = (i % 2 == 0);
+    int result = fifo_write(&args->fifo, "x", 1, block);
+    if (block) {
+      KEXPECT_EQ(1, result);
+    } else {
+      KEXPECT_TRUE(result == 1 || result == -EAGAIN);
+    }
+    if (result > 0) {
+      i++;
+    }
+  }
+  fifo_close(&args->fifo, FIFO_WRITE);
+  return (void*)i;
+}
+
+// A basic multi-threaded stress test.
+static void multi_thread_test(void) {
+  KTEST_BEGIN("FIFO: multi-threaded test");
+  const int kNumThreads = 5 * CONCURRENCY_TEST_THREADS_MULT;
+  kthread_t readers[kNumThreads], writers[kNumThreads];
+
+  fifo_mt_args_t args;
+  fifo_init(&args.fifo);
+
+  // Open one writer so that readers will start immediately.
+  KEXPECT_EQ(0, fifo_open(&args.fifo, FIFO_WRITE, false, true));
+
+  for (int i = 0; i < kNumThreads; ++i) {
+    KEXPECT_EQ(0, proc_thread_create(&readers[i], fifo_mt_thread_read, &args));
+    KEXPECT_EQ(0, proc_thread_create(&writers[i], fifo_mt_thread_write, &args));
+  }
+  uintptr_t read = 0, written = 0;
+  for (int i = 0; i < kNumThreads; ++i) {
+    written += (uintptr_t)kthread_join(writers[i]);
+  }
+  for (int i = 0; i < kNumThreads; ++i) {
+    proc_force_signal_on_thread(readers[i]->process, readers[i], SIGUSR1);
+    read += (uintptr_t)kthread_join(readers[i]);
+  }
+  fifo_close(&args.fifo, FIFO_WRITE);
+  fifo_cleanup(&args.fifo);
+
+  KEXPECT_GE(written, 200);
+  KEXPECT_EQ(read, written);
+}
+
 void fifo_test(void) {
   KTEST_SUITE_BEGIN("FIFO");
   open_test();
   read_test();
   write_test();
+  multi_thread_test();
 }

@@ -32,6 +32,7 @@ static short fifo_poll_events(const apos_fifo_t* fifo) {
 }
 
 void fifo_init(apos_fifo_t* fifo) {
+  kmutex_init(&fifo->mu);
   circbuf_init(&fifo->cbuf, fifo->buf, APOS_FIFO_BUF_SIZE);
   kthread_queue_init(&fifo->read_queue);
   kthread_queue_init(&fifo->write_queue);
@@ -55,6 +56,7 @@ void fifo_cleanup(apos_fifo_t* fifo) {
 }
 
 int fifo_open(apos_fifo_t* fifo, fifo_mode_t mode, bool block, bool force) {
+  KMUTEX_AUTO_LOCK(lock, &fifo->mu);
   switch (mode) {
     case FIFO_READ:
       fifo->num_readers++;
@@ -74,7 +76,7 @@ int fifo_open(apos_fifo_t* fifo, fifo_mode_t mode, bool block, bool force) {
   while (block && (fifo->num_readers == 0 || fifo->num_writers == 0)) {
     kthread_queue_t* queue =
         (mode == FIFO_READ) ? &fifo->read_queue : &fifo->write_queue;
-    int wait_result = scheduler_wait_on_interruptable(queue, -1);
+    int wait_result = scheduler_wait_on_locked(queue, -1, &fifo->mu);
     if (wait_result == SWAIT_INTERRUPTED) {
       switch (mode) {
         case FIFO_READ: fifo->num_readers--; break;
@@ -91,6 +93,7 @@ int fifo_open(apos_fifo_t* fifo, fifo_mode_t mode, bool block, bool force) {
 }
 
 void fifo_close(apos_fifo_t* fifo, fifo_mode_t mode) {
+  KMUTEX_AUTO_LOCK(lock, &fifo->mu);
   switch (mode) {
     case FIFO_READ:
       fifo->num_readers--;
@@ -109,13 +112,15 @@ void fifo_close(apos_fifo_t* fifo, fifo_mode_t mode) {
 }
 
 ssize_t fifo_read(apos_fifo_t* fifo, void* buf, size_t len, bool block) {
+  KMUTEX_AUTO_LOCK(lock, &fifo->mu);
   KASSERT(fifo->num_readers > 0);
   if (len == 0) return 0;
   else if (fifo->cbuf.len == 0 && fifo->num_writers == 0) return 0;
   else if (fifo->cbuf.len == 0 && !block) return -EAGAIN;
 
   while (block && fifo->num_writers > 0 && fifo->cbuf.len == 0) {
-    int wait_result = scheduler_wait_on_interruptable(&fifo->read_queue, -1);
+    int wait_result =
+        scheduler_wait_on_locked(&fifo->read_queue, -1, &fifo->mu);
     if (wait_result == SWAIT_INTERRUPTED) return -EINTR;
   }
 
@@ -128,6 +133,7 @@ ssize_t fifo_read(apos_fifo_t* fifo, void* buf, size_t len, bool block) {
 }
 
 ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
+  KMUTEX_AUTO_LOCK(lock, &fifo->mu);
   KASSERT(fifo->num_writers > 0);
 
   ssize_t bytes_written = 0;
@@ -135,7 +141,8 @@ ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
   do {
     while (block && fifo->cbuf.buflen - fifo->cbuf.len < min_write &&
            fifo->num_readers > 0) {
-      int wait_result = scheduler_wait_on_interruptable(&fifo->write_queue, -1);
+      int wait_result =
+          scheduler_wait_on_locked(&fifo->write_queue, -1, &fifo->mu);
       if (wait_result == SWAIT_INTERRUPTED)
         return bytes_written > 0 ? bytes_written : -EINTR;
     }
@@ -165,6 +172,7 @@ ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
 
 int fifo_poll(apos_fifo_t* fifo, kmode_t mode, short event_mask,
               poll_state_t* poll) {
+  KMUTEX_AUTO_LOCK(lock, &fifo->mu);
   if (mode == VFS_O_RDONLY) {
     event_mask &= ~(KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND);
   } else if (mode == VFS_O_WRONLY) {

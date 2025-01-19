@@ -35,6 +35,7 @@ typedef enum {
 
 // State of a FIFO, named or anonymous.
 typedef struct {
+  kmutex_t mu;
   char buf[APOS_FIFO_BUF_SIZE];
   circbuf_t cbuf;
 
