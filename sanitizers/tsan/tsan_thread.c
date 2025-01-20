@@ -252,12 +252,13 @@ bool tsan_is_stack_stomper(tsan_sid_t sid) {
 }
 
 void tsan_print_thread_id(char* buf, size_t size, int id) {
-  if (id == g_tsan_cpu.interrupt_thread->id) {
+  buf[size - 1] = '\0';
+  if (id < 0) {
+    kstrncpy(buf, "UNKNOWN", size);
+  } else if (id == g_tsan_cpu.interrupt_thread->id) {
     kstrncpy(buf, "INTERRUPT", size);
-    buf[size - 1] = '\0';
   } else if (id == g_tsan_cpu.defint_thread->id) {
     kstrncpy(buf, "DEFINT", size);
-    buf[size - 1] = '\0';
   } else {
     ksnprintf(buf, size, "%d", id);
   }

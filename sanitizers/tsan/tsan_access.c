@@ -154,9 +154,17 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
   tsan_find_access(&thread->tsan.log, addr, shadow_size(new), shadow2type(new),
                    &report.race.cur);
   addr_t prev_addr = (addr & ~0x7) + shadow_offset(old);
-  report.race.prev.thread_id = tsan_get_thread(old.sid)->id;
-  tsan_find_access(&tsan_get_thread(old.sid)->tsan.log, prev_addr,
-                   shadow_size(old), shadow2type(old), &report.race.prev);
+
+  kthread_t old_thread = tsan_get_thread(old.sid);
+  tsan_event_log_t* log = NULL;
+  if (old_thread) {
+    report.race.prev.thread_id = old_thread->id;
+    log = &old_thread->tsan.log;
+  } else {
+    report.race.prev.thread_id = -1;
+  }
+  tsan_find_access(log, prev_addr, shadow_size(old), shadow2type(old),
+                   &report.race.prev);
 
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   tsan_report_fn_t fn = g_tsan_report_fn ? g_tsan_report_fn :

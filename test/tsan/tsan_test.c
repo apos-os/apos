@@ -113,8 +113,8 @@ static bool type_matches(const char* s, tsan_access_type_t t) {
 
 // Expect that a particular report was found.
 static bool expect_report(void* addr1, int size1, const char* type1,
-                          void* addr2, int size2, const char* type2,
-                          bool try_swap) {
+                          bool has_stack1, void* addr2, int size2,
+                          const char* type2, bool has_stack2, bool try_swap) {
   bool v = true;
   v &= KEXPECT_TRUE(g_found_report);
   if (!g_found_report) return v;
@@ -123,7 +123,8 @@ static bool expect_report(void* addr1, int size1, const char* type1,
   if (try_swap && ((addr_t)addr1 != g_report.race.cur.addr ||
                    size1 != g_report.race.cur.size ||
                    !type_matches(type1, g_report.race.cur.type))) {
-    return expect_report(addr2, size2, type2, addr1, size1, type1, false);
+    return expect_report(addr2, size2, type2, has_stack2, addr1, size1, type1,
+                         has_stack1, false);
   }
 
   v &= KEXPECT_EQ((addr_t)addr1, g_report.race.cur.addr);
@@ -134,17 +135,30 @@ static bool expect_report(void* addr1, int size1, const char* type1,
   v &= type_matches(type2, g_report.race.prev.type);
 
   // Crude stack trace checking.
-  v &= KEXPECT_NE(0, g_report.race.cur.trace[0]);
-  v &= KEXPECT_NE(0, g_report.race.cur.trace[1]);
-  v &= KEXPECT_NE(0, g_report.race.prev.trace[0]);
-  v &= KEXPECT_NE(0, g_report.race.prev.trace[1]);
+  if (has_stack1) {
+    v &= KEXPECT_NE(0, g_report.race.cur.trace[0]);
+    v &= KEXPECT_NE(0, g_report.race.cur.trace[1]);
+  } else {
+    v &= KEXPECT_EQ(0, g_report.race.cur.trace[0]);
+  }
+  if (has_stack2) {
+    v &= KEXPECT_NE(0, g_report.race.prev.trace[0]);
+    v &= KEXPECT_NE(0, g_report.race.prev.trace[1]);
+  } else {
+    v &= KEXPECT_EQ(0, g_report.race.prev.trace[0]);
+  }
 
   kmemset(&g_report, 0, sizeof(g_report));
   return v;
 }
 
-#define EXPECT_REPORT(addr1, size1, type1, addr2, size2, type2) \
-  KEXPECT_TRUE(expect_report(addr1, size1, type1, addr2, size2, type2, true))
+#define EXPECT_REPORT(addr1, size1, type1, addr2, size2, type2)              \
+  KEXPECT_TRUE(expect_report(addr1, size1, type1, true, addr2, size2, type2, \
+                             true, true))
+
+#define EXPECT_REPORT_NO_STACK(addr1, size1, type1, addr2, size2, type2)     \
+  KEXPECT_TRUE(expect_report(addr1, size1, type1, true, addr2, size2, type2, \
+                             false, true))
 
 /************************** Tests ************************************/
 typedef struct {
@@ -1425,12 +1439,40 @@ static void stack_tests(void) {
   defint_stack_test();
 }
 
+static void* sleep_then_access_u32(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(30);
+  tsan_unaligned_write32((uint32_t*)arg, 0x12345678);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void old_thread_test(void) {
+  KTEST_BEGIN("TSAN: race with dead thread");
+  uint64_t* x = TS_MALLOC(uint64_t);
+  *x = 0;
+
+  intercept_reports();
+  tsan_rw_u64(x);
+  kthread_t thread1, thread2;
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u64, x));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &sleep_then_access_u32, x));
+
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  EXPECT_REPORT_NO_STACK(x, 4, "w", x, 8, "w");
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   basic_tests();
   interrupt_tests();
   defint_tests();
   stack_tests();
+  old_thread_test();
 
   tsan_test_free_all();
 }

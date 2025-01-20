@@ -85,6 +85,8 @@ int tsan_find_access(const tsan_event_log_t* log, addr_t addr, int size,
   result->size = size;
   result->type = type;
 
+  if (!log) return 0;
+
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   // First find the access.
   int access_idx = -1;
