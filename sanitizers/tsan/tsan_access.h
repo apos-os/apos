@@ -31,6 +31,10 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type);
 bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
                           tsan_access_type_t type);
 
+// Access a range of memory.
+bool tsan_check_range(addr_t pc, addr_t addr, size_t len,
+                      tsan_access_type_t type);
+
 // Mark the given region as stack or non-stack.  The region must be page-aligned
 // and contain an integer number of pages.
 void tsan_mark_stack(addr_t start, size_t len, bool is_stack);

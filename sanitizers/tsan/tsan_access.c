@@ -303,6 +303,40 @@ bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
   return tsan_check_internal(pc, a2_addr, a2_size, type);
 }
 
+bool tsan_check_range(addr_t pc, addr_t addr, size_t len,
+                      tsan_access_type_t type) {
+  if (!g_tsan_init) return false;
+
+  // 1) access the unaligned left portion.
+  addr_t offset = addr & 0x7;
+  if (offset != 0) {
+    addr_t a1_end = min(offset + len, 8);
+    addr_t a1_size = a1_end - offset;
+    if (tsan_check(pc, addr, a1_size, type)) {
+      return true;
+    }
+    addr += a1_size;
+    len -= a1_size;
+  }
+
+  // 2) access as many 8-byte chunks as we can.
+  while (len > 8) {
+    if (tsan_check(pc, addr, 8, type)) {
+      return true;
+    }
+    addr += 8;
+    len -= 8;
+  }
+
+  // 3) access the unaligned right portion.  The start is aligned to an 8-byte
+  // boundary, but the length can be 0-7.
+  if (len > 0) {
+    return tsan_check(pc, addr, len, type);
+  }
+
+  return false;
+}
+
 void tsan_set_report_func(tsan_report_fn_t fn) {
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   g_tsan_report_fn = fn;

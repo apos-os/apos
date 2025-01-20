@@ -14,6 +14,7 @@
 #include "sanitizers/tsan/tsan_hooks.h"
 
 #include "common/kassert.h"
+#include "common/kstring-tsan.h"
 #include "sanitizers/tsan/internal.h"
 #include "sanitizers/tsan/tsan_access.h"
 #include "sanitizers/tsan/tsan_event.h"
@@ -94,7 +95,6 @@ void __tsan_write8(void* addr) {
 
 void __tsan_write16(void* addr) {
   CHECK_ALIGNMENT(addr, 8);
-  // TODO(tsan): is this kind of split correct?
   tsan_check(CALLERPC, (addr_t)addr, 8, TSAN_ACCESS_WRITE);
   tsan_check(CALLERPC, (addr_t)addr + 8, 8, TSAN_ACCESS_WRITE);
 }
@@ -112,13 +112,14 @@ void __tsan_unaligned_write8(void* addr) {
 }
 
 void* __tsan_memcpy(void* dest, const void* src, uptr count) {
-  // TODO(tsan): handle whole blocks.
-  return __builtin_memcpy(dest, src, count);
+  tsan_check_range(CALLERPC, (addr_t)src, count, TSAN_ACCESS_READ);
+  tsan_check_range(CALLERPC, (addr_t)dest, count, TSAN_ACCESS_WRITE);
+  return kmemcpy_no_tsan(dest, src, count);
 }
 
 void* __tsan_memset(void* dest, int ch, uptr count) {
-  // TODO(tsan): handle whole blocks.
-  return __builtin_memset(dest, ch, count);
+  tsan_check_range(CALLERPC, (addr_t)dest, count, TSAN_ACCESS_WRITE);
+  return kmemset_no_tsan(dest, ch, count);
 }
 
 void __tsan_func_entry(void* call_pc) {

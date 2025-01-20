@@ -15,6 +15,9 @@
 
 #include <stdint.h>
 
+#include "common/kstring.h"
+#include "common/kstring-tsan.h"
+
 #if !__has_feature(thread_sanitizer)
 #error TSAN must be enabled in this module
 #endif
@@ -92,4 +95,22 @@ uint64_t tsan_unaligned_read64(void* x) {
 
 void tsan_unaligned_write64(void* x, uint64_t val) {
   ((unaligned_data_t*)x)->u64 = val;
+}
+
+void tsan_test_kmemset(void* dest, int c, size_t n) {
+  kmemset(dest, c, n);
+}
+
+void tsan_test_kmemcpy(void* dest, const void* src, size_t n) {
+  kmemcpy(dest, src, n);
+}
+
+void tsan_implicit_memset(tsan_test_struct_t* x) {
+  *x = (tsan_test_struct_t){0};
+}
+
+void tsan_implicit_memcpy(tsan_test_struct_t* x) {
+  tsan_test_struct_t b;
+  kmemset_no_tsan(&b, 0x12, sizeof(b));
+  *x = b;
 }

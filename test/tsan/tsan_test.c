@@ -13,6 +13,8 @@
 // limitations under the License.
 #include "common/endian.h"
 #include "common/kassert.h"
+#include "common/kstring.h"
+#include "common/kstring-tsan.h"
 #include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
@@ -160,6 +162,18 @@ static bool expect_report(void* addr1, int size1, const char* type1,
   KEXPECT_TRUE(expect_report(addr1, size1, type1, true, addr2, size2, type2, \
                              false, true))
 
+// Helper to wait until races occur, ensuring that tests don't reap threads
+// before the races occur (which causes spurious test failures due to missing
+// stack traces).
+static void wait_for_race(void) {
+  PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
+  for (int i = 0; i < 10; ++i) {
+    if (g_found_report) break;
+    ksleep(10);
+  }
+  POP_INTERRUPTS_NO_TSAN();
+}
+
 /************************** Tests ************************************/
 typedef struct {
   kmutex_t mu;
@@ -218,7 +232,7 @@ static void tsan_basic_sanity_test2(void) {
   intercept_reports();
   tsan_rw_value(x);
   KEXPECT_EQ(0, proc_thread_create(&thread, &rw_value_thread_preempt, x));
-  ksleep(10);
+  ksleep(20);
   tsan_rw_value(x);
   EXPECT_REPORT(x, 4, "w", x, 4, "?");
 
@@ -462,6 +476,62 @@ static void size1_safe_test(void) {
   tsan_test_cleanup();
 }
 
+// As above, but use kmemset() instead of a direct write.
+static void size1_memset_safe_test(void) {
+  KTEST_BEGIN("TSAN: two threads accessing different 1 bytes is safe (memset)");
+  uint64_t* vals = tsan_test_alloc(sizeof(uint64_t) * 8);
+  uint64_t orig = htob64(0x0123456789abcdefll);
+
+  for (int byte_pos_to_test = 0; byte_pos_to_test < 8; ++byte_pos_to_test) {
+    for (int i = 0; i < 8; ++i) {
+      vals[i] = orig;
+    }
+    // For each byte position to test, have the other thread read that byte
+    // position in all 8 of the test dwords.  This thread will write a different
+    // "second" byte position in each of the test dwords --- none should
+    // conflict.
+    uint8_t* val8 = (uint8_t*)vals;
+    kthread_t thread;
+    KEXPECT_EQ(
+        0, proc_thread_create(&thread, &size1_thread, val8 + byte_pos_to_test));
+    for (int i = 0; i < 8; ++i) {
+      if (i == byte_pos_to_test) continue;
+      kmemset(&val8[i * 8 + i], 0x00, 1);
+    }
+    KEXPECT_EQ(((uint8_t*)&orig)[byte_pos_to_test],
+               (intptr_t)kthread_join(thread));
+  }
+  tsan_test_cleanup();
+}
+
+static void size1_memcpy_safe_test(void) {
+  KTEST_BEGIN("TSAN: two threads accessing different 1 bytes is safe (memcpy)");
+  uint64_t* vals = tsan_test_alloc(sizeof(uint64_t) * 8);
+  uint64_t orig = htob64(0x0123456789abcdefll);
+
+  for (int byte_pos_to_test = 0; byte_pos_to_test < 8; ++byte_pos_to_test) {
+    for (int i = 0; i < 8; ++i) {
+      vals[i] = orig;
+    }
+    // For each byte position to test, have the other thread read that byte
+    // position in all 8 of the test dwords.  This thread will write a different
+    // "second" byte position in each of the test dwords --- none should
+    // conflict.
+    uint8_t* val8 = (uint8_t*)vals;
+    kthread_t thread;
+    KEXPECT_EQ(
+        0, proc_thread_create(&thread, &size1_thread, val8 + byte_pos_to_test));
+    for (int i = 0; i < 8; ++i) {
+      if (i == byte_pos_to_test) continue;
+      char c = 0;
+      kmemcpy(&val8[i * 8 + i], &c, 1);
+    }
+    KEXPECT_EQ(((uint8_t*)&orig)[byte_pos_to_test],
+               (intptr_t)kthread_join(thread));
+  }
+  tsan_test_cleanup();
+}
+
 // As above, but with concurrent 1-byte/2-byte accesses.
 static void size2_safe_test(void) {
   KTEST_BEGIN("TSAN: two threads accessing different 2 bytes is safe");
@@ -632,6 +702,14 @@ static void* access_u8(void* arg) {
   return NULL;
 }
 
+static void* read_u8(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  tsan_read8((uint8_t*)arg);
+  sched_disable_preemption();
+  return NULL;
+}
+
 static void* access_u16(void* arg) {
   sched_enable_preemption_for_test();
   ksleep(10);
@@ -652,6 +730,53 @@ static void* access_u64(void* arg) {
   sched_enable_preemption_for_test();
   ksleep(10);
   tsan_unaligned_write64((uint64_t*)arg, 0xabababababababab);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* access_memset_15bytes(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  tsan_test_kmemset(arg, 0x12, 15);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* access_memset_16bytes(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  tsan_test_kmemset(arg, 0x12, 16);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* access_implicit_memset(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  tsan_implicit_memset((tsan_test_struct_t*)arg);
+  sched_disable_preemption();
+  return NULL;
+}
+
+typedef struct {
+  void* dst;
+  const void* src;
+  size_t n;
+} access_memcpy_args_t;
+
+static void* access_memcpy(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  access_memcpy_args_t* args = (access_memcpy_args_t*)arg;
+  tsan_test_kmemcpy(args->dst, args->src, args->n);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* access_implicit_memcpy(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  tsan_implicit_memcpy((tsan_test_struct_t*)arg);
   sched_disable_preemption();
   return NULL;
 }
@@ -855,6 +980,8 @@ static void basic_tests(void) {
   tsan_basic_sanity_test3_spinlock_intsafe();
   tsan_basic_sanity_test4();
   size1_safe_test();
+  size1_memset_safe_test();
+  size1_memcpy_safe_test();
   size2_safe_test();
   size4_safe_test();
   tsan_wait_queue_test();
@@ -1466,6 +1593,268 @@ static void old_thread_test(void) {
   tsan_test_cleanup();
 }
 
+static void tsan_memset_tests(void) {
+  KTEST_BEGIN("TSAN: memset test");
+  // We'll run tests for each byte position on both sides of the region.
+  uint64_t* vals = tsan_test_alloc(8 * sizeof(uint64_t) * 3);
+
+  // Repeatedly test memset()ing a 15-byte region at different offsets.
+  for (int i = 0; i < 8; ++i) {
+    uint8_t* vals8 = (uint8_t*)vals;
+    tsan_write64(vals, 0);
+    tsan_write64(vals + 1, 0);
+    tsan_write64(vals + 2, 0);
+
+    // Access the two bytes on either side of the memset region.  This is OK.
+    kthread_t threads[3];
+    KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_u8, &vals8[i]));
+    KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u8, &vals8[16 + i]));
+
+    // ...and then memset all the bytes in between.
+    KEXPECT_EQ(0, proc_thread_create(&threads[2], &access_memset_15bytes,
+                                     &vals8[1 + i]));
+
+    KEXPECT_EQ(NULL, kthread_join(threads[0]));
+    KEXPECT_EQ(NULL, kthread_join(threads[1]));
+    KEXPECT_EQ(NULL, kthread_join(threads[2]));
+
+    KEXPECT_EQ(0x01, vals8[i]);
+    for (int j = 0; j < 15; ++j) {
+      KEXPECT_EQ(0x12, vals8[i + 1 + j]);
+    }
+    KEXPECT_EQ(0x01, vals8[16 + i]);
+
+    vals += 3;
+  }
+  tsan_test_cleanup();
+}
+
+static void tsan_memset_conflict_tests(void) {
+  KTEST_BEGIN("TSAN: memset conflict test");
+  // We'll run tests for each byte position on both sides of the region.
+  uint64_t* vals = tsan_test_alloc(8 * sizeof(uint64_t) * 3);
+
+  // Repeatedly test memset()ing a 16-byte region at different offsets.
+  for (int i = 0; i < 8; ++i) {
+    uint8_t* vals8 = (uint8_t*)vals;
+    tsan_write64(vals, 0);
+    tsan_write64(vals + 1, 0);
+    tsan_write64(vals + 2, 0);
+
+    // #1: test for conflict on the "left" side of the region.
+    kthread_t threads[2];
+    intercept_reports();
+    KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_u8, &vals8[i]));
+    KEXPECT_EQ(
+        0, proc_thread_create(&threads[1], &access_memset_16bytes, &vals8[i]));
+
+    wait_for_race();
+    KEXPECT_EQ(NULL, kthread_join(threads[0]));
+    KEXPECT_EQ(NULL, kthread_join(threads[1]));
+    EXPECT_REPORT(&vals8[i], 1, "w", &vals8[i], 8 - i, "w");
+    intercept_reports_done();
+
+    // #2: test for conflict on the middle of the region.
+    intercept_reports();
+    KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_u8, &vals8[8]));
+    KEXPECT_EQ(
+        0, proc_thread_create(&threads[1], &access_memset_16bytes, &vals8[i]));
+
+    wait_for_race();
+    KEXPECT_EQ(NULL, kthread_join(threads[0]));
+    KEXPECT_EQ(NULL, kthread_join(threads[1]));
+    EXPECT_REPORT(&vals8[8], 1, "w", &vals8[8], 8, "w");
+    intercept_reports_done();
+
+    // #3: test for conflict on the "right" side of the region.
+    intercept_reports();
+    KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_u8, &vals8[i + 15]));
+    KEXPECT_EQ(
+        0, proc_thread_create(&threads[1], &access_memset_16bytes, &vals8[i]));
+
+    wait_for_race();
+    KEXPECT_EQ(NULL, kthread_join(threads[0]));
+    KEXPECT_EQ(NULL, kthread_join(threads[1]));
+    if (i == 0) {
+      EXPECT_REPORT(&vals8[i + 15], 1, "w", &vals8[8], 8, "w");
+    } else {
+      EXPECT_REPORT(&vals8[i + 15], 1, "w", &vals8[16], i, "w");
+    }
+    intercept_reports_done();
+
+    vals += 3;
+  }
+  tsan_test_cleanup();
+}
+
+static void tsan_implicit_memset_conflict_tests(void) {
+  KTEST_BEGIN("TSAN: memset conflict test (compiler-generated memset)");
+  tsan_test_struct_t* x = TS_MALLOC(tsan_test_struct_t);
+
+  kthread_t threads[2];
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_u8, &x->e));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_implicit_memset, x));
+
+  wait_for_race();
+  KEXPECT_EQ(NULL, kthread_join(threads[0]));
+  KEXPECT_EQ(NULL, kthread_join(threads[1]));
+  EXPECT_REPORT(&x->e, 1, "w", &x->d, 8, "w");
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void tsan_memcpy_test(void) {
+  KTEST_BEGIN("TSAN: memcpy (no conflict)");
+  // Don't bother with complex address-range tests --- assume the memset tests
+  // cover all those edge cases.
+  uint8_t* vals_src = tsan_test_alloc(24);
+  uint8_t* vals_dst = tsan_test_alloc(24);
+
+  // We should be able to write both the source and destination on both sides of
+  // the region, and read the source anywhere.
+  for (int i = 0; i < 24; ++i) {
+    vals_src[i] = 2;
+    vals_dst[i] = 1;
+  }
+
+  const int kThreads = 10;
+  kthread_t threads[kThreads];
+  // First thread does the memcpy.
+  access_memcpy_args_t args = {vals_dst + 1, vals_src + 2, 16};
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_memcpy, &args));
+
+  // These threads write on the edges of the src.
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u8, &vals_src[0]));
+  KEXPECT_EQ(0, proc_thread_create(&threads[2], &access_u8, &vals_src[1]));
+  KEXPECT_EQ(0, proc_thread_create(&threads[3], &access_u8, &vals_src[18]));
+  KEXPECT_EQ(0, proc_thread_create(&threads[4], &access_u8, &vals_src[19]));
+
+  // These threads write on the edges of the dst.
+  KEXPECT_EQ(0, proc_thread_create(&threads[5], &access_u8, &vals_dst[0]));
+  KEXPECT_EQ(0, proc_thread_create(&threads[6], &access_u8, &vals_dst[17]));
+
+  // These threads read inside the src.
+  KEXPECT_EQ(0, proc_thread_create(&threads[7], &read_u8, &vals_src[2]));
+  KEXPECT_EQ(0, proc_thread_create(&threads[8], &read_u8, &vals_src[10]));
+  KEXPECT_EQ(0, proc_thread_create(&threads[9], &read_u8, &vals_src[17]));
+
+  wait_for_race();
+  for (int i = 0; i < kThreads; ++i) {
+    KEXPECT_EQ(NULL, kthread_join(threads[i]));
+  }
+
+  KEXPECT_EQ(1, vals_dst[0]);
+  for (int i = 0; i < 16; ++i) {
+    KEXPECT_EQ(2, vals_dst[i + 1]);
+  }
+  KEXPECT_EQ(1, vals_dst[17]);
+
+  tsan_test_cleanup();
+}
+
+static void tsan_memcpy_conflict_test(void) {
+  KTEST_BEGIN("TSAN: memcpy (conflict)");
+  uint8_t* vals_src = tsan_test_alloc(24);
+  uint8_t* vals_dst = tsan_test_alloc(24);
+
+  // We should be able to write both the source and destination on both sides of
+  // the region, and read the source anywhere.
+  for (int i = 0; i < 24; ++i) {
+    vals_src[i] = 2;
+    vals_dst[i] = 1;
+  }
+
+  // #1: a write inside the source should conflict.
+  const int kThreads = 2;
+  kthread_t threads[kThreads];
+  intercept_reports();
+  access_memcpy_args_t args = {vals_dst + 1, vals_src + 2, 16};
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_memcpy, &args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u8, &vals_src[2]));
+
+  wait_for_race();
+  KEXPECT_EQ(NULL, kthread_join(threads[0]));
+  KEXPECT_EQ(NULL, kthread_join(threads[1]));
+  EXPECT_REPORT(&vals_src[2], 1, "w", &vals_src[2], 6, "r");
+  intercept_reports_done();
+
+  // #2: a write inside the source should conflict (at end).
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_memcpy, &args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u8, &vals_src[17]));
+
+  wait_for_race();
+  KEXPECT_EQ(NULL, kthread_join(threads[0]));
+  KEXPECT_EQ(NULL, kthread_join(threads[1]));
+  EXPECT_REPORT(&vals_src[17], 1, "w", &vals_src[16], 2, "r");
+  intercept_reports_done();
+
+  // #3: a write inside the dest should conflict.
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_memcpy, &args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u8, &vals_dst[1]));
+
+  wait_for_race();
+  KEXPECT_EQ(NULL, kthread_join(threads[0]));
+  KEXPECT_EQ(NULL, kthread_join(threads[1]));
+  EXPECT_REPORT(&vals_dst[1], 1, "w", &vals_dst[1], 7, "w");
+  intercept_reports_done();
+
+  // #4: a write inside the dest should conflict (at end).
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_memcpy, &args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u8, &vals_dst[16]));
+
+  wait_for_race();
+  KEXPECT_EQ(NULL, kthread_join(threads[0]));
+  KEXPECT_EQ(NULL, kthread_join(threads[1]));
+  EXPECT_REPORT(&vals_dst[16], 1, "w", &vals_dst[16], 1, "w");
+  intercept_reports_done();
+
+  // #5: a read inside the dest should conflict.
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_memcpy, &args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &read_u8, &vals_dst[9]));
+
+  wait_for_race();
+  KEXPECT_EQ(NULL, kthread_join(threads[0]));
+  KEXPECT_EQ(NULL, kthread_join(threads[1]));
+  EXPECT_REPORT(&vals_dst[9], 1, "r", &vals_dst[8], 8, "w");
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void tsan_implicit_memcpy_conflict_tests(void) {
+  KTEST_BEGIN("TSAN: memcpy conflict test (compiler-generated memcpy)");
+  tsan_test_struct_t* x = TS_MALLOC(tsan_test_struct_t);
+
+  kthread_t threads[2];
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_u8, &x->e));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_implicit_memcpy, x));
+
+  wait_for_race();
+  KEXPECT_EQ(NULL, kthread_join(threads[0]));
+  KEXPECT_EQ(NULL, kthread_join(threads[1]));
+  EXPECT_REPORT(&x->e, 1, "w", &x->d, 8, "w");
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void region_tests(void) {
+  tsan_memset_tests();
+  tsan_memset_conflict_tests();
+  tsan_implicit_memset_conflict_tests();
+
+  tsan_memcpy_test();
+  tsan_memcpy_conflict_test();
+  tsan_implicit_memcpy_conflict_tests();
+}
+
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   basic_tests();
@@ -1473,6 +1862,7 @@ void tsan_test(void) {
   defint_tests();
   stack_tests();
   old_thread_test();
+  region_tests();
 
   tsan_test_free_all();
 }

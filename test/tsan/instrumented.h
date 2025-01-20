@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 
+#include "common/types.h"
+
 // Reads the given value, then stores an incremented value back to the pointer.
 void tsan_rw_value(int* x);
 void tsan_rw_u64(uint64_t* x);
@@ -42,5 +44,19 @@ void tsan_unaligned_write32(void* x, uint32_t val);
 
 uint64_t tsan_unaligned_read64(void* x);
 void tsan_unaligned_write64(void* x, uint64_t val);
+
+// Wrapper around kmemset/kmemcpy that simply ensures there's an instrumented
+// stack frame.
+void tsan_test_kmemset(void* dest, int c, size_t n);
+void tsan_test_kmemcpy(void* dest, const void* src, size_t n);
+
+typedef struct {
+  uint64_t a, b, c;
+  uint8_t d, e;
+} tsan_test_struct_t;
+
+// Triggers an implicit (compiler-generated) call to memset/kmemcpy.
+void tsan_implicit_memset(tsan_test_struct_t* x);
+void tsan_implicit_memcpy(tsan_test_struct_t* x);
 
 #endif

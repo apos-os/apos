@@ -16,6 +16,7 @@
 #include "common/kassert.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
+#include "common/kstring-tsan.h"
 #include "common/math.h"
 #include "dev/interrupts.h"
 #include "proc/kthread-internal.h"
@@ -139,7 +140,7 @@ void tsan_thread_destroy(kthread_t thread) {
   KASSERT(thread->tsan.clock.ts[sid] > g_tsan_slots[sid].epoch);
   g_tsan_slots[sid].epoch = thread->tsan.clock.ts[sid];
   g_tsan_slots[sid].thread = NULL;
-  kmemset(&thread->tsan, 0, sizeof(thread->tsan));
+  kmemset_no_tsan(&thread->tsan, 0, sizeof(thread->tsan));
 
   tsan_mark_stack((addr_t)thread->stack, thread->stacklen, false);
 }
