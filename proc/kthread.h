@@ -153,7 +153,10 @@ struct kmutex {
 };
 typedef struct kmutex kmutex_t;
 
-// Initialize the given mutex.
+// Initialize the given mutex.  It is also valid to zero-init the mutex (in
+// which case some portions might be lazy-initialized the first time the mutex
+// is locked).  Zero-initialization should only be used for static global
+// mutexes, not dynamically allocated ones.
 void kmutex_init(kmutex_t* m);
 
 // Lock the given mutex, blocking until the lock is acquired.

@@ -887,6 +887,33 @@ static void kmutex_test(void) {
   KEXPECT_EQ(1000 * KMUTEX_TEST_SIZE, out);
 }
 
+static void* zeroinit_thread(void* arg) {
+  kmutex_t* lock = (kmutex_t*)arg;
+  kmutex_lock(lock);
+  ksleep(10);
+  kmutex_unlock(lock);
+  return NULL;
+}
+
+static void kmutex_zero_init_test(void) {
+  KTEST_BEGIN("kmutex zero-init test");
+  kmutex_t a, b;
+  kmemset(&a, 0, sizeof(a));
+  kmemset(&b, 0, sizeof(b));
+
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, &zeroinit_thread, &a));
+  scheduler_make_runnable(thread);
+
+  kmutex_lock(&a);
+  kmutex_lock(&b);
+  ksleep(10);
+  kmutex_unlock(&b);
+  kmutex_unlock(&a);
+
+  KEXPECT_EQ(NULL, kthread_join(thread));
+}
+
 static void kmutex_auto_lock_test(void) {
   KTEST_BEGIN("kmutex auto lock test");
   kmutex_t m;
@@ -1740,6 +1767,7 @@ void kthread_test(void) {
     ksleep_test();
   }
   kmutex_test();
+  kmutex_zero_init_test();
   kmutex_auto_lock_test();
   preemption_test();
   wait_on_locked_test();

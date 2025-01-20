@@ -418,12 +418,8 @@ int kthread_queue_empty(kthread_queue_t* lst) {
   return lst->head == 0x0;
 }
 
-void kmutex_init(kmutex_t* m) {
-  m->locked = 0;
-  m->holder = 0x0;
-  kthread_queue_init(&m->wait_queue);
-
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
+static void init_deadlock_data(kmutex_t* m) {
   // TODO(aoates): this could cause a false positive if we recreate mutexes
   // quickly enough (such that IDs are reused).
   m->id = fnv_hash_concat(fnv_hash_addr((addr_t)m), get_time_ms());
@@ -432,6 +428,16 @@ void kmutex_init(kmutex_t* m) {
     m->priors[i].id = 0;
     m->priors[i].lru = 0;
   }
+}
+#endif
+
+void kmutex_init(kmutex_t* m) {
+  m->locked = 0;
+  m->holder = 0x0;
+  kthread_queue_init(&m->wait_queue);
+
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  init_deadlock_data(m);
 #endif
 
 #if ENABLE_TSAN
@@ -463,6 +469,9 @@ void kmutex_lock(kmutex_t* m) {
   POP_INTERRUPTS();
 
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  if (m->id == 0) {
+    init_deadlock_data(m);
+  }
   apos_ms_t now = get_time_ms();
   int lru_search_start = 0;
   FOR_EACH_LIST(link_iter, &kthread_current_thread()->mutexes_held) {
