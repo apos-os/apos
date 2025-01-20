@@ -46,4 +46,7 @@ kthread_t tsan_get_thread(tsan_sid_t sid);
 // (e.g. interrupt or defint virtual thread).
 bool tsan_is_stack_stomper(tsan_sid_t sid);
 
+// Pretty-print a thread ID, special-casing special TSAN threads.
+void tsan_print_thread_id(char* buf, size_t size, int id);
+
 #endif

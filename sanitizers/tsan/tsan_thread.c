@@ -14,6 +14,7 @@
 #include "sanitizers/tsan/tsan_thread.h"
 
 #include "common/kassert.h"
+#include "common/kprintf.h"
 #include "common/kstring.h"
 #include "common/math.h"
 #include "dev/interrupts.h"
@@ -248,4 +249,16 @@ kthread_t tsan_get_thread(tsan_sid_t sid) {
 bool tsan_is_stack_stomper(tsan_sid_t sid) {
   return sid == g_tsan_cpu.interrupt_thread->tsan.sid ||
          sid == g_tsan_cpu.defint_thread->tsan.sid;
+}
+
+void tsan_print_thread_id(char* buf, size_t size, int id) {
+  if (id == g_tsan_cpu.interrupt_thread->id) {
+    kstrncpy(buf, "INTERRUPT", size);
+    buf[size - 1] = '\0';
+  } else if (id == g_tsan_cpu.defint_thread->id) {
+    kstrncpy(buf, "DEFINT", size);
+    buf[size - 1] = '\0';
+  } else {
+    ksnprintf(buf, size, "%d", id);
+  }
 }

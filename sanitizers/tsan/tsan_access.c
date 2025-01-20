@@ -116,9 +116,11 @@ static tsan_access_type_t shadow2type(tsan_shadow_t s) {
 }
 
 static void log_access(const tsan_access_t* access) {
+  char thread[20];
+  tsan_print_thread_id(thread, 20, access->thread_id);
   klogfm(KL_GENERAL, INFO,
-         "%d-byte %s by thread %d on address 0x%" PRIxADDR " at \n",
-         access->size, type2str(access->type), access->thread_id, access->addr);
+         "%d-byte %s by thread %s on address 0x%" PRIxADDR " at \n",
+         access->size, type2str(access->type), thread, access->addr);
   if (access->trace[0] == 0) {
     klogfm(KL_GENERAL, INFO, " ?? (unknown address)\n");
   } else {
