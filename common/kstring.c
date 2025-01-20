@@ -73,7 +73,7 @@ bool kstr_startswith(const char* s, const char* prefix) {
   return (*prefix == '\0');
 }
 
-void* kmemset(void *s, int c, size_t n) {
+void* kmemset(void* s, int c, size_t n) {
   for (size_t i = 0; i < n; ++i) {
     ((char*)s)[i] = c;
   }
@@ -86,6 +86,12 @@ void* kmemcpy(void* dest, const void* src, size_t n) {
   }
   return dest;
 }
+
+// Emit memset as an alias to kmemset.  The compiler will emit calls to memset,
+// which will now call kmemset.  Likewise with memcpy.
+void* memset(void* dest, int c, size_t n) __attribute__((alias("kmemset")));
+void* memcpy(void* dest, const void* src, size_t n)
+    __attribute__((alias("kmemcpy")));
 
 int kmemcmp(const void* m1, const void* m2, size_t n) {
   const char* s1 = (const char*)m1;
