@@ -16,6 +16,7 @@
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/hashtable.h"
+#include "common/initer.h"
 #include "common/kassert.h"
 #include "common/time.h"
 #include "memory/kmalloc.h"
@@ -26,8 +27,7 @@
 
 #define FUTEX_TABLE_INITIAL_ENTRIES 10
 static htbl_t g_futex_table;
-static kspinlock_t g_futex_initialized_mu = KSPINLOCK_NORMAL_INIT_STATIC;
-static bool g_futex_initialized = false;
+static initer_t g_futex_init = INITER;
 // TODO(aoates): make mutexes statically initable.
 static kmutex_t g_futex_lock;
 
@@ -38,6 +38,11 @@ typedef struct {
 
 static uint32_t futex_key(phys_addr_t addr) {
   return fnv_hash_array(&addr, sizeof(addr));
+}
+
+static void futex_global_init(initer_t* init) {
+  kmutex_init(&g_futex_lock);
+  htbl_init(&g_futex_table, FUTEX_TABLE_INITIAL_ENTRIES);
 }
 
 static void futex_init(futex_t* f) {
@@ -55,13 +60,7 @@ int futex_wait(uint32_t* uaddr, uint32_t val,
       /*is_write=*/false, /*is_user=*/true, &entry, &resolved);
   if (result) return result;
 
-  kspin_lock(&g_futex_initialized_mu);
-  if (!g_futex_initialized) {
-    kmutex_init(&g_futex_lock);
-    htbl_init(&g_futex_table, FUTEX_TABLE_INITIAL_ENTRIES);
-    g_futex_initialized = true;
-  }
-  kspin_unlock(&g_futex_initialized_mu);
+  initer(&g_futex_init, &futex_global_init);
   kmutex_lock(&g_futex_lock);
 
   // First check current value.
@@ -129,13 +128,7 @@ int futex_wake(uint32_t* uaddr, uint32_t val) {
       /*is_write=*/false, /*is_user=*/true, &entry, &resolved);
   if (result) return result;
 
-  kspin_lock(&g_futex_initialized_mu);
-  if (!g_futex_initialized) {
-    kspin_unlock(&g_futex_initialized_mu);
-    block_cache_put(entry, BC_FLUSH_NONE);
-    return 0;
-  }
-  kspin_unlock(&g_futex_initialized_mu);
+  initer(&g_futex_init, &futex_global_init);
   kmutex_lock(&g_futex_lock);
 
   void* tbl_val;
