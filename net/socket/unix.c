@@ -18,6 +18,7 @@
 #include "common/kstring.h"
 #include "common/math.h"
 #include "memory/kmalloc.h"
+#include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "user/include/apos/errors.h"
@@ -33,7 +34,11 @@
 
 static const socket_ops_t g_unix_socket_ops;
 
+// Global unix domain socket lock.
+static kmutex_t g_unix_mu;
+
 static short sun_poll_events(const socket_unix_t* socket) {
+  kmutex_assert_is_held(&g_unix_mu);
   short events = 0;
   switch (socket->state) {
     case SUN_LISTENING:
@@ -63,7 +68,8 @@ static short sun_poll_events(const socket_unix_t* socket) {
   return events;
 }
 
-int sock_unix_create(int type, int protocol, socket_t** out) {
+static int sock_unix_create_locked(int type, int protocol, socket_t** out) {
+  kmutex_assert_is_held(&g_unix_mu);
   if (type != SOCK_STREAM) {
     return -EPROTOTYPE;
   } else if (protocol != 0) {
@@ -97,7 +103,13 @@ int sock_unix_create(int type, int protocol, socket_t** out) {
   return 0;
 }
 
-static void sock_unix_cleanup(socket_t* socket_base) {
+int sock_unix_create(int type, int protocol, socket_t** out) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
+  return sock_unix_create_locked(type, protocol, out);
+}
+
+static void sock_unix_cleanup_locked(socket_t* socket_base) {
+  kmutex_assert_is_held(&g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
   if (socket->bind_point) {
@@ -127,7 +139,7 @@ static void sock_unix_cleanup(socket_t* socket_base) {
       list_link_t* peer_link = list_pop(&socket->incoming_conns);
       socket_unix_t* incoming_socket =
           container_of(peer_link, socket_unix_t, connecting_link);
-      sock_unix_cleanup((socket_t*)incoming_socket);
+      sock_unix_cleanup_locked((socket_t*)incoming_socket);
     }
   }
   if (socket->readbuf_raw) {
@@ -145,7 +157,13 @@ static void sock_unix_cleanup(socket_t* socket_base) {
   kfree(socket);
 }
 
+static void sock_unix_cleanup(socket_t* socket_base) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
+  sock_unix_cleanup_locked(socket_base);
+}
+
 static int sock_unix_shutdown(socket_t* socket_base, int how) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   if (how != SHUT_RD && how != SHUT_WR && how != SHUT_RDWR) {
     return -EINVAL;
   }
@@ -186,6 +204,7 @@ static int sock_unix_shutdown(socket_t* socket_base, int how) {
 
 static int sock_unix_bind(socket_t* socket_base, const struct sockaddr* address,
                           socklen_t address_len) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   if (address_len < (socklen_t)sizeof(struct sockaddr_un)) {
     return -EINVAL;
   }
@@ -218,6 +237,7 @@ static int sock_unix_bind(socket_t* socket_base, const struct sockaddr* address,
 }
 
 static int sock_unix_listen(socket_t* socket_base, int backlog) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
   if (socket->bind_point == NULL) {
@@ -241,6 +261,7 @@ static int sock_unix_listen(socket_t* socket_base, int backlog) {
 static int sock_unix_accept(socket_t* socket_base, int fflags,
                             struct sockaddr* address, socklen_t* address_len,
                             socket_t** socket_out) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
@@ -252,7 +273,7 @@ static int sock_unix_accept(socket_t* socket_base, int fflags,
       return -EAGAIN;
     }
     int result =
-        scheduler_wait_on_interruptable(&socket->accept_wait_queue, -1);
+        scheduler_wait_on_locked(&socket->accept_wait_queue, -1, &g_unix_mu);
     if (result == SWAIT_INTERRUPTED) {
       return -EINTR;
     }
@@ -294,6 +315,7 @@ static int sock_unix_accept(socket_t* socket_base, int fflags,
 static int sock_unix_connect(socket_t* socket_base, int fflags,
                              const struct sockaddr* address,
                              socklen_t address_len) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   if (address->sa_family != AF_UNIX) {
     return -EAFNOSUPPORT;
   }
@@ -347,8 +369,8 @@ static int sock_unix_connect(socket_t* socket_base, int fflags,
 
   // Create the new peer socket.
   socket_t* new_socket_base = NULL;
-  result = sock_unix_create(socket_base->s_type, socket_base->s_protocol,
-                            &new_socket_base);
+  result = sock_unix_create_locked(socket_base->s_type, socket_base->s_protocol,
+                                   &new_socket_base);
   if (result) {
     return result;
   }
@@ -375,6 +397,7 @@ static int sock_unix_connect(socket_t* socket_base, int fflags,
 }
 
 static int sock_unix_accept_queue_length(const socket_t* socket_base) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
   return list_size(&socket->incoming_conns);
@@ -383,6 +406,7 @@ static int sock_unix_accept_queue_length(const socket_t* socket_base) {
 ssize_t sock_unix_recvfrom(socket_t* socket_base, int fflags, void* buffer,
                            size_t length, int sflags, struct sockaddr* address,
                            socklen_t* address_len) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
@@ -399,7 +423,8 @@ ssize_t sock_unix_recvfrom(socket_t* socket_base, int fflags, void* buffer,
     if (fflags & VFS_O_NONBLOCK) {
       return -EAGAIN;
     }
-    int result = scheduler_wait_on_interruptable(&socket->read_wait_queue, -1);
+    int result =
+        scheduler_wait_on_locked(&socket->read_wait_queue, -1, &g_unix_mu);
     if (result == SWAIT_INTERRUPTED) {
       return -EINTR;
     }
@@ -423,6 +448,7 @@ ssize_t sock_unix_recvfrom(socket_t* socket_base, int fflags, void* buffer,
 ssize_t sock_unix_sendto(socket_t* socket_base, int fflags, const void* buffer,
                          size_t length, int sflags,
                          const struct sockaddr* dest_addr, socklen_t dest_len) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
@@ -441,7 +467,8 @@ ssize_t sock_unix_sendto(socket_t* socket_base, int fflags, const void* buffer,
     if (fflags & VFS_O_NONBLOCK) {
       return -EAGAIN;
     }
-    int result = scheduler_wait_on_interruptable(&socket->write_wait_queue, -1);
+    int result =
+        scheduler_wait_on_locked(&socket->write_wait_queue, -1, &g_unix_mu);
     if (result == SWAIT_INTERRUPTED) {
       return -EINTR;
     }
@@ -459,6 +486,7 @@ ssize_t sock_unix_sendto(socket_t* socket_base, int fflags, const void* buffer,
 
 static int sock_unix_getsockname(socket_t* socket_base,
                                  struct sockaddr_storage* address) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
@@ -468,6 +496,7 @@ static int sock_unix_getsockname(socket_t* socket_base,
 
 static int sock_unix_getpeername(socket_t* socket_base,
                                  struct sockaddr_storage* address) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
@@ -481,6 +510,7 @@ static int sock_unix_getpeername(socket_t* socket_base,
 
 static int sock_unix_poll(socket_t* socket_base, short event_mask,
                           poll_state_t* poll) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
@@ -493,12 +523,14 @@ static int sock_unix_poll(socket_t* socket_base, short event_mask,
 
 static int sock_unix_getsockopt(socket_t* socket_base, int level, int option,
                                 void* val, socklen_t* val_len) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   KASSERT_DBG(socket_base->s_domain == AF_UNIX);
   return -ENOPROTOOPT;
 }
 
 static int sock_unix_setsockopt(socket_t* socket_base, int level, int option,
                                 const void* val, socklen_t val_len) {
+  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   KASSERT_DBG(socket_base->s_domain == AF_UNIX);
   return -ENOPROTOOPT;
 }
