@@ -35,10 +35,15 @@
 #include "proc/defint.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/vfs/vfs.h"
 
 static const socket_ops_t g_udp_socket_ops;
+
+// Lock for the global UDP sockmap and all UDP sockets.
+// TODO(aoates): switch to per-socket locks.
+static kspinlock_t g_udp_mu = KSPINLOCK_NORMAL_INIT_STATIC;
 
 static const ip4_hdr_t* pb_ip4_hdr(const pbuf_t* pb) {
   return (const ip4_hdr_t*)pbuf_getc(pb);
@@ -222,11 +227,11 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
     }
   }
 
-  DEFINT_PUSH_AND_DISABLE();
+  kspin_lock(&g_udp_mu);
   sockmap_t* sm = net_get_sockmap(dst_addr.sa_family, IPPROTO_UDP);
   socket_t* socket_base = sockmap_find(sm, (const struct sockaddr*)&dst_addr);
   if (!socket_base) {
-    DEFINT_POP();
+    kspin_unlock(&g_udp_mu);
     return false;
   }
 
@@ -238,7 +243,7 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
   if (socket->connected_addr.sa_family != AF_UNSPEC) {
     if (!sockaddr_equal((struct sockaddr*)&socket->connected_addr,
                         (struct sockaddr*)&src_addr)) {
-      DEFINT_POP();
+      kspin_unlock(&g_udp_mu);
       return false;
     }
   }
@@ -251,7 +256,7 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
   scheduler_wake_one(&socket->wait_queue);
   poll_trigger_event(&socket->poll_event, udp_poll_events(socket));
 
-  DEFINT_POP();
+  kspin_unlock(&g_udp_mu);
   return true;
 }
 
@@ -264,12 +269,12 @@ static void sock_udp_cleanup(socket_t* socket_base) {
   if (socket->bind_addr.sa_family != AF_UNSPEC) {
     KASSERT_DBG(socket->bind_addr.sa_family ==
                 (sa_family_t)socket_base->s_domain);
-    DEFINT_PUSH_AND_DISABLE();
+    kspin_lock(&g_udp_mu);
     sockmap_t* sm = net_get_sockmap(socket->bind_addr.sa_family, IPPROTO_UDP);
     socket_t* removed =
         sockmap_remove(sm, (struct sockaddr*)&socket->bind_addr);
     KASSERT(removed == socket_base);
-    DEFINT_POP();
+    kspin_unlock(&g_udp_mu);
   }
   while (!list_empty(&socket->rx_queue)) {
     list_link_t* link = list_pop(&socket->rx_queue);
@@ -313,13 +318,13 @@ static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
   result = inet_bindable(&naddr);
   if (result) return result;
 
-  DEFINT_PUSH_AND_DISABLE();
+  kspin_lock(&g_udp_mu);
   sockmap_t* sm = net_get_sockmap(naddr.family, IPPROTO_UDP);
   if (naddr_port == 0) {
     in_port_t free_port = sockmap_free_port(sm, address);
     if (free_port == 0) {
       klogfm(KL_NET, WARNING, "net: out of ephemeral ports\n");
-      DEFINT_POP();
+      kspin_unlock(&g_udp_mu);
       return -EADDRINUSE;
     }
     naddr_port = free_port;
@@ -334,7 +339,7 @@ static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
                        sizeof(addr_with_port)) == 0);
   bool inserted =
       sockmap_insert(sm, (struct sockaddr*)&addr_with_port, socket_base);
-  DEFINT_POP();
+  kspin_unlock(&g_udp_mu);
   if (!inserted) {
     return -EADDRINUSE;
   }
@@ -394,22 +399,22 @@ static ssize_t sock_udp_recvfrom(socket_t* socket_base, int fflags,
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   socket_udp_t* socket = (socket_udp_t*)socket_base;
 
-  DEFINT_PUSH_AND_DISABLE();
+  kspin_lock(&g_udp_mu);
   while (list_empty(&socket->rx_queue)) {
     if (fflags & VFS_O_NONBLOCK) {
-      DEFINT_POP();
+      kspin_unlock(&g_udp_mu);
       return -EAGAIN;
     }
-    int result = scheduler_wait_on_interruptable(&socket->wait_queue, -1);
+    int result = scheduler_wait_on_splocked(&socket->wait_queue, -1, &g_udp_mu);
     if (result == SWAIT_INTERRUPTED) {
-      DEFINT_POP();
+      kspin_unlock(&g_udp_mu);
       return -EINTR;
     }
   }
 
   // We have a packet!
   list_link_t* link = list_pop(&socket->rx_queue);
-  DEFINT_POP();
+  kspin_unlock(&g_udp_mu);
 
   pbuf_t* pb = container_of(link, pbuf_t, link);
   uint32_t header_len = *(uint32_t*)pbuf_getc(pb);
@@ -585,7 +590,7 @@ static int sock_udp_poll(socket_t* socket_base, short event_mask,
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   socket_udp_t* socket = (socket_udp_t*)socket_base;
 
-  DEFINT_PUSH_AND_DISABLE();
+  kspin_lock(&g_udp_mu);
   int result;
   const short masked_events = udp_poll_events(socket) & event_mask;
   if (masked_events || !poll) {
@@ -593,7 +598,7 @@ static int sock_udp_poll(socket_t* socket_base, short event_mask,
   } else {
     result = poll_add_event(poll, &socket->poll_event, event_mask);
   }
-  DEFINT_POP();
+  kspin_unlock(&g_udp_mu);
   return result;
 }
 
