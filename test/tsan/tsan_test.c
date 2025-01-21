@@ -1651,7 +1651,7 @@ static void tsan_memset_conflict_tests(void) {
     wait_for_race();
     KEXPECT_EQ(NULL, kthread_join(threads[0]));
     KEXPECT_EQ(NULL, kthread_join(threads[1]));
-    EXPECT_REPORT(&vals8[i], 1, "w", &vals8[i], 8 - i, "w");
+    EXPECT_REPORT(&vals8[i], 1, "w", &vals8[i], 16, "w");
     intercept_reports_done();
 
     // #2: test for conflict on the middle of the region.
@@ -1663,7 +1663,7 @@ static void tsan_memset_conflict_tests(void) {
     wait_for_race();
     KEXPECT_EQ(NULL, kthread_join(threads[0]));
     KEXPECT_EQ(NULL, kthread_join(threads[1]));
-    EXPECT_REPORT(&vals8[8], 1, "w", &vals8[8], 8, "w");
+    EXPECT_REPORT(&vals8[8], 1, "w", &vals8[i], 16, "w");
     intercept_reports_done();
 
     // #3: test for conflict on the "right" side of the region.
@@ -1675,11 +1675,7 @@ static void tsan_memset_conflict_tests(void) {
     wait_for_race();
     KEXPECT_EQ(NULL, kthread_join(threads[0]));
     KEXPECT_EQ(NULL, kthread_join(threads[1]));
-    if (i == 0) {
-      EXPECT_REPORT(&vals8[i + 15], 1, "w", &vals8[8], 8, "w");
-    } else {
-      EXPECT_REPORT(&vals8[i + 15], 1, "w", &vals8[16], i, "w");
-    }
+    EXPECT_REPORT(&vals8[i + 15], 1, "w", &vals8[i], 16, "w");
     intercept_reports_done();
 
     vals += 3;
@@ -1699,7 +1695,7 @@ static void tsan_implicit_memset_conflict_tests(void) {
   wait_for_race();
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
-  EXPECT_REPORT(&x->e, 1, "w", &x->d, 8, "w");
+  EXPECT_REPORT(&x->e, 1, "w", x, sizeof(tsan_test_struct_t), "w");
   intercept_reports_done();
 
   tsan_test_cleanup();
@@ -1777,7 +1773,7 @@ static void tsan_memcpy_conflict_test(void) {
   wait_for_race();
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
-  EXPECT_REPORT(&vals_src[2], 1, "w", &vals_src[2], 6, "r");
+  EXPECT_REPORT(&vals_src[2], 1, "w", &vals_src[2], 16, "r");
   intercept_reports_done();
 
   // #2: a write inside the source should conflict (at end).
@@ -1788,7 +1784,7 @@ static void tsan_memcpy_conflict_test(void) {
   wait_for_race();
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
-  EXPECT_REPORT(&vals_src[17], 1, "w", &vals_src[16], 2, "r");
+  EXPECT_REPORT(&vals_src[17], 1, "w", &vals_src[2], 16, "r");
   intercept_reports_done();
 
   // #3: a write inside the dest should conflict.
@@ -1799,7 +1795,7 @@ static void tsan_memcpy_conflict_test(void) {
   wait_for_race();
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
-  EXPECT_REPORT(&vals_dst[1], 1, "w", &vals_dst[1], 7, "w");
+  EXPECT_REPORT(&vals_dst[1], 1, "w", &vals_dst[1], 16, "w");
   intercept_reports_done();
 
   // #4: a write inside the dest should conflict (at end).
@@ -1810,7 +1806,7 @@ static void tsan_memcpy_conflict_test(void) {
   wait_for_race();
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
-  EXPECT_REPORT(&vals_dst[16], 1, "w", &vals_dst[16], 1, "w");
+  EXPECT_REPORT(&vals_dst[16], 1, "w", &vals_dst[1], 16, "w");
   intercept_reports_done();
 
   // #5: a read inside the dest should conflict.
@@ -1821,7 +1817,7 @@ static void tsan_memcpy_conflict_test(void) {
   wait_for_race();
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
-  EXPECT_REPORT(&vals_dst[9], 1, "r", &vals_dst[8], 8, "w");
+  EXPECT_REPORT(&vals_dst[9], 1, "r", &vals_dst[1], 16, "w");
   intercept_reports_done();
 
   tsan_test_cleanup();
@@ -1839,7 +1835,7 @@ static void tsan_implicit_memcpy_conflict_tests(void) {
   wait_for_race();
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
-  EXPECT_REPORT(&x->e, 1, "w", &x->d, 8, "w");
+  EXPECT_REPORT(&x->e, 1, "w", x, sizeof(tsan_test_struct_t), "w");
   intercept_reports_done();
 
   tsan_test_cleanup();

@@ -307,12 +307,15 @@ bool tsan_check_range(addr_t pc, addr_t addr, size_t len,
                       tsan_access_type_t type) {
   if (!g_tsan_init) return false;
 
+  kthread_t thread = tsan_current_thread();
+  tsan_log_access(&thread->tsan.log, pc, addr, len, type);
+
   // 1) access the unaligned left portion.
   addr_t offset = addr & 0x7;
   if (offset != 0) {
     addr_t a1_end = min(offset + len, 8);
     addr_t a1_size = a1_end - offset;
-    if (tsan_check(pc, addr, a1_size, type)) {
+    if (tsan_check_internal(pc, addr, a1_size, type)) {
       return true;
     }
     addr += a1_size;
@@ -321,7 +324,7 @@ bool tsan_check_range(addr_t pc, addr_t addr, size_t len,
 
   // 2) access as many 8-byte chunks as we can.
   while (len > 8) {
-    if (tsan_check(pc, addr, 8, type)) {
+    if (tsan_check_internal(pc, addr, 8, type)) {
       return true;
     }
     addr += 8;
@@ -331,7 +334,7 @@ bool tsan_check_range(addr_t pc, addr_t addr, size_t len,
   // 3) access the unaligned right portion.  The start is aligned to an 8-byte
   // boundary, but the length can be 0-7.
   if (len > 0) {
-    return tsan_check(pc, addr, len, type);
+    return tsan_check_internal(pc, addr, len, type);
   }
 
   return false;

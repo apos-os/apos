@@ -32,11 +32,15 @@ typedef enum {
   TSAN_EVENT_FUNC,
 } tsan_event_type_t;
 
-// A recorded thread event.  This is not particularly optimized.
+// A recorded thread event.  This is not particularly optimized.  If the access
+// is a large range, then its size will be set to zero, and it will be followed
+// by another tsan_event_t with an addr of zero, and the full size of the access
+// in the pc field.
 typedef struct {
   tsan_event_type_t type : 1;
   bool is_read : 1;
-  uint8_t size : 3;                  // Access size - 1.
+  uint8_t size : 4;                  // Access size.  If zero, extended event
+                                     // (next tsan_event_t has full size).
   addr_t addr : TSAN_ADDR_MAX_BITS;  // Address accessed, if an access.
   addr_t pc : TSAN_ADDR_MAX_BITS;    // PC value, or 0 if a function exit.
 } tsan_event_t;

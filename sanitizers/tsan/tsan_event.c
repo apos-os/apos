@@ -35,13 +35,24 @@ void tsan_log_access(tsan_event_log_t* log, addr_t pc, addr_t addr, int size,
   event.is_read = (type == TSAN_ACCESS_READ);
   event.addr = addr;
   event.pc = pc;
-  event.size = size - 1;
 
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
+  int entries = 1;
+  if (size <= 8) {
+    event.size = size;
+  } else {
+    event.size = 0;
+
+    log->events[log->pos] = (tsan_event_t){0};
+    log->events[log->pos].pc = size;
+    log->pos = (log->pos + 1) % TSAN_EVENT_LOG_LEN;
+    entries++;
+  }
+
   log->events[log->pos] = event;
   log->pos = (log->pos + 1) % TSAN_EVENT_LOG_LEN;
   if (log->len < TSAN_EVENT_LOG_LEN) {
-    log->len++;
+    log->len += entries;
   }
   POP_INTERRUPTS_NO_TSAN();
 }
@@ -99,20 +110,30 @@ int tsan_find_access(const tsan_event_log_t* log, addr_t addr, int size,
     bool is_read = (type == TSAN_ACCESS_READ);
     if (log->events[idx].is_read != is_read) continue;
 
+    int log_size = log->events[idx].size;
+    if (log_size == 0) {
+      int ext_idx =
+          (log->pos - i - 1 + TSAN_EVENT_LOG_LEN) % TSAN_EVENT_LOG_LEN;
+      KASSERT(log->events[ext_idx].type == TSAN_EVENT_ACCESS);
+      KASSERT(log->events[ext_idx].addr == 0);
+      log_size = log->events[ext_idx].pc;
+      i++;  // Skip the next entry (the extended one).
+    }
+
     // The shadow access will always be the same size or smaller than event
     // size, and start at the same address or higher.
     addr_t masked_addr = addr & ~upper_bits;
-    if (log->events[idx].size + 1 < size) continue;
+    if (log_size < size) continue;
     if (log->events[idx].addr > masked_addr) continue;
-    if (log->events[idx].addr + log->events[idx].size + 1 < masked_addr + size)
+    if (log->events[idx].addr + log_size < masked_addr + size)
       continue;
 
     // Update the result with more accurate data.
     result->addr = log->events[idx].addr | upper_bits;
-    result->size = log->events[idx].size + 1;
+    result->size = log_size;
 
     result->trace[stack_idx++] = log->events[idx].pc | upper_bits;
-    access_idx = i;
+    access_idx = i;  // Note --- may be the extended entry.
     break;
   }
 
