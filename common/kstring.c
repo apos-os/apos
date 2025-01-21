@@ -112,9 +112,21 @@ void* DEF_TSAN(kmemcpy)(void* dest, const void* src, size_t n) {
 
 // Emit memset as an alias to kmemset.  The compiler will emit calls to memset,
 // which will now call kmemset.  Likewise with memcpy.
+//
+// If TSAN is enabled, redirect implicitly generated calls to memset/etc to the
+// no-TSAN versions --- in TSAN-instrumented code, calls to __tsan_memset() will
+// be generated instead.  In NO_TSAN code, we want implicit memset() (etc) calls
+// to direct to kmemset_no_tsan(), NOT kmemset() (which calls __tsan_memset()).
+#if ENABLE_TSAN
+void* memset(void* dest, int c, size_t n)
+    __attribute__((alias("kmemset_no_tsan")));
+void* memcpy(void* dest, const void* src, size_t n)
+    __attribute__((alias("kmemcpy_no_tsan")));
+#else
 void* memset(void* dest, int c, size_t n) __attribute__((alias("kmemset")));
 void* memcpy(void* dest, const void* src, size_t n)
     __attribute__((alias("kmemcpy")));
+#endif
 
 int kmemcmp(const void* m1, const void* m2, size_t n) {
   const char* s1 = (const char*)m1;
