@@ -107,9 +107,6 @@ int tsan_find_access(const tsan_event_log_t* log, addr_t addr, int size,
     int idx = (log->pos - i + TSAN_EVENT_LOG_LEN) % TSAN_EVENT_LOG_LEN;
     if (log->events[idx].type != TSAN_EVENT_ACCESS) continue;
 
-    bool is_read = (type == TSAN_ACCESS_READ);
-    if (log->events[idx].is_read != is_read) continue;
-
     int log_size = log->events[idx].size;
     if (log_size == 0) {
       int ext_idx =
@@ -119,6 +116,9 @@ int tsan_find_access(const tsan_event_log_t* log, addr_t addr, int size,
       log_size = log->events[ext_idx].pc;
       i++;  // Skip the next entry (the extended one).
     }
+
+    bool is_read = (type == TSAN_ACCESS_READ);
+    if (log->events[idx].is_read != is_read) continue;
 
     // The shadow access will always be the same size or smaller than event
     // size, and start at the same address or higher.
