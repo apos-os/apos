@@ -165,13 +165,15 @@ static bool expect_report(void* addr1, int size1, const char* type1,
 // Helper to wait until races occur, ensuring that tests don't reap threads
 // before the races occur (which causes spurious test failures due to missing
 // stack traces).
-static void wait_for_race(void) {
+static bool wait_for_race(void) {
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   for (int i = 0; i < 10; ++i) {
     if (g_found_report) break;
     ksleep(10);
   }
+  bool result = g_found_report;
   POP_INTERRUPTS_NO_TSAN();
+  return result;
 }
 
 /************************** Tests ************************************/
@@ -841,6 +843,7 @@ static void unaligned_overlap_2byte_conflict_test(void) {
   // ...and then access the straddled uint16_t.
   KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u16, &vals8[7]));
 
+  KEXPECT_TRUE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
 
@@ -899,6 +902,7 @@ static void unaligned_overlap_4byte_conflict_test(void) {
     // ...and then access the straddled uint32_t.
     KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u32, &vals8[5]));
 
+    KEXPECT_TRUE(wait_for_race());
     KEXPECT_EQ(NULL, kthread_join(threads[0]));
     KEXPECT_EQ(NULL, kthread_join(threads[1]));
 
@@ -962,6 +966,7 @@ static void unaligned_overlap_8byte_conflict_test(void) {
     // ...and then access the straddled uint32_t.
     KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u64, &vals8[1]));
 
+    KEXPECT_TRUE(wait_for_race());
     KEXPECT_EQ(NULL, kthread_join(threads[0]));
     KEXPECT_EQ(NULL, kthread_join(threads[1]));
 
@@ -1648,7 +1653,7 @@ static void tsan_memset_conflict_tests(void) {
     KEXPECT_EQ(
         0, proc_thread_create(&threads[1], &access_memset_16bytes, &vals8[i]));
 
-    wait_for_race();
+    KEXPECT_TRUE(wait_for_race());
     KEXPECT_EQ(NULL, kthread_join(threads[0]));
     KEXPECT_EQ(NULL, kthread_join(threads[1]));
     EXPECT_REPORT(&vals8[i], 1, "w", &vals8[i], 16, "w");
@@ -1660,7 +1665,7 @@ static void tsan_memset_conflict_tests(void) {
     KEXPECT_EQ(
         0, proc_thread_create(&threads[1], &access_memset_16bytes, &vals8[i]));
 
-    wait_for_race();
+    KEXPECT_TRUE(wait_for_race());
     KEXPECT_EQ(NULL, kthread_join(threads[0]));
     KEXPECT_EQ(NULL, kthread_join(threads[1]));
     EXPECT_REPORT(&vals8[8], 1, "w", &vals8[i], 16, "w");
@@ -1672,7 +1677,7 @@ static void tsan_memset_conflict_tests(void) {
     KEXPECT_EQ(
         0, proc_thread_create(&threads[1], &access_memset_16bytes, &vals8[i]));
 
-    wait_for_race();
+    KEXPECT_TRUE(wait_for_race());
     KEXPECT_EQ(NULL, kthread_join(threads[0]));
     KEXPECT_EQ(NULL, kthread_join(threads[1]));
     EXPECT_REPORT(&vals8[i + 15], 1, "w", &vals8[i], 16, "w");
@@ -1692,7 +1697,7 @@ static void tsan_implicit_memset_conflict_tests(void) {
   KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_u8, &x->e));
   KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_implicit_memset, x));
 
-  wait_for_race();
+  KEXPECT_TRUE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
   EXPECT_REPORT(&x->e, 1, "w", x, sizeof(tsan_test_struct_t), "w");
@@ -1736,7 +1741,6 @@ static void tsan_memcpy_test(void) {
   KEXPECT_EQ(0, proc_thread_create(&threads[8], &read_u8, &vals_src[10]));
   KEXPECT_EQ(0, proc_thread_create(&threads[9], &read_u8, &vals_src[17]));
 
-  wait_for_race();
   for (int i = 0; i < kThreads; ++i) {
     KEXPECT_EQ(NULL, kthread_join(threads[i]));
   }
@@ -1770,7 +1774,7 @@ static void tsan_memcpy_conflict_test(void) {
   KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_memcpy, &args));
   KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u8, &vals_src[2]));
 
-  wait_for_race();
+  KEXPECT_TRUE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
   EXPECT_REPORT(&vals_src[2], 1, "w", &vals_src[2], 16, "r");
@@ -1781,7 +1785,7 @@ static void tsan_memcpy_conflict_test(void) {
   KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_memcpy, &args));
   KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u8, &vals_src[17]));
 
-  wait_for_race();
+  KEXPECT_TRUE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
   EXPECT_REPORT(&vals_src[17], 1, "w", &vals_src[2], 16, "r");
@@ -1792,7 +1796,7 @@ static void tsan_memcpy_conflict_test(void) {
   KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_memcpy, &args));
   KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u8, &vals_dst[1]));
 
-  wait_for_race();
+  KEXPECT_TRUE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
   EXPECT_REPORT(&vals_dst[1], 1, "w", &vals_dst[1], 16, "w");
@@ -1803,7 +1807,7 @@ static void tsan_memcpy_conflict_test(void) {
   KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_memcpy, &args));
   KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u8, &vals_dst[16]));
 
-  wait_for_race();
+  KEXPECT_TRUE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
   EXPECT_REPORT(&vals_dst[16], 1, "w", &vals_dst[1], 16, "w");
@@ -1814,7 +1818,7 @@ static void tsan_memcpy_conflict_test(void) {
   KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_memcpy, &args));
   KEXPECT_EQ(0, proc_thread_create(&threads[1], &read_u8, &vals_dst[9]));
 
-  wait_for_race();
+  KEXPECT_TRUE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
   EXPECT_REPORT(&vals_dst[9], 1, "r", &vals_dst[1], 16, "w");
@@ -1832,7 +1836,7 @@ static void tsan_implicit_memcpy_conflict_tests(void) {
   KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_u8, &x->e));
   KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_implicit_memcpy, x));
 
-  wait_for_race();
+  KEXPECT_TRUE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(threads[0]));
   KEXPECT_EQ(NULL, kthread_join(threads[1]));
   EXPECT_REPORT(&x->e, 1, "w", x, sizeof(tsan_test_struct_t), "w");
