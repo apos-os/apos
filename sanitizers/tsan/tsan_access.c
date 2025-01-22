@@ -30,7 +30,7 @@
 #include "sanitizers/tsan/tsan_params.h"
 #include "sanitizers/tsan/tsan_thread.h"
 
-bool g_tsan_log = true;
+bool g_tsan_log = false;
 static tsan_report_fn_t g_tsan_report_fn = NULL;
 
 static ALWAYS_INLINE uint8_t make_mask(uint8_t offset, uint8_t size) {
