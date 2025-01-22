@@ -25,6 +25,9 @@
 // All addresses and PC values are assumed to be at most this many bits.
 #define TSAN_ADDR_MAX_BITS 40
 
+#define TSAN_EVENT_SIZE_BITS 8
+#define TSAN_EVENT_SIZE_MAX ((1 << TSAN_EVENT_SIZE_BITS) - 1)
+
 #define TSAN_EVENT_LOG_LEN 10000
 
 typedef enum {
@@ -39,7 +42,7 @@ typedef enum {
 typedef struct {
   tsan_event_type_t type : 1;
   bool is_read : 1;
-  uint8_t size : 4;                  // Access size.  If zero, extended event
+  uint8_t size : 8;                  // Access size.  If zero, extended event
                                      // (next tsan_event_t has full size).
   addr_t addr : TSAN_ADDR_MAX_BITS;  // Address accessed, if an access.
   addr_t pc : TSAN_ADDR_MAX_BITS;    // PC value, or 0 if a function exit.

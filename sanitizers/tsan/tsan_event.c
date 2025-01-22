@@ -38,7 +38,7 @@ void tsan_log_access(tsan_event_log_t* log, addr_t pc, addr_t addr, int size,
 
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   int entries = 1;
-  if (size <= 8) {
+  if (size <= TSAN_EVENT_SIZE_MAX) {
     event.size = size;
   } else {
     event.size = 0;
