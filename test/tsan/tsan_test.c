@@ -736,6 +736,14 @@ static void* access_u64(void* arg) {
   return NULL;
 }
 
+static void* access_memset_0bytes(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  tsan_test_kmemset(arg, 0x12, 0);
+  sched_disable_preemption();
+  return NULL;
+}
+
 static void* access_memset_15bytes(void* arg) {
   sched_enable_preemption_for_test();
   ksleep(10);
@@ -1611,17 +1619,23 @@ static void tsan_memset_tests(void) {
     tsan_write64(vals + 2, 0);
 
     // Access the two bytes on either side of the memset region.  This is OK.
-    kthread_t threads[3];
+    kthread_t threads[4];
     KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_u8, &vals8[i]));
     KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u8, &vals8[16 + i]));
 
+    // Do a zero-byte memsets as well --- they should not conflict.
+    KEXPECT_EQ(0, proc_thread_create(&threads[2], &access_memset_0bytes,
+                                     &vals8[2 + i]));
+
+
     // ...and then memset all the bytes in between.
-    KEXPECT_EQ(0, proc_thread_create(&threads[2], &access_memset_15bytes,
+    KEXPECT_EQ(0, proc_thread_create(&threads[3], &access_memset_15bytes,
                                      &vals8[1 + i]));
 
     KEXPECT_EQ(NULL, kthread_join(threads[0]));
     KEXPECT_EQ(NULL, kthread_join(threads[1]));
     KEXPECT_EQ(NULL, kthread_join(threads[2]));
+    KEXPECT_EQ(NULL, kthread_join(threads[3]));
 
     KEXPECT_EQ(0x01, vals8[i]);
     for (int j = 0; j < 15; ++j) {

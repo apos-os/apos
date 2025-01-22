@@ -306,6 +306,7 @@ bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
 bool tsan_check_range(addr_t pc, addr_t addr, size_t len,
                       tsan_access_type_t type) {
   if (!g_tsan_init) return false;
+  if (len == 0) return false;  // Unusual, but happens.
 
   kthread_t thread = tsan_current_thread();
   tsan_log_access(&thread->tsan.log, pc, addr, len, type);
