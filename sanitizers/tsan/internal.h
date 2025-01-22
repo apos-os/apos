@@ -20,6 +20,8 @@
 #include "proc/kthread-internal.h"
 #include "sanitizers/tsan/internal_types.h"
 
+typedef unsigned long uptr;
+
 // TODO(tsan): use an atomic.
 extern bool g_tsan_init;
 
@@ -38,5 +40,9 @@ void tsan_per_cpu_init(void);
 // we're executing in a thread context, or a TSAN-specific virtual thread
 // otherwise.
 kthread_t tsan_current_thread(void);
+
+// TODO(tsan): move this into an arch header.
+#define SIZE_OF_JUMP_INSTR 4
+#define CALLERPC ((uptr)__builtin_return_address(0) - SIZE_OF_JUMP_INSTR)
 
 #endif

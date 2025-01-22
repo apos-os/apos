@@ -19,11 +19,7 @@
 #include "sanitizers/tsan/tsan_access.h"
 #include "sanitizers/tsan/tsan_event.h"
 
-// TODO(tsan): move this into an arch header.
-#define SIZE_OF_JUMP_INSTR 4
 #define TSAN_CHECK_ALIGNMENT 1
-
-#define CALLERPC ((uptr)__builtin_return_address(0) - SIZE_OF_JUMP_INSTR)
 
 #if TSAN_CHECK_ALIGNMENT
 # define CHECK_ALIGNMENT(ptr, align) \
@@ -31,8 +27,6 @@
 #else
 # define CHECK_ALIGNMENT(ptr, align)
 #endif
-
-typedef unsigned long uptr;
 
 void __tsan_init(void) {}
 

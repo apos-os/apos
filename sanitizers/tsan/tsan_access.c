@@ -308,6 +308,10 @@ bool tsan_check_range(addr_t pc, addr_t addr, size_t len,
   if (!g_tsan_init) return false;
   if (len == 0) return false;  // Unusual, but happens.
 
+  if (pc == 0) {
+    pc = CALLERPC;
+  }
+
   kthread_t thread = tsan_current_thread();
   tsan_log_access(&thread->tsan.log, pc, addr, len, type);
 

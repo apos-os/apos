@@ -17,8 +17,13 @@
 
 #include <stdint.h>
 
+#include "common/attributes.h"
 #include "common/config.h"
 #include "common/types.h"
+
+#if ENABLE_TSAN
+#include "sanitizers/tsan/tsan_access.h"
+#endif
 
 static const uint32_t kFNVOffsetBasis = 2166136261;
 static const uint32_t kFNVPrime = 16777619;
@@ -61,8 +66,12 @@ static inline uint32_t fnv_hash_array_start(void) {
   return kFNVOffsetBasis;
 }
 
-static inline uint32_t fnv_hash_array_continue(uint32_t h, const void* buf,
-                                               int len) {
+static inline NO_TSAN uint32_t fnv_hash_array_continue(uint32_t h,
+                                                       const void* buf,
+                                                       int len) {
+#if ENABLE_TSAN
+  tsan_check_range(0, (addr_t)buf, len, TSAN_ACCESS_READ);
+#endif
   for (int i = 0; i < len; ++i) {
     h ^= ((uint8_t*)buf)[i];
     h *= kFNVPrime;

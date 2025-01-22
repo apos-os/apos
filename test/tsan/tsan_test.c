@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include "common/endian.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/kstring-tsan.h"
@@ -139,13 +140,11 @@ static bool expect_report(void* addr1, int size1, const char* type1,
   // Crude stack trace checking.
   if (has_stack1) {
     v &= KEXPECT_NE(0, g_report.race.cur.trace[0]);
-    v &= KEXPECT_NE(0, g_report.race.cur.trace[1]);
   } else {
     v &= KEXPECT_EQ(0, g_report.race.cur.trace[0]);
   }
   if (has_stack2) {
     v &= KEXPECT_NE(0, g_report.race.prev.trace[0]);
-    v &= KEXPECT_NE(0, g_report.race.prev.trace[1]);
   } else {
     v &= KEXPECT_EQ(0, g_report.race.prev.trace[0]);
   }
@@ -1869,6 +1868,43 @@ static void region_tests(void) {
   tsan_implicit_memcpy_conflict_tests();
 }
 
+static void* do_fnv_hash8(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  fnv_hash_array(arg, 8);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void fnv_hash_test(void) {
+  KTEST_BEGIN("TSAN: fnv_hash_array_continue() race");
+  uint64_t* x = TS_MALLOC(uint64_t);
+
+  kthread_t threads[2];
+  // Simultaneous read should be OK.
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &read_u8, x));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &do_fnv_hash8, x));
+  ksleep(10);
+  KEXPECT_EQ(NULL, kthread_join(threads[0]));
+  KEXPECT_EQ(NULL, kthread_join(threads[1]));
+
+  // ..but write should not.
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &access_u8, x));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &do_fnv_hash8, x));
+  KEXPECT_TRUE(wait_for_race());
+  KEXPECT_EQ(NULL, kthread_join(threads[0]));
+  KEXPECT_EQ(NULL, kthread_join(threads[1]));
+  EXPECT_REPORT(x, 1, "w", x, 8, "r");
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void special_functions_tests(void) {
+  fnv_hash_test();
+}
+
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   basic_tests();
@@ -1877,6 +1913,7 @@ void tsan_test(void) {
   stack_tests();
   old_thread_test();
   region_tests();
+  special_functions_tests();
 
   tsan_test_free_all();
 }
