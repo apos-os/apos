@@ -417,7 +417,8 @@ static ssize_t sock_udp_recvfrom(socket_t* socket_base, int fflags,
   kspin_unlock(&g_udp_mu);
 
   pbuf_t* pb = container_of(link, pbuf_t, link);
-  uint32_t header_len = *(uint32_t*)pbuf_getc(pb);
+  uint32_t header_len;
+  kmemcpy(&header_len, pbuf_getc(pb), sizeof(uint32_t));
   pbuf_pop_header(pb, 4);
   const udp_hdr_t* udp_hdr = pb_udp_hdr(pb, header_len);
 
