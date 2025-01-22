@@ -148,7 +148,7 @@ void EXPECT_DIRENTS(vnode_t* node, int n, ...) {
   int expected_vnode = 0;
 
   const int BUFSIZE = 300;
-  char dirents_buf[BUFSIZE];
+  char* dirents_buf = kmalloc(BUFSIZE);
   int result = 0;
   int offset = 0;
   int dirents_seen = 0;
@@ -177,6 +177,7 @@ void EXPECT_DIRENTS(vnode_t* node, int n, ...) {
   KEXPECT_EQ(n, dirents_seen);
 
   va_end(args);
+  kfree(dirents_buf);
 }
 
 static void directory_test(void) {
