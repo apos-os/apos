@@ -139,13 +139,11 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
   char pretty_shadow[2][SHADOW_PRETTY_LEN];
   uint64_t old_u64 = *(uint64_t*)&old;
   uint64_t new_u64 = *(uint64_t*)&new;
-  if (g_tsan_log) {
-    klogfm(KL_GENERAL, INFO,
-           "TSAN: detected data race on address %" PRIxADDR
-           ": old = %s [0x%lx], new = %s [0x%lx]\n",
-           addr, print_shadow(pretty_shadow[0], old), old_u64,
-           print_shadow(pretty_shadow[1], new), new_u64);
-  }
+  klogfm(KL_GENERAL, INFO,
+         "TSAN: detected data race on address %" PRIxADDR
+         ": old = %s [0x%lx], new = %s [0x%lx]\n",
+         addr, print_shadow(pretty_shadow[0], old), old_u64,
+         print_shadow(pretty_shadow[1], new), new_u64);
 
   // Build a report.
   KASSERT_DBG(addr == ((addr & ~0x7) + shadow_offset(new)));
