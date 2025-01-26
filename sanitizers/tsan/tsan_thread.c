@@ -27,22 +27,8 @@
 #include "sanitizers/tsan/tsan_event.h"
 #include "sanitizers/tsan/tsan_lock.h"
 #include "sanitizers/tsan/tsan_params.h"
+#include "sanitizers/tsan/tsan_thread_slot.h"
 #include "sanitizers/tsan/vector_clock.h"
-
-// A single thread slot.  When a thread is destroyed, the slot is not
-// immediately cleaned up --- its log data is kept to allow tracing races that
-// occur after the thread has exited.
-typedef struct {
-  kthread_t thread;  // Slot's current thread, or NULL.
-  kthread_id_t thread_id;  // Thread ID of the thread that is/was in this slot.
-
-  // Latest epoch for this slot (survives across reuse).  Not relevant except at
-  // thread assignment.
-  tsan_epoch_t epoch;
-
-  // Event log for the current thread in this slot.
-  tsan_event_log_t log;
-} tsan_tslot_t;
 
 // Interrupts and defints are modeled as a per-CPU special virtual thread for
 // each.  These are handled specially --- when synchronized with, they only
@@ -102,13 +88,34 @@ tsan_event_log_t* tsan_log(kthread_t thread) {
   return &g_tsan_slots[thread->tsan.sid].log;
 }
 
+tsan_tslot_t* tsan_get_tslot(tsan_sid_t sid) {
+  return &g_tsan_slots[sid];
+}
+
+int tsan_free_thread_slots(void) {
+  PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
+  int free = 0;
+  for (int sid = 0; sid < TSAN_THREAD_SLOTS; ++sid) {
+    if (g_tsan_slots[sid].thread == NULL) {
+      free++;
+    }
+  }
+  POP_INTERRUPTS_NO_TSAN();
+  return free;
+}
+
 void tsan_thread_create(kthread_t thread) {
   // Find a free slot.
-  int sid;
-  for (sid = 0; sid < TSAN_THREAD_SLOTS; ++sid) {
-    if (g_tsan_slots[sid].thread == NULL) break;
+  int sid = -1;
+  apos_ms_t lru = APOS_MS_MAX;
+  for (int i = 0; i < TSAN_THREAD_SLOTS; ++i) {
+    if (g_tsan_slots[i].thread == NULL &&
+        g_tsan_slots[i].last_used < lru) {
+      sid = i;
+      lru = g_tsan_slots[i].last_used;
+    }
   }
-  if (sid >= TSAN_THREAD_SLOTS) {
+  if (sid < 0) {
     die("TSAN: too many concurrent threads (ran out of slots)");
   }
 
@@ -127,6 +134,7 @@ void tsan_thread_create(kthread_t thread) {
   thread->tsan.clock.ts[sid] = g_tsan_slots[sid].epoch;
   g_tsan_slots[sid].thread_id = thread->id;
   tsan_event_init(&g_tsan_slots[sid].log);
+  g_tsan_slots[sid].log.earliest_epoch = g_tsan_slots[sid].epoch;
   tsan_thread_epoch_inc(thread);
 
   // If the thread is not the root thread, mark the stack as stack space.  The
@@ -151,6 +159,7 @@ void tsan_thread_destroy(kthread_t thread) {
   KASSERT(thread->tsan.clock.ts[sid] > g_tsan_slots[sid].epoch);
   g_tsan_slots[sid].epoch = thread->tsan.clock.ts[sid];
   g_tsan_slots[sid].thread = NULL;
+  g_tsan_slots[sid].last_used = get_time_ms();
   kmemset_no_tsan(&thread->tsan, 0, sizeof(thread->tsan));
 
   tsan_mark_stack((addr_t)thread->stack, thread->stacklen, false);

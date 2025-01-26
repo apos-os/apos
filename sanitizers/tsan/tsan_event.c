@@ -25,6 +25,7 @@ void tsan_event_init(tsan_event_log_t* log) {
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   log->pos = 0;
   log->len = 0;
+  log->earliest_epoch = 0;
   POP_INTERRUPTS_NO_TSAN();
 }
 

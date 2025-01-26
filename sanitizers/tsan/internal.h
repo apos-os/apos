@@ -20,6 +20,7 @@
 #include "proc/kthread-internal.h"
 #include "sanitizers/tsan/internal_types.h"
 #include "sanitizers/tsan/tsan_event.h"
+#include "sanitizers/tsan/tsan_thread_slot.h"
 
 typedef unsigned long uptr;
 
@@ -44,6 +45,12 @@ kthread_t tsan_current_thread(void);
 
 // Returns the log for the given thread.
 tsan_event_log_t* tsan_log(kthread_t thread);
+
+// Returns the thread slot data for the given slot ID.
+tsan_tslot_t* tsan_get_tslot(tsan_sid_t sid);
+
+// Returns the number of free thread slots (racy, for tests).
+int tsan_free_thread_slots(void);
 
 // TODO(tsan): move this into an arch header.
 #define SIZE_OF_JUMP_INSTR 4

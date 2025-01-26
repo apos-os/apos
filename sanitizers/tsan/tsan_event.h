@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "common/types.h"
+#include "sanitizers/tsan/internal_types.h"
 #include "sanitizers/tsan/report.h"
 #include "sanitizers/tsan/tsan_access.h"
 
@@ -53,6 +54,11 @@ _Static_assert(sizeof(tsan_event_t) == 16, "bad tsan_event_t");
 typedef struct {
   int pos;
   int len;
+
+  // Earliest epoch for the currently stored log.  Any events with an epoch less
+  // than this were for a previous thread/log that used this slot.
+  tsan_epoch_t earliest_epoch;
+
   tsan_event_t events[TSAN_EVENT_LOG_LEN];
 } tsan_event_log_t;
 

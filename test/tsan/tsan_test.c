@@ -22,13 +22,16 @@
 #include "proc/defint.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
+#include "proc/notification.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/sleep.h"
 #include "proc/spinlock.h"
 #include "proc/wait.h"
 #include "sanitizers/tsan/tsan.h"
+#include "sanitizers/tsan/internal.h"
 #include "sanitizers/tsan/tsan_access.h"
+#include "sanitizers/tsan/tsan_params.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
 #include "test/tsan/instrumented.h"
@@ -114,10 +117,15 @@ static bool type_matches(const char* s, tsan_access_type_t t) {
   }
 }
 
+// Special thread IDs to be passed to expect_report().
+#define TID_UNKNOWN -10
+#define TID_ANY -11
+
 // Expect that a particular report was found.
-static bool expect_report(void* addr1, int size1, const char* type1,
-                          bool has_stack1, void* addr2, int size2,
-                          const char* type2, bool has_stack2, bool try_swap) {
+static bool expect_report(int thread1, void* addr1, int size1,
+                          const char* type1, bool has_stack1, int thread2,
+                          void* addr2, int size2, const char* type2,
+                          bool has_stack2, bool try_swap) {
   bool v = true;
   v &= KEXPECT_TRUE(g_found_report);
   if (!g_found_report) return v;
@@ -126,8 +134,24 @@ static bool expect_report(void* addr1, int size1, const char* type1,
   if (try_swap && ((addr_t)addr1 != g_report.race.cur.addr ||
                    size1 != g_report.race.cur.size ||
                    !type_matches(type1, g_report.race.cur.type))) {
-    return expect_report(addr2, size2, type2, has_stack2, addr1, size1, type1,
-                         has_stack1, false);
+    return expect_report(thread2, addr2, size2, type2, has_stack2, thread1,
+                         addr1, size1, type1, has_stack1, false);
+  }
+
+  if (thread1 == TID_UNKNOWN) {
+    v &= KEXPECT_EQ(-1, g_report.race.cur.thread_id);
+  } else if (thread1 >= 0) {
+    v &= KEXPECT_EQ(thread1, g_report.race.cur.thread_id);
+  } else {
+    KASSERT(thread1 == TID_ANY);
+  }
+
+  if (thread2 == TID_UNKNOWN) {
+    v &= KEXPECT_EQ(-1, g_report.race.prev.thread_id);
+  } else if (thread2 >= 0) {
+    v &= KEXPECT_EQ(thread2, g_report.race.prev.thread_id);
+  } else {
+    KASSERT(thread2 == TID_ANY);
   }
 
   v &= KEXPECT_EQ((addr_t)addr1, g_report.race.cur.addr);
@@ -138,12 +162,12 @@ static bool expect_report(void* addr1, int size1, const char* type1,
   v &= type_matches(type2, g_report.race.prev.type);
 
   // Crude stack trace checking.
-  if (has_stack1) {
+  if (has_stack1 || thread1 >= 0) {
     v &= KEXPECT_NE(0, g_report.race.cur.trace[0]);
   } else {
     v &= KEXPECT_EQ(0, g_report.race.cur.trace[0]);
   }
-  if (has_stack2) {
+  if (has_stack2 || thread2 >= 0) {
     v &= KEXPECT_NE(0, g_report.race.prev.trace[0]);
   } else {
     v &= KEXPECT_EQ(0, g_report.race.prev.trace[0]);
@@ -153,13 +177,19 @@ static bool expect_report(void* addr1, int size1, const char* type1,
   return v;
 }
 
-#define EXPECT_REPORT(addr1, size1, type1, addr2, size2, type2)              \
-  KEXPECT_TRUE(expect_report(addr1, size1, type1, true, addr2, size2, type2, \
-                             true, true))
+#define EXPECT_REPORT(addr1, size1, type1, addr2, size2, type2)           \
+  KEXPECT_TRUE(expect_report(TID_ANY, addr1, size1, type1, true, TID_ANY, \
+                             addr2, size2, type2, true, true))
 
-#define EXPECT_REPORT_NO_STACK(addr1, size1, type1, addr2, size2, type2)     \
-  KEXPECT_TRUE(expect_report(addr1, size1, type1, true, addr2, size2, type2, \
-                             false, true))
+#define EXPECT_REPORT_NO_STACK(addr1, size1, type1, addr2, size2, type2)  \
+  KEXPECT_TRUE(expect_report(TID_ANY, addr1, size1, type1, true, TID_ANY, \
+                             addr2, size2, type2, false, true))
+
+// As above, but with explicit thread IDs given.
+#define EXPECT_REPORT_THREADS(thread1, addr1, size1, type1, thread2, addr2, \
+                              size2, type2)                                 \
+  KEXPECT_TRUE(expect_report(thread1, addr1, size1, type1, false, thread2,   \
+                             addr2, size2, type2, false, /* try_swap */ false))
 
 // Helper to wait until races occur, ensuring that tests don't reap threads
 // before the races occur (which causes spurious test failures due to missing
@@ -1586,8 +1616,16 @@ static void* sleep_then_access_u32(void* arg) {
   return NULL;
 }
 
+static void* sleep_long_then_access_u32(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(100);
+  tsan_unaligned_write32((uint32_t*)arg, 0x12345678);
+  sched_disable_preemption();
+  return NULL;
+}
+
 static void old_thread_test(void) {
-  KTEST_BEGIN("TSAN: race with dead thread");
+  KTEST_BEGIN("TSAN: race with dead thread (recent)");
   uint64_t* x = TS_MALLOC(uint64_t);
   *x = 0;
 
@@ -1598,9 +1636,151 @@ static void old_thread_test(void) {
   KEXPECT_EQ(0, proc_thread_create(&thread2, &sleep_then_access_u32, x));
 
   KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_TRUE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(thread2));
-  EXPECT_REPORT_NO_STACK(x, 4, "w", x, 8, "w");
+  EXPECT_REPORT(x, 4, "w", x, 8, "w");
   intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void* just_wait(void* arg) {
+  notification_t* n = (notification_t*)arg;
+  ntfn_await(n);
+  return NULL;
+}
+
+static void old_thread_reused_test(void) {
+  KTEST_BEGIN("TSAN: race with dead thread (slot reused by live thread)");
+  uint64_t* x = TS_MALLOC(uint64_t);
+  *x = 0;
+
+  tsan_rw_u64(x);
+  kthread_t thread1, thread2;
+  kthread_t reuse_threads[TSAN_THREAD_SLOTS];
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u64, x));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &sleep_long_then_access_u32, x));
+
+  int tid2 = thread2->id;
+
+  // Wait for the first thread to die, then create enough additional threads to
+  // force-reuse its slot.
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+
+  notification_t done;
+  ntfn_init(&done);
+  for (int i = 0; i < TSAN_THREAD_SLOTS; ++i) {
+    if (tsan_free_thread_slots() > 0) {
+      KEXPECT_EQ(0, proc_thread_create(&reuse_threads[i], &just_wait, &done));
+    } else {
+      reuse_threads[i] = NULL;
+    }
+  }
+
+  intercept_reports();
+  KEXPECT_TRUE(wait_for_race());
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  EXPECT_REPORT_THREADS(tid2, x, 4, "w",
+                        /* thread1 reaped */ TID_UNKNOWN, x, 8, "w");
+  intercept_reports_done();
+
+  ntfn_notify(&done);
+
+  for (int i = 0; i < TSAN_THREAD_SLOTS; ++i) {
+    if (reuse_threads[i]) {
+      KEXPECT_EQ(NULL, kthread_join(reuse_threads[i]));
+    }
+  }
+
+  tsan_test_cleanup();
+}
+
+static void old_thread_reused_dead_test(void) {
+  KTEST_BEGIN("TSAN: race with dead thread (slot reused by dead thread)");
+  uint64_t* x = TS_MALLOC(uint64_t);
+  *x = 0;
+
+  tsan_rw_u64(x);
+  kthread_t thread1, thread2;
+  kthread_t reuse_threads[TSAN_THREAD_SLOTS];
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u64, x));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &sleep_long_then_access_u32, x));
+
+  int tid2 = thread2->id;
+
+  // Wait for the first thread to die, then create enough additional threads to
+  // force-reuse its slot.
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+
+  notification_t done;
+  ntfn_init(&done);
+  for (int i = 0; i < TSAN_THREAD_SLOTS; ++i) {
+    if (tsan_free_thread_slots() > 0) {
+      KEXPECT_EQ(0, proc_thread_create(&reuse_threads[i], &just_wait, &done));
+    } else {
+      reuse_threads[i] = NULL;
+    }
+  }
+
+  ntfn_notify(&done);
+
+  for (int i = 0; i < TSAN_THREAD_SLOTS; ++i) {
+    if (reuse_threads[i]) {
+      KEXPECT_EQ(NULL, kthread_join(reuse_threads[i]));
+    }
+  }
+
+  intercept_reports();
+  KEXPECT_TRUE(wait_for_race());
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  EXPECT_REPORT_THREADS(tid2, x, 4, "w",
+                        /* thread1 reaped */ TID_UNKNOWN, x, 8, "w");
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void old_thread_reused_lru_test(void) {
+  KTEST_BEGIN("TSAN: race with dead thread (slot not reused until needed)");
+  uint64_t* x = TS_MALLOC(uint64_t);
+  *x = 0;
+
+  tsan_rw_u64(x);
+  kthread_t thread1, thread2;
+  kthread_t reuse_threads[TSAN_THREAD_SLOTS];
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u64, x));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &sleep_long_then_access_u32, x));
+
+  int tid1 = thread1->id;
+  int tid2 = thread2->id;
+
+  // Wait for the first thread to die, then create enough additional threads to
+  // force-reuse its slot.
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+
+  notification_t done;
+  ntfn_init(&done);
+  for (int i = 0; i < TSAN_THREAD_SLOTS; ++i) {
+    if (tsan_free_thread_slots() > 1) {  // Leave one open!
+      KEXPECT_EQ(0, proc_thread_create(&reuse_threads[i], &just_wait, &done));
+    } else {
+      reuse_threads[i] = NULL;
+    }
+  }
+
+  intercept_reports();
+  KEXPECT_TRUE(wait_for_race());
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  EXPECT_REPORT_THREADS(tid2, x, 4, "w", tid1, x, 8, "w");
+  intercept_reports_done();
+
+  ntfn_notify(&done);
+
+  for (int i = 0; i < TSAN_THREAD_SLOTS; ++i) {
+    if (reuse_threads[i]) {
+      KEXPECT_EQ(NULL, kthread_join(reuse_threads[i]));
+    }
+  }
 
   tsan_test_cleanup();
 }
@@ -1912,6 +2092,9 @@ void tsan_test(void) {
   defint_tests();
   stack_tests();
   old_thread_test();
+  old_thread_reused_test();
+  old_thread_reused_dead_test();
+  old_thread_reused_lru_test();
   region_tests();
   special_functions_tests();
 

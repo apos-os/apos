@@ -29,6 +29,7 @@
 #include "sanitizers/tsan/tsan_layout.h"
 #include "sanitizers/tsan/tsan_params.h"
 #include "sanitizers/tsan/tsan_thread.h"
+#include "sanitizers/tsan/tsan_thread_slot.h"
 
 bool g_tsan_log = false;
 static tsan_report_fn_t g_tsan_report_fn = NULL;
@@ -153,12 +154,15 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
                    &report.race.cur);
   addr_t prev_addr = (addr & ~0x7) + shadow_offset(old);
 
-  kthread_t old_thread = tsan_get_thread(old.sid);
-  tsan_event_log_t* log = NULL;
-  if (old_thread) {
-    report.race.prev.thread_id = old_thread->id;
-    log = tsan_log(old_thread);
+  const tsan_tslot_t* slot = tsan_get_tslot(old.sid);
+  const tsan_event_log_t* log = NULL;
+  if (slot->log.earliest_epoch < old.epoch) {
+    // This log contains the access.
+    report.race.prev.thread_id = slot->thread_id;
+    log = &slot->log;
   } else {
+    // The log has been lost since the slot was reused --- we don't know what
+    // thread did the access, nor can we reconstruct the backtrace :/
     report.race.prev.thread_id = -1;
   }
   tsan_find_access(log, prev_addr, shadow_size(old), shadow2type(old),
