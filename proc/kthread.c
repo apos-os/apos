@@ -295,6 +295,15 @@ void kthread_switch(kthread_t new_thread) {
   kthread_id_t my_id = g_current_thread->id;
   defint_state_t defint = defint_state();
 
+#if ENABLE_TSAN
+  // All writes should now be visible to the interrupt thread.  This is only
+  // relevant for (a) writes in thread exit paths (which may touch memory that
+  // is freed then reused), and (b) writes in kthread/scheduler internals.
+  // TODO(tsan): once all code is updated to use spinlocks and the kernel is
+  // SMP-safe, see if we can remove this.
+  tsan_release(NULL, TSAN_INTERRUPTS);
+#endif
+
   kthread_data_t* old_thread = g_current_thread;
   g_current_thread = new_thread;
   kthread_arch_set_current_thread(g_current_thread);
