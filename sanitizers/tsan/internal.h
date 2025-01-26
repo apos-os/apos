@@ -19,6 +19,7 @@
 #include "common/kassert.h"
 #include "proc/kthread-internal.h"
 #include "sanitizers/tsan/internal_types.h"
+#include "sanitizers/tsan/tsan_event.h"
 
 typedef unsigned long uptr;
 
@@ -40,6 +41,9 @@ void tsan_per_cpu_init(void);
 // we're executing in a thread context, or a TSAN-specific virtual thread
 // otherwise.
 kthread_t tsan_current_thread(void);
+
+// Returns the log for the given thread.
+tsan_event_log_t* tsan_log(kthread_t thread);
 
 // TODO(tsan): move this into an arch header.
 #define SIZE_OF_JUMP_INSTR 4

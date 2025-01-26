@@ -149,7 +149,7 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
   KASSERT_DBG(addr == ((addr & ~0x7) + shadow_offset(new)));
   tsan_report_t report;
   report.race.cur.thread_id = thread->id;
-  tsan_find_access(&thread->tsan.log, addr, shadow_size(new), shadow2type(new),
+  tsan_find_access(tsan_log(thread), addr, shadow_size(new), shadow2type(new),
                    &report.race.cur);
   addr_t prev_addr = (addr & ~0x7) + shadow_offset(old);
 
@@ -157,7 +157,7 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
   tsan_event_log_t* log = NULL;
   if (old_thread) {
     report.race.prev.thread_id = old_thread->id;
-    log = &old_thread->tsan.log;
+    log = tsan_log(old_thread);
   } else {
     report.race.prev.thread_id = -1;
   }
@@ -276,7 +276,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
   if (!g_tsan_init) return false;
 
   kthread_t thread = tsan_current_thread();
-  tsan_log_access(&thread->tsan.log, pc, addr, size, type);
+  tsan_log_access(tsan_log(thread), pc, addr, size, type);
   return tsan_check_internal(pc, addr, size, type);
 }
 
@@ -285,7 +285,7 @@ bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
   if (!g_tsan_init) return false;
 
   kthread_t thread = tsan_current_thread();
-  tsan_log_access(&thread->tsan.log, pc, addr, size, type);
+  tsan_log_access(tsan_log(thread), pc, addr, size, type);
 
   addr_t offset = addr & 0x7;
   addr_t a1_end = min(offset + size, 8);
@@ -311,7 +311,7 @@ bool tsan_check_range(addr_t pc, addr_t addr, size_t len,
   }
 
   kthread_t thread = tsan_current_thread();
-  tsan_log_access(&thread->tsan.log, pc, addr, len, type);
+  tsan_log_access(tsan_log(thread), pc, addr, len, type);
 
   // 1) access the unaligned left portion.
   addr_t offset = addr & 0x7;

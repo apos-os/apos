@@ -29,13 +29,19 @@
 #include "sanitizers/tsan/tsan_params.h"
 #include "sanitizers/tsan/vector_clock.h"
 
-// A single thread slot.
+// A single thread slot.  When a thread is destroyed, the slot is not
+// immediately cleaned up --- its log data is kept to allow tracing races that
+// occur after the thread has exited.
 typedef struct {
   kthread_t thread;  // Slot's current thread, or NULL.
+  kthread_id_t thread_id;  // Thread ID of the thread that is/was in this slot.
 
   // Latest epoch for this slot (survives across reuse).  Not relevant except at
   // thread assignment.
   tsan_epoch_t epoch;
+
+  // Event log for the current thread in this slot.
+  tsan_event_log_t log;
 } tsan_tslot_t;
 
 // Interrupts and defints are modeled as a per-CPU special virtual thread for
@@ -92,6 +98,10 @@ kthread_t tsan_current_thread(void) {
   }
 }
 
+tsan_event_log_t* tsan_log(kthread_t thread) {
+  return &g_tsan_slots[thread->tsan.sid].log;
+}
+
 void tsan_thread_create(kthread_t thread) {
   // Find a free slot.
   int sid;
@@ -115,7 +125,8 @@ void tsan_thread_create(kthread_t thread) {
   thread->tsan.sid = sid;
   thread->tsan.tid = thread->id;
   thread->tsan.clock.ts[sid] = g_tsan_slots[sid].epoch;
-  tsan_event_init(&thread->tsan.log);
+  g_tsan_slots[sid].thread_id = thread->id;
+  tsan_event_init(&g_tsan_slots[sid].log);
   tsan_thread_epoch_inc(thread);
 
   // If the thread is not the root thread, mark the stack as stack space.  The
