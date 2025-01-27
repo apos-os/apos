@@ -250,7 +250,8 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
 
   // We own the pbuf now, add 4 bytes to store the header length.
   pbuf_push_header(pb, 4);
-  *(uint32_t*)pbuf_get(pb) = header_len;
+  uint32_t hl = header_len;
+  kmemcpy(pbuf_get(pb), &hl, sizeof(hl));
 
   list_push(&socket->rx_queue, &pb->link);
   scheduler_wake_one(&socket->wait_queue);
