@@ -69,7 +69,7 @@ static inline uint32_t fnv_hash_array_start(void) {
 static inline NO_TSAN uint32_t fnv_hash_array_continue(uint32_t h,
                                                        const void* buf,
                                                        int len) {
-#if ENABLE_TSAN
+#if ENABLE_TSAN && !defined(HASH_H_DISABLE_TSAN)
   tsan_check_range(0, (addr_t)buf, len, TSAN_ACCESS_READ);
 #endif
   for (int i = 0; i < len; ++i) {

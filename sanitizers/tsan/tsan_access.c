@@ -14,7 +14,6 @@
 #include "sanitizers/tsan/tsan_access.h"
 
 #include "common/attributes.h"
-#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
@@ -30,6 +29,9 @@
 #include "sanitizers/tsan/tsan_params.h"
 #include "sanitizers/tsan/tsan_thread.h"
 #include "sanitizers/tsan/tsan_thread_slot.h"
+
+#define HASH_H_DISABLE_TSAN
+#include "common/hash.h"
 
 bool g_tsan_log = false;
 static tsan_report_fn_t g_tsan_report_fn = NULL;

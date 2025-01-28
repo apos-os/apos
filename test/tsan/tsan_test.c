@@ -162,12 +162,12 @@ static bool expect_report(int thread1, void* addr1, int size1,
   v &= type_matches(type2, g_report.race.prev.type);
 
   // Crude stack trace checking.
-  if (has_stack1 || thread1 >= 0) {
+  if (has_stack1 || thread1 >= 0 || thread1 == TID_ANY) {
     v &= KEXPECT_NE(0, g_report.race.cur.trace[0]);
   } else {
     v &= KEXPECT_EQ(0, g_report.race.cur.trace[0]);
   }
-  if (has_stack2 || thread2 >= 0) {
+  if (has_stack2 || thread2 >= 0 || thread2 == TID_ANY) {
     v &= KEXPECT_NE(0, g_report.race.prev.trace[0]);
   } else {
     v &= KEXPECT_EQ(0, g_report.race.prev.trace[0]);
@@ -2085,6 +2085,32 @@ static void special_functions_tests(void) {
   fnv_hash_test();
 }
 
+static void evict_test(void) {
+  KTEST_BEGIN("TSAN: evicting shadow cell accesses test");
+  uint64_t* x = TS_MALLOC(uint64_t);
+
+  const int kThreads = 10;
+  kthread_t threads[kThreads];
+  intercept_reports();
+  for (int i = 0; i < kThreads; ++i) {
+    KEXPECT_EQ(0, proc_thread_create(&threads[i], &read_u8, x));
+  }
+
+  kthread_t writer;
+  KEXPECT_EQ(0, proc_thread_create(&writer, &access_u16, x));
+  int writer_id = writer->id;
+  ksleep(30);
+  KEXPECT_TRUE(wait_for_race());
+  KEXPECT_EQ(NULL, kthread_join(writer));
+  for (int i = 0; i < kThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+  EXPECT_REPORT_THREADS(TID_ANY, x, 1, "r", writer_id, x, 2, "w");
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   basic_tests();
@@ -2097,6 +2123,7 @@ void tsan_test(void) {
   old_thread_reused_lru_test();
   region_tests();
   special_functions_tests();
+  evict_test();
 
   tsan_test_free_all();
 }
