@@ -1745,6 +1745,7 @@ static void bad_packets_syn_sent_test(void) {
 
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
+  set_rto(s.socket, 10000);
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
   // Do SYN, SYN-ACK, ACK.
   EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
@@ -2513,6 +2514,7 @@ static void simultaneous_connect_testA(void) {
 
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
+  set_rto(s.socket, 10000);
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
 
   EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
@@ -2614,6 +2616,7 @@ static void simultaneous_connect_testB(void) {
 
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
+  set_rto(s.socket, 10000);
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
 
   EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
@@ -4964,6 +4967,7 @@ static void out_of_order_recv_causes_retransmit_test(void) {
   KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
 
   char buf[100];
+  set_rto(s.socket, 10000);
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
   KEXPECT_TRUE(finish_standard_connect(&s));
