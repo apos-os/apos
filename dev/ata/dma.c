@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "dev/pci/piix.h"

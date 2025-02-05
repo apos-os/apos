@@ -13,6 +13,7 @@
 // limitations under the License.
 #include "net/socket/tcp/sockmap.h"
 
+#include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
 #include "common/klog.h"

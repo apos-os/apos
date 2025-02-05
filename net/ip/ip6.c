@@ -13,6 +13,7 @@
 // limitations under the License.
 #include "net/ip/ip6.h"
 
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"

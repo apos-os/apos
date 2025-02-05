@@ -17,6 +17,7 @@
 
 #include "common/circbuf.h"
 #include "common/endian.h"
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/math.h"

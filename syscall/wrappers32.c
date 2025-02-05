@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 #include "common/config.h"
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/math.h"

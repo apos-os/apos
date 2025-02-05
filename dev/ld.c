@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/ascii.h"
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"

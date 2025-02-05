@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "arch/memory/page_map.h"
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/list.h"

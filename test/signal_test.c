@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "proc/exit.h"
 #include "proc/fork.h"

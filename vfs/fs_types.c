@@ -14,6 +14,7 @@
 #include "vfs/fs_types.h"
 
 #include "common/config.h"
+#include "common/errno.h"
 #include "common/kstring.h"
 
 #include "proc/procfs.h"

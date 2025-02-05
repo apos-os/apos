@@ -15,6 +15,7 @@
 
 #include "arch/dev/irq.h"
 #include "common/circbuf.h"
+#include "common/errno.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/char_dev.h"

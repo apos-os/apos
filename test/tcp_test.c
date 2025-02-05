@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "common/endian.h"
+#include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
 #include "common/kprintf.h"
