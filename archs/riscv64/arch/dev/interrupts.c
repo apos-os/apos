@@ -109,8 +109,10 @@ static user_context_t copy_ctx(void* ctx_ptr) {
   return *(const user_context_t*)ctx_ptr;
 }
 
-void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
-                 uint64_t is_kernel) {
+// NO_TSAN: because this function manipulates interrupt_level, which is itself
+// used by TSAN to determine current execution state.
+void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
+                         uint64_t is_kernel) {
   kthread_t thread = kthread_current_thread();
   if (thread) {
     thread->interrupt_level++;
