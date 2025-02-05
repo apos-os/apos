@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "common/list.h"
 #include "memory/block_cache.h"
 #include "proc/spinlock.h"
 

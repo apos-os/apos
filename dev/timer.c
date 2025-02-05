@@ -23,6 +23,7 @@
 #include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
+#include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
 #include "proc/spinlock.h"
 
