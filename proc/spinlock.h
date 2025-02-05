@@ -16,8 +16,9 @@
 #define APOO_PROC_SPINLOCK_H
 
 #include "arch/dev/interrupts.h"
+#include "common/config.h"
+#include "common/types.h"
 #include "proc/defint.h"
-#include "proc/kthread-internal.h"
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_lock.h"

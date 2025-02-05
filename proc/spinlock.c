@@ -16,6 +16,7 @@
 
 #include "dev/interrupts.h"
 #include "common/kassert.h"
+#include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
 
 #if ENABLE_TSAN

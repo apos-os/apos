@@ -22,6 +22,7 @@
 #include "arch/proc/kthread-context.h"
 #include "arch/proc/kthread-stack.h"
 #include "common/list.h"
+#include "common/types.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
 #include "user/include/apos/posix_signal.h"
@@ -40,8 +41,6 @@ typedef enum {
 
 struct process;
 typedef struct process process_t;
-
-typedef int kthread_id_t;
 
 struct kthread_data {
   kthread_id_t id;

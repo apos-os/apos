@@ -30,4 +30,6 @@ _Static_assert(sizeof(ssize_t) == sizeof(size_t), "bad ssize_t size");
 
 #define PTR_ALIGN sizeof(void*)
 
+typedef int kthread_id_t;
+
 #endif

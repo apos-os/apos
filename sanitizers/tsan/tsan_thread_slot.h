@@ -15,8 +15,8 @@
 #ifndef APOO_SANITIZERS_TSAN_TSAN_THREAD_SLOT_H
 #define APOO_SANITIZERS_TSAN_TSAN_THREAD_SLOT_H
 
+#include "common/types.h"
 #include "dev/timer.h"
-#include "proc/kthread-internal.h"
 #include "proc/kthread.h"
 #include "sanitizers/tsan/internal_types.h"
 #include "sanitizers/tsan/tsan_event.h"
