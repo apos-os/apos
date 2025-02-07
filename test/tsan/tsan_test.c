@@ -207,9 +207,9 @@ static bool wait_for_race(void) {
 
 /************************** Tests ************************************/
 typedef struct {
-  kmutex_t mu;
-  kspinlock_t spin;
-  kspinlock_intsafe_t spin_int;
+  kmutex_t* mu;
+  kspinlock_t* spin;
+  kspinlock_intsafe_t* spin_int;
   uint64_t* val;
 } mutex_test_args_t;
 
@@ -280,19 +280,21 @@ static void* rw_value_thread_kmutex(void* arg) {
   tsan_rw_u64(&args->val[1]);
   tsan_rw_u64(&args->val[3]);
 
-  kmutex_lock(&args->mu);
+  kmutex_lock(args->mu);
   tsan_rw_u64(args->val);
-  kmutex_unlock(&args->mu);
-  kmutex_lock(&args->mu);
+  kmutex_unlock(args->mu);
+  kmutex_lock(args->mu);
   tsan_rw_u64(args->val);
-  kmutex_unlock(&args->mu);
+  kmutex_unlock(args->mu);
   return NULL;
 }
 
 static void tsan_basic_sanity_test3(void) {
   KTEST_BEGIN("TSAN: basic R/W heap value (two threads, locked)");
   mutex_test_args_t args;
-  kmutex_init(&args.mu);
+  kmutex_t mu;
+  kmutex_init(&mu);
+  args.mu = &mu;
   args.val = tsan_test_alloc(sizeof(uint64_t) * 4);
   for (int i = 0; i < 4; ++i) {
     args.val[i] = 0;
@@ -303,12 +305,12 @@ static void tsan_basic_sanity_test3(void) {
   // Non-racing access.
   tsan_rw_u64(&args.val[2]);
 
-  kmutex_lock(&args.mu);
+  kmutex_lock(args.mu);
   tsan_rw_u64(args.val);
-  kmutex_unlock(&args.mu);
-  kmutex_lock(&args.mu);
+  kmutex_unlock(args.mu);
+  kmutex_lock(args.mu);
   tsan_rw_u64(args.val);
-  kmutex_unlock(&args.mu);
+  kmutex_unlock(args.mu);
 
   KEXPECT_EQ(NULL, kthread_join(thread));
   // A join should act as a synchronization point between the threads.
@@ -330,20 +332,21 @@ static void* rw_value_thread_kspinlock(void* arg) {
   tsan_rw_u64(&args->val[1]);
   tsan_rw_u64(&args->val[3]);
 
-  kspin_lock(&args->spin);
+  kspin_lock(args->spin);
   tsan_rw_u64(args->val);
-  kspin_unlock(&args->spin);
+  kspin_unlock(args->spin);
 
-  kspin_lock(&args->spin);
+  kspin_lock(args->spin);
   tsan_rw_u64(args->val);
-  kspin_unlock(&args->spin);
+  kspin_unlock(args->spin);
   return NULL;
 }
 
 static void tsan_basic_sanity_test3_spinlock(void) {
   KTEST_BEGIN("TSAN: basic R/W heap value (two threads, spin-locked)");
   mutex_test_args_t args;
-  args.spin = KSPINLOCK_NORMAL_INIT;
+  kspinlock_t spin = KSPINLOCK_NORMAL_INIT;
+  args.spin = &spin;
   args.val = tsan_test_alloc(sizeof(uint64_t) * 4);
   for (int i = 0; i < 4; ++i) {
     args.val[i] = 0;
@@ -355,13 +358,13 @@ static void tsan_basic_sanity_test3_spinlock(void) {
   // Non-racing access.
   tsan_rw_u64(&args.val[2]);
 
-  kspin_lock(&args.spin);
+  kspin_lock(args.spin);
   tsan_rw_u64(args.val);
-  kspin_unlock(&args.spin);
+  kspin_unlock(args.spin);
 
-  kspin_lock(&args.spin);
+  kspin_lock(args.spin);
   tsan_rw_u64(args.val);
-  kspin_unlock(&args.spin);
+  kspin_unlock(args.spin);
 
   KEXPECT_EQ(NULL, kthread_join(thread));
   // A join should act as a synchronization point between the threads.
@@ -385,20 +388,21 @@ static void* rw_value_thread_kspinlock_int(void* arg) {
   tsan_rw_u64(&args->val[1]);
   tsan_rw_u64(&args->val[3]);
 
-  kspin_lock_int(&args->spin_int);
+  kspin_lock_int(args->spin_int);
   tsan_rw_u64(args->val);
-  kspin_unlock_int(&args->spin_int);
+  kspin_unlock_int(args->spin_int);
 
-  kspin_lock_int(&args->spin_int);
+  kspin_lock_int(args->spin_int);
   tsan_rw_u64(args->val);
-  kspin_unlock_int(&args->spin_int);
+  kspin_unlock_int(args->spin_int);
   return NULL;
 }
 
 static void tsan_basic_sanity_test3_spinlock_intsafe(void) {
   KTEST_BEGIN("TSAN: basic R/W heap value (two threads, intsafe-spin-locked)");
   mutex_test_args_t args;
-  args.spin_int = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  kspinlock_intsafe_t spin_int = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  args.spin_int = &spin_int;
   args.val = tsan_test_alloc(sizeof(uint64_t) * 4);
   for (int i = 0; i < 4; ++i) {
     args.val[i] = 0;
@@ -411,13 +415,13 @@ static void tsan_basic_sanity_test3_spinlock_intsafe(void) {
   // Non-racing access.
   tsan_rw_u64(&args.val[2]);
 
-  kspin_lock_int(&args.spin_int);
+  kspin_lock_int(args.spin_int);
   tsan_rw_u64(args.val);
-  kspin_unlock_int(&args.spin_int);
+  kspin_unlock_int(args.spin_int);
 
-  kspin_lock_int(&args.spin_int);
+  kspin_lock_int(args.spin_int);
   tsan_rw_u64(args.val);
-  kspin_unlock_int(&args.spin_int);
+  kspin_unlock_int(args.spin_int);
 
   KEXPECT_EQ(NULL, kthread_join(thread));
   // A join should act as a synchronization point between the threads.
@@ -437,7 +441,9 @@ static void tsan_basic_sanity_test3_spinlock_intsafe(void) {
 static void tsan_basic_sanity_test4(void) {
   KTEST_BEGIN("TSAN: basic R/W heap value (two threads, locked, sleep)");
   mutex_test_args_t args;
-  kmutex_init(&args.mu);
+  kmutex_t mu;
+  kmutex_init(&mu);
+  args.mu = &mu;
   args.val = tsan_test_alloc(sizeof(uint64_t) * 4);
   for (int i = 0; i < 4; ++i) {
     args.val[i] = 0;
@@ -447,9 +453,9 @@ static void tsan_basic_sanity_test4(void) {
   KEXPECT_EQ(0, proc_thread_create(&thread, &rw_value_thread_kmutex, &args));
   ksleep(10);
 
-  kmutex_lock(&args.mu);
+  kmutex_lock(args.mu);
   tsan_rw_u64(args.val);
-  kmutex_unlock(&args.mu);
+  kmutex_unlock(args.mu);
 
   KEXPECT_EQ(NULL, kthread_join(thread));
   // A join should act as a synchronization point between the threads.
