@@ -274,6 +274,11 @@ static void tsan_basic_sanity_test2(void) {
 }
 
 static void* rw_value_thread_kmutex(void* arg) {
+  // In each of these threads, we need to enable preemption, then briefly sleep.
+  // This allows the other thread(s) to start and do the same, ensuring they are
+  // all non-synchronized with each other.
+  sched_enable_preemption_for_test();
+  ksleep(10);
   mutex_test_args_t* args = (mutex_test_args_t*)arg;
 
   // Non-racing accesses.  Should be OK.
@@ -286,6 +291,8 @@ static void* rw_value_thread_kmutex(void* arg) {
   kmutex_lock(args->mu);
   tsan_rw_u64(args->val);
   kmutex_unlock(args->mu);
+
+  sched_disable_preemption();
   return NULL;
 }
 
@@ -2117,6 +2124,151 @@ static void evict_test(void) {
   tsan_test_cleanup();
 }
 
+// Similar to the version above, but only does accesses under lock.
+static void* rw_value_thread_kmutex2(void* arg) {
+  // In each of these threads, we need to enable preemption, then briefly sleep.
+  // This allows the other thread(s) to start and do the same, ensuring they are
+  // all non-synchronized with each other.
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  kmutex_lock(args->mu);
+  tsan_rw_u64(args->val);
+  kmutex_unlock(args->mu);
+  kmutex_lock(args->mu);
+  tsan_rw_u64(args->val);
+  kmutex_unlock(args->mu);
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* rw_value_thread_kspinlock2(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  kspin_lock(args->spin);
+  tsan_rw_u64(args->val);
+  kspin_unlock(args->spin);
+  kspin_lock(args->spin);
+  tsan_rw_u64(args->val);
+  kspin_unlock(args->spin);
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* rw_value_thread_kspinlock_int2(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  kspin_lock_int(args->spin_int);
+  tsan_rw_u64(args->val);
+  kspin_unlock_int(args->spin_int);
+  kspin_lock_int(args->spin_int);
+  tsan_rw_u64(args->val);
+  kspin_unlock_int(args->spin_int);
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void multilock_kmutex_test(void) {
+  KTEST_BEGIN("TSAN: locking different mutexes doesn't synchronize");
+  mutex_test_args_t args1, args2;
+  kmutex_t mu1, mu2;
+  kmutex_init(&mu1);
+  kmutex_init(&mu2);
+  args1.mu = &mu1;
+  args1.val = tsan_test_alloc(sizeof(uint64_t));
+  *args1.val = 0;
+  tsan_rw_u64(args1.val);
+  args2.mu = &mu2;
+  args2.val = args1.val;
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &rw_value_thread_kmutex2, &args1));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &rw_value_thread_kmutex2, &args2));
+
+  // The two threads should race.
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread1->id, args1.val, 8, "?", thread2->id, args1.val,
+                        8, "w");
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void multilock_kspinlock_test(void) {
+  KTEST_BEGIN("TSAN: locking different spinlocks doesn't synchronize");
+  mutex_test_args_t args1, args2;
+  kspinlock_t spin1, spin2;
+  spin1 = KSPINLOCK_NORMAL_INIT;
+  spin2 = KSPINLOCK_NORMAL_INIT;
+  args1.spin = &spin1;
+  args1.val = tsan_test_alloc(sizeof(uint64_t));
+  *args1.val = 0;
+  tsan_rw_u64(args1.val);
+  args2.spin = &spin2;
+  args2.val = args1.val;
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &rw_value_thread_kspinlock2, &args1));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &rw_value_thread_kspinlock2, &args2));
+
+  // The two threads should race.
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread1->id, args1.val, 8, "?", thread2->id, args1.val,
+                        8, "w");
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void multilock_kspinlock_intsafe_test(void) {
+  KTEST_BEGIN("TSAN: locking different spinlocks (interrupt-safe) doesn't synchronize");
+  mutex_test_args_t args1, args2;
+  kspinlock_intsafe_t spin_int1, spin_int2;
+  spin_int1 = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  spin_int2 = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  args1.spin_int = &spin_int1;
+  args1.val = tsan_test_alloc(sizeof(uint64_t));
+  *args1.val = 0;
+  tsan_rw_u64(args1.val);
+  args2.spin_int = &spin_int2;
+  args2.val = args1.val;
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &rw_value_thread_kspinlock_int2, &args1));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &rw_value_thread_kspinlock_int2, &args2));
+
+  // The two threads should race.
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread1->id, args1.val, 8, "?", thread2->id, args1.val,
+                        8, "w");
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void multilock_tests(void) {
+  multilock_kmutex_test();
+  multilock_kspinlock_test();
+  multilock_kspinlock_intsafe_test();
+}
+
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   basic_tests();
@@ -2130,6 +2282,7 @@ void tsan_test(void) {
   region_tests();
   special_functions_tests();
   evict_test();
+  multilock_tests();
 
   tsan_test_free_all();
 }
