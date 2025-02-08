@@ -65,7 +65,7 @@ void kspin_lock_int(kspinlock_intsafe_t* l) {
   // Disabling interrupts disables preemption and defints implicitly.  Later
   // code _could_ change the defint state on its own (which would be
   // ill-advised), but it won't matter since interrupts are disabled.
-  interrupt_state_t int_state = save_and_disable_interrupts();
+  interrupt_state_t int_state = save_and_disable_interrupts(false);
   l->int_state = int_state;
   kspin_lock_internal(&l->_lock);
 }
@@ -82,7 +82,7 @@ void kspin_unlock_int(kspinlock_intsafe_t* l) {
   interrupt_state_t int_state = l->int_state;
   kspin_unlock_internal(&l->_lock);
   KASSERT_DBG(interrupts_enabled() == false);
-  restore_interrupts(int_state);
+  restore_interrupts(int_state, false);
 }
 
 bool kspin_is_held(const kspinlock_t* l) {

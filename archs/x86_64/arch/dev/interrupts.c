@@ -313,7 +313,7 @@ interrupt_state_t get_interrupts_state(void) {
   return (saved_flags & IF_FLAG) != 0;
 }
 
-interrupt_state_t save_and_disable_interrupts(void) {
+interrupt_state_t save_and_disable_interrupts(bool full_sync) {
   uint64_t saved_flags;
   asm volatile (
       "pushf\n\t"
@@ -323,7 +323,7 @@ interrupt_state_t save_and_disable_interrupts(void) {
   return (saved_flags & IF_FLAG) != 0;
 }
 
-void restore_interrupts(interrupt_state_t saved) {
+void restore_interrupts(interrupt_state_t saved, bool full_sync) {
   if (saved) {
     asm volatile ("sti");
   }

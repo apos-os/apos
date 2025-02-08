@@ -2176,6 +2176,27 @@ static void* rw_value_thread_kspinlock_int2(void* arg) {
   return NULL;
 }
 
+static void* rw_value_push_and_disable_ints(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  {
+    PUSH_AND_DISABLE_INTERRUPTS();
+    tsan_rw_u64(args->val);
+    POP_INTERRUPTS();
+  }
+
+  {
+    PUSH_AND_DISABLE_INTERRUPTS();
+    tsan_rw_u64(args->val);
+    POP_INTERRUPTS();
+  }
+
+  sched_disable_preemption();
+  return NULL;
+}
+
 static void multilock_kmutex_test(void) {
   KTEST_BEGIN("TSAN: locking different mutexes doesn't synchronize");
   mutex_test_args_t args1, args2;
@@ -2263,14 +2284,79 @@ static void multilock_kspinlock_intsafe_test(void) {
   tsan_test_cleanup();
 }
 
+// This test verifies the "legacy" behavior of PUSH_AND_DISABLE_INTERRUPTS().
+// In the (current) non-preemptible, non-SMP kernel,
+// PUSH_AND_DISABLE_INTERRUPTS() acts as a synchronization point between all
+// threads.  TSAN must model this so it doesn't flag false races in legacy code
+// that uses these.
+// TODO(SMP): delete this functionality, and these tests.
+static void multilock_legacy_interrupt_test(void) {
+  KTEST_BEGIN("TSAN: PUSH_AND_DISABLE_INTERRUPTS() synchronizes across threads");
+  mutex_test_args_t args;
+  args.val = tsan_test_alloc(sizeof(uint64_t));
+  *args.val = 0;
+  tsan_rw_u64(args.val);
+
+  kthread_t thread1, thread2;
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &rw_value_push_and_disable_ints, &args));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &rw_value_push_and_disable_ints, &args));
+
+  // There should not be any race.
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+
+  tsan_test_cleanup();
+}
+
+// The special handling of PUSH_AND_DISABLE_INTERRUPTS() should only work with
+// other calls to PUSH_AND_DISABLE_INTERRUPTS(), not with spinlocks.
+static void multilock_legacy_interrupt_spinlock_test(void) {
+  KTEST_BEGIN("TSAN: PUSH_AND_DISABLE_INTERRUPTS() does not synchronize with spinlock");
+  mutex_test_args_t args;
+  kspinlock_intsafe_t spin_int = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  args.spin_int = &spin_int;
+  args.val = tsan_test_alloc(sizeof(uint64_t));
+  *args.val = 0;
+  tsan_rw_u64(args.val);
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &rw_value_push_and_disable_ints, &args));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &rw_value_thread_kspinlock_int2, &args));
+
+  // The two threads should race.
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread1->id, args.val, 8, "?", thread2->id, args.val,
+                        8, "w");
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
 static void multilock_tests(void) {
   multilock_kmutex_test();
   multilock_kspinlock_test();
   multilock_kspinlock_intsafe_test();
+
+  // For these ones, we want to explicitly test the behavior with legacy
+  // full-sync enabled.
+  bool old = interrupt_set_legacy_full_sync(true);
+  multilock_legacy_interrupt_test();
+  interrupt_set_legacy_full_sync(old);
+  // TODO(tsan): when ksleep() doesn't synchronize, run this test under legacy
+  // mode as well.
+  multilock_legacy_interrupt_spinlock_test();
 }
 
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
+  // For most of these tests, having the legacy full-sync behavior will break
+  // them because they call some core library that uses
+  // PUSH_AND_DISABLE_INTERRUPTS() and will therefore prevent TSAN tests from
+  // seeing races.
+  bool old_legacy = interrupt_set_legacy_full_sync(false);
   basic_tests();
   interrupt_tests();
   defint_tests();
@@ -2283,6 +2369,8 @@ void tsan_test(void) {
   special_functions_tests();
   evict_test();
   multilock_tests();
+
+  interrupt_set_legacy_full_sync(old_legacy);
 
   tsan_test_free_all();
 }

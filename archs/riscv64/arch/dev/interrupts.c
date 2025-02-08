@@ -208,6 +208,20 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
 }
 
 #if ENABLE_TSAN
+
+// For legacy code that uses PUSH_AND_DISABLE_INTERRUPTS() and friends, we need
+// to model each of those calls as a synchronization between threads.  This is
+// the virtual global "lock" we use to model that.
+static tsan_lock_data_t g_interrupt_lock = TSAN_LOCK_DATA_INIT;
+// TODO(atomics): use atomic for this.
+static bool g_interrupt_legacy_full_sync = true;
+
+bool interrupt_set_legacy_full_sync(bool full_sync) {
+  bool old = g_interrupt_legacy_full_sync;
+  g_interrupt_legacy_full_sync = full_sync;
+  return old;
+}
+
 void enable_interrupts(void) {
   tsan_release(NULL, TSAN_INTERRUPTS);
   enable_interrupts_raw();
@@ -218,18 +232,24 @@ void disable_interrupts(void) {
   tsan_acquire(NULL, TSAN_INTERRUPTS);
 }
 
-interrupt_state_t save_and_disable_interrupts(void) {
+interrupt_state_t save_and_disable_interrupts(bool full_sync) {
   interrupt_state_t ret = save_and_disable_interrupts_raw();
   tsan_acquire(NULL, TSAN_INTERRUPTS);
+  if (full_sync && g_interrupt_legacy_full_sync) {
+    tsan_acquire(&g_interrupt_lock, TSAN_LOCK);
+  }
   return ret;
 }
 
-void restore_interrupts(interrupt_state_t saved) {
+void restore_interrupts(interrupt_state_t saved, bool full_sync) {
   // Be conservative --- only publish values to interrupts if we're actually
   // enabling interrupts here.  This is not required for correctness, but
   // correct could should not be sensitive to this.
   if (saved) {
     tsan_release(NULL, TSAN_INTERRUPTS);
+    if (full_sync && g_interrupt_legacy_full_sync) {
+      tsan_release(&g_interrupt_lock, TSAN_LOCK);
+    }
   }
   restore_interrupts_raw(saved);
 }

@@ -54,7 +54,7 @@ static inline ALWAYS_INLINE interrupt_state_t _kmalloc_lock(void) {
     kspin_lock_int(&g_kmalloc_mu);
     return 0;
   } else {
-    return save_and_disable_interrupts();
+    return save_and_disable_interrupts(true);
   }
 }
 
@@ -62,7 +62,7 @@ static inline ALWAYS_INLINE void _kmalloc_unlock(interrupt_state_t s) {
   if (kthread_current_thread()) {
     kspin_unlock_int(&g_kmalloc_mu);
   } else {
-    restore_interrupts(s);
+    restore_interrupts(s, true);
   }
 }
 
