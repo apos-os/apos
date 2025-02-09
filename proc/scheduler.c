@@ -193,14 +193,14 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
   }
 #endif
   scheduler_yield_no_reschedule();
-  int result = current->wait_status;
-  if (timeout_ms > 0 && !current->wait_timeout_ran)
-    cancel_event_timer(timeout_handle);
 #if ENABLE_TSAN
   if (!sp && !mu && current->preemption_disables > 0) {
     tsan_acquire(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
   }
 #endif
+  int result = current->wait_status;
+  if (timeout_ms > 0 && !current->wait_timeout_ran)
+    cancel_event_timer(timeout_handle);
   if (mu) {
     kmutex_lock(mu);
   }
