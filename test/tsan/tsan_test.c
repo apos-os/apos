@@ -1027,6 +1027,44 @@ static void unaligned_overlap_8byte_conflict_test(void) {
   tsan_test_cleanup();
 }
 
+static void* kmutex_lock_loop_test_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  for (int i = 0; i < 10; ++i) {
+    kmutex_lock(args->mu);
+    tsan_rw_u64(args->val);
+    scheduler_yield();  // Force lock contention.
+    kmutex_unlock(args->mu);
+  }
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void kmutex_lock_loop_test(void) {
+  KTEST_BEGIN("TSAN: kmutex lock loop test");
+  mutex_test_args_t args;
+  kmutex_t mu;
+  kmutex_init(&mu);
+  args.mu = &mu;
+  args.val = tsan_test_alloc(sizeof(uint64_t));
+  *args.val = 0;
+  tsan_rw_u64(args.val);
+
+  kthread_t thread1, thread2;
+  KEXPECT_EQ(
+      0, proc_thread_create(&thread1, &kmutex_lock_loop_test_thread, &args));
+  KEXPECT_EQ(
+      0, proc_thread_create(&thread2, &kmutex_lock_loop_test_thread, &args));
+
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+
+  tsan_test_cleanup();
+}
+
 static void basic_tests(void) {
   tsan_basic_sanity_test();
   tsan_basic_sanity_test2();
@@ -1050,6 +1088,8 @@ static void basic_tests(void) {
 
   unaligned_overlap_8byte_test();
   unaligned_overlap_8byte_conflict_test();
+
+  kmutex_lock_loop_test();
 }
 
 static void interrupt_fn(void* arg) {

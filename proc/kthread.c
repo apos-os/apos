@@ -528,6 +528,9 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) {
   list_remove(&kthread_current_thread()->mutexes_held, &m->link);
 #endif
   PUSH_AND_DISABLE_INTERRUPTS();
+#if ENABLE_TSAN
+  tsan_release(&m->tsan, TSAN_LOCK);
+#endif
 
   KASSERT(m->locked == 1);
   KASSERT(m->holder == kthread_current_thread());
@@ -548,9 +551,6 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) {
     m->locked = 0;
     m->holder = 0x0;
   }
-#if ENABLE_TSAN
-  tsan_release(&m->tsan, TSAN_LOCK);
-#endif
   POP_INTERRUPTS();
 }
 
