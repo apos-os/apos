@@ -1112,12 +1112,14 @@ static void interrupt_test1(void) {
 
   {
     PUSH_AND_DISABLE_INTERRUPTS();
+    tsan_rw_value(x);
     register_event_timer(get_time_ms() + 10, &interrupt_fn, x, NULL);
+    tsan_rw_value(x);
     busy_loop();
     POP_INTERRUPTS();
     ksleep(10);
     tsan_rw_value(x);
-    KEXPECT_EQ(3, *x);
+    KEXPECT_EQ(5, *x);
   }
   tsan_test_cleanup();
 }
@@ -1191,6 +1193,28 @@ static void interrupt_test1e(void) {
   tsan_test_cleanup();
 }
 
+// Test yielding (with a scheduler_wait_on() call) before the interrupt fires,
+// with interrupts still blocked in the current thread.
+static void interrupt_test1f(void) {
+  KTEST_BEGIN("TSAN: interrupt-safety (yield before interrupt fires)");
+  int* x = TS_MALLOC(int);
+  *x = 0;
+  tsan_rw_value(x);
+
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, busy_loop_thread, NULL));
+  scheduler_make_runnable(thread);
+
+  kthread_queue_t q;
+  kthread_queue_init(&q);
+  PUSH_AND_DISABLE_INTERRUPTS();
+  tsan_rw_value(x);
+  register_event_timer(get_time_ms() + 10, &interrupt_fn, x, NULL);
+  KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_interruptable(&q, 20));
+  POP_INTERRUPTS();
+  tsan_test_cleanup();
+}
+
 static void interrupt_test2(void) {
   KTEST_BEGIN("TSAN: interrupt-safety (conflict)");
   int* x = TS_MALLOC(int);
@@ -1260,6 +1284,7 @@ static void interrupt_tests(void) {
   interrupt_test1c();
   interrupt_test1d();
   interrupt_test1e();
+  interrupt_test1f();
   interrupt_test2();
   interrupt_test3();
   interrupt_test4();
