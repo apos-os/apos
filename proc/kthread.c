@@ -299,9 +299,11 @@ void kthread_switch(kthread_t new_thread) {
   // All writes should now be visible to the interrupt thread.  This is only
   // relevant for (a) writes in thread exit paths (which may touch memory that
   // is freed then reused), and (b) writes in kthread/scheduler internals.
+  // Since we don't have a synchronizing POP_INTERRUPTS() before we actually
+  // switch threads, do one explicitly here to release all our writes.
+  interrupt_do_legacy_full_sync(/* is_acquire */ false);
   // TODO(tsan): once all code is updated to use spinlocks and the kernel is
   // SMP-safe, see if we can remove this.
-  tsan_release(NULL, TSAN_INTERRUPTS);
 #endif
 
   kthread_data_t* old_thread = g_current_thread;
@@ -323,6 +325,10 @@ void kthread_switch(kthread_t new_thread) {
     proc_set_current(new_thread->process);
   }
   kthread_arch_swap_context(old_thread, new_thread, old_pd, new_pd);
+
+#if ENABLE_TSAN
+  interrupt_do_legacy_full_sync(/* is_acquire */ true);
+#endif
 
   // Verify that we're back on the proper stack!
   KASSERT(g_current_thread->id == my_id);
