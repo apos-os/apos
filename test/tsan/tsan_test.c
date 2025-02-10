@@ -689,6 +689,10 @@ static void tsan_wait_queue_test(void) {
 
 static void* fork_test_child_thread(void* arg) {
   tsan_rw_u64((uint64_t*)arg);
+
+  // Synchronize our exit code paths, since thees threads will be detached (so
+  // they need to be synchronized with the main thread that reaps them).
+  interrupt_set_legacy_full_sync(true);
   return NULL;
 }
 
