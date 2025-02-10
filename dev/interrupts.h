@@ -72,4 +72,9 @@ static inline bool interrupts_enabled(void) {
 // Returns the old value of the flag.
 bool interrupt_set_legacy_full_sync(bool full_sync);
 
+// Does a legacy full-sync operation (if enabled).  If is_acquire is true, then
+// does an acquire (as if PUSH_AND_DISABLE_INTERRUPTS() were called); otherwise
+// does a release (as if POP_INTERRUPTS() were called).
+void interrupt_do_legacy_full_sync(bool is_acquire);
+
 #endif

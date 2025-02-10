@@ -191,9 +191,17 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
   if (!sp && !mu && current->preemption_disables > 0) {
     tsan_release(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
   }
+  // Since we don't have a synchronizing POP_INTERRUPTS() before we actually
+  // switch threads, do one explicitly here to release all our writes.
+  interrupt_do_legacy_full_sync(/* is_acquire */ false);
 #endif
   scheduler_yield_no_reschedule();
 #if ENABLE_TSAN
+  // Note: this is redundant because at least one thing inside
+  // scheduler_yield_no_reschedule() will call PUSH_AND_DISABLE_INTERRUPTS(),
+  // currently at least.  Including it for (redundant) correctness, even though
+  // I can't test for it currently.
+  interrupt_do_legacy_full_sync(/* is_acquire */ true);
   if (!sp && !mu && current->preemption_disables > 0) {
     tsan_acquire(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
   }

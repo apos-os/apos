@@ -2237,6 +2237,31 @@ static void* rw_value_push_and_disable_ints(void* arg) {
   return NULL;
 }
 
+static void* rw_value_push_and_disable_ints_yield(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  {
+    PUSH_AND_DISABLE_INTERRUPTS();
+    tsan_rw_u64(args->val);
+    scheduler_yield();
+    tsan_rw_u64(args->val);
+    POP_INTERRUPTS();
+  }
+
+  {
+    PUSH_AND_DISABLE_INTERRUPTS();
+    tsan_rw_u64(args->val);
+    scheduler_yield();
+    tsan_rw_u64(args->val);
+    POP_INTERRUPTS();
+  }
+
+  sched_disable_preemption();
+  return NULL;
+}
+
 static void multilock_kmutex_test(void) {
   KTEST_BEGIN("TSAN: locking different mutexes doesn't synchronize");
   mutex_test_args_t args1, args2;
@@ -2348,6 +2373,81 @@ static void multilock_legacy_interrupt_test(void) {
   tsan_test_cleanup();
 }
 
+static void* push_ints_and_exit(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  PUSH_AND_DISABLE_INTERRUPTS();
+  tsan_rw_u64(args->val);
+  proc_thread_exit(NULL);
+  die("unreachable");
+  POP_INTERRUPTS();
+
+  return NULL;
+}
+
+// This is to exercise the path where the thread exits without popping
+// interrupts (which probably shouldn't happen in general code, but is what
+// happens inside the scheduler/kthread code itself).
+static void multilock_legacy_interrupt_thread_exit_test(void) {
+  KTEST_BEGIN("TSAN: PUSH_AND_DISABLE_INTERRUPTS() then thread exit syncs");
+  mutex_test_args_t args;
+  args.val = tsan_test_alloc(sizeof(uint64_t));
+  *args.val = 0;
+  tsan_rw_u64(args.val);
+
+  kthread_t thread1;
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &push_ints_and_exit, &args));
+
+  // There should not be any race.
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  tsan_rw_u64(args.val);
+
+  tsan_test_cleanup();
+}
+
+static void multilock_legacy_interrupt_thread_yield_test(void) {
+  KTEST_BEGIN("TSAN: PUSH_AND_DISABLE_INTERRUPTS() then thread yield syncs");
+  mutex_test_args_t args;
+  args.val = tsan_test_alloc(sizeof(uint64_t));
+  *args.val = 0;
+  tsan_rw_u64(args.val);
+
+  kthread_t thread1, thread2, thread3;
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &rw_value_push_and_disable_ints_yield, &args));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &rw_value_push_and_disable_ints_yield, &args));
+  KEXPECT_EQ(0, proc_thread_create(&thread3, &rw_value_push_and_disable_ints, &args));
+
+  // There should not be any race.
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  KEXPECT_EQ(NULL, kthread_join(thread3));
+  tsan_rw_u64(args.val);
+
+  tsan_test_cleanup();
+}
+
+static void multilock_legacy_interrupt_thread_yield_test2(void) {
+  KTEST_BEGIN("TSAN: PUSH_AND_DISABLE_INTERRUPTS() then thread yield syncs (with interrupt handler)");
+  mutex_test_args_t args;
+  args.val = tsan_test_alloc(sizeof(uint64_t));
+  *args.val = 0;
+  tsan_rw_u64(args.val);
+
+  kthread_t thread1;
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &rw_value_push_and_disable_ints_yield, &args));
+
+  register_event_timer(get_time_ms() + 10, &interrupt_fn, args.val, NULL);
+  busy_loop();
+
+  // There should not be any race.
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  tsan_rw_u64(args.val);
+
+  tsan_test_cleanup();
+}
+
 // The special handling of PUSH_AND_DISABLE_INTERRUPTS() should only work with
 // other calls to PUSH_AND_DISABLE_INTERRUPTS(), not with spinlocks.
 static void multilock_legacy_interrupt_spinlock_test(void) {
@@ -2384,6 +2484,9 @@ static void multilock_tests(void) {
   // full-sync enabled.
   bool old = interrupt_set_legacy_full_sync(true);
   multilock_legacy_interrupt_test();
+  multilock_legacy_interrupt_thread_exit_test();
+  multilock_legacy_interrupt_thread_yield_test();
+  multilock_legacy_interrupt_thread_yield_test2();
   interrupt_set_legacy_full_sync(old);
   // TODO(tsan): when ksleep() doesn't synchronize, run this test under legacy
   // mode as well.

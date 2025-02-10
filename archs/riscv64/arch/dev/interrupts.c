@@ -222,6 +222,18 @@ bool interrupt_set_legacy_full_sync(bool full_sync) {
   return old;
 }
 
+void interrupt_do_legacy_full_sync(bool is_acquire) {
+  if (!g_interrupt_legacy_full_sync) return;
+
+  if (is_acquire) {
+    tsan_acquire(NULL, TSAN_INTERRUPTS);
+    tsan_acquire(&g_interrupt_lock, TSAN_LOCK);
+  } else {
+    tsan_release(NULL, TSAN_INTERRUPTS);
+    tsan_release(&g_interrupt_lock, TSAN_LOCK);
+  }
+}
+
 void enable_interrupts(void) {
   tsan_release(NULL, TSAN_INTERRUPTS);
   enable_interrupts_raw();
