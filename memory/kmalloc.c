@@ -23,6 +23,7 @@
 #include "common/debug.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/kstring.h"
 #include "common/math.h"
 #include "common/stack_trace_table.h"
 #include "memory/allocator.h"
@@ -33,6 +34,10 @@
 #include "proc/kthread-internal.h"
 #include "proc/process.h"
 #include "proc/spinlock.h"
+
+#if ENABLE_TSAN
+#include "sanitizers/tsan/tsan_access.h"
+#endif
 
 #define KLOG(...) klogfm(KL_KMALLOC, __VA_ARGS__)
 
@@ -75,9 +80,7 @@ static void init_block(block_t* b) {
   b->length = 0;
   b->prev = 0;
   b->next = 0;
-  for (int i = 0; i < KMALLOC_SAFE_BUFFER; ++i) {
-    b->_buf[i] = 0xAA;
-  }
+  kmemset(b->_buf, 0xAA, KMALLOC_SAFE_BUFFER);
 }
 
 void kmalloc_init(void) {
@@ -107,7 +110,10 @@ void kmalloc_init(void) {
 }
 
 // Fill the given block with a repeating pattern.
-static void fill_buffer(uint8_t* buf, size_t n, uint32_t pattern) {
+static void NO_TSAN fill_buffer(uint8_t* buf, size_t n, uint32_t pattern) {
+#if ENABLE_TSAN
+  tsan_check_range(0, (addr_t)buf, n, TSAN_ACCESS_WRITE);
+#endif
   uint32_t i = 0;
   uint32_t i2 = 0;
   while (i < n) {

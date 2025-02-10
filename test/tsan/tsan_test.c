@@ -196,7 +196,7 @@ static bool expect_report(int thread1, void* addr1, int size1,
 // stack traces).
 static bool wait_for_race(void) {
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
-  for (int i = 0; i < 10; ++i) {
+  for (int i = 0; i < 50; ++i) {
     if (g_found_report) break;
     ksleep(10);
   }
@@ -1698,9 +1698,11 @@ static void* sleep_then_access_u32(void* arg) {
   return NULL;
 }
 
+// TODO(aoates): could replace this timing-dependant value with a
+// non-synchronizing atomic flag.
 static void* sleep_long_then_access_u32(void* arg) {
   sched_enable_preemption_for_test();
-  ksleep(100);
+  ksleep(300);
   tsan_unaligned_write32((uint32_t*)arg, 0x12345678);
   sched_disable_preemption();
   return NULL;
