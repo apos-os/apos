@@ -109,6 +109,7 @@ struct kthread_data {
 
 #if ENABLE_TSAN
   tsan_thread_data_t tsan;
+  bool legacy_interrupt_sync;
 #endif
 };
 typedef struct kthread_data kthread_data_t;

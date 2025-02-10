@@ -213,24 +213,26 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
 // to model each of those calls as a synchronization between threads.  This is
 // the virtual global "lock" we use to model that.
 static tsan_lock_data_t g_interrupt_lock = TSAN_LOCK_DATA_INIT;
-// TODO(atomics): use atomic for this.
-static bool g_interrupt_legacy_full_sync = true;
 
 bool interrupt_set_legacy_full_sync(bool full_sync) {
-  bool old = g_interrupt_legacy_full_sync;
-  g_interrupt_legacy_full_sync = full_sync;
+  kthread_t t = kthread_current_thread();
+  bool old = t->legacy_interrupt_sync;
+  t->legacy_interrupt_sync = full_sync;
   return old;
 }
 
 void interrupt_do_legacy_full_sync(bool is_acquire) {
+  kthread_t t = kthread_current_thread();
+  if (!t) return;
+
   if (is_acquire) {
     tsan_acquire(NULL, TSAN_INTERRUPTS);
-    if (g_interrupt_legacy_full_sync) {
+    if (t->legacy_interrupt_sync) {
       tsan_acquire(&g_interrupt_lock, TSAN_LOCK);
     }
   } else {
     tsan_release(NULL, TSAN_INTERRUPTS);
-    if (g_interrupt_legacy_full_sync) {
+    if (t->legacy_interrupt_sync) {
       tsan_release(&g_interrupt_lock, TSAN_LOCK);
     }
   }
@@ -249,7 +251,8 @@ void disable_interrupts(void) {
 interrupt_state_t save_and_disable_interrupts(bool full_sync) {
   interrupt_state_t ret = save_and_disable_interrupts_raw();
   tsan_acquire(NULL, TSAN_INTERRUPTS);
-  if (full_sync && g_interrupt_legacy_full_sync) {
+  kthread_t t = kthread_current_thread();
+  if (full_sync && t && t->legacy_interrupt_sync) {
     tsan_acquire(&g_interrupt_lock, TSAN_LOCK);
   }
   return ret;
@@ -261,7 +264,8 @@ void restore_interrupts(interrupt_state_t saved, bool full_sync) {
   // correct could should not be sensitive to this.
   if (saved) {
     tsan_release(NULL, TSAN_INTERRUPTS);
-    if (full_sync && g_interrupt_legacy_full_sync) {
+    kthread_t t = kthread_current_thread();
+    if (full_sync && t && t->legacy_interrupt_sync) {
       tsan_release(&g_interrupt_lock, TSAN_LOCK);
     }
   }

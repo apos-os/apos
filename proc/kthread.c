@@ -76,6 +76,9 @@ static void kthread_init_kthread(kthread_data_t* t) {
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   t->mutexes_held = LIST_INIT;
 #endif
+#if ENABLE_TSAN
+  t->legacy_interrupt_sync = true;
+#endif
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
@@ -171,11 +174,16 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
   thread->stacklen = KTHREAD_STACK_SIZE;
   kthread_arch_init_thread(thread, kthread_trampoline, start_routine, arg);
 
+  // TODO(aoates): rather than having this and legacy_interrupt_sync, etc be
+  // implicitly copied from parent thread, add thread creation flags to make it
+  // explicit.
   if (kthread_current_thread()->preemption_disables == 0) {
     thread->preemption_disables = 0;
   }
 #if ENABLE_TSAN
   tsan_thread_create(thread);
+  thread->legacy_interrupt_sync =
+      kthread_current_thread()->legacy_interrupt_sync;
 #endif
 
   POP_INTERRUPTS();

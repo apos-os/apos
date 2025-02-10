@@ -65,9 +65,10 @@ static inline bool interrupts_enabled(void) {
   return get_interrupts_state() != 0;
 }
 
-// Enables/disables (globally) full synchronization for legacy interrupt
-// disabling. If disabled, code that uses PUSH_AND_DISABLE_INTERRUPTS() won't
-// synchronize with other threads, only with interrupt handlers.
+// Enables/disables (for the current thread) full synchronization for legacy
+// interrupt disabling. If disabled, code that uses
+// PUSH_AND_DISABLE_INTERRUPTS() won't synchronize with other threads, only with
+// interrupt handlers.
 //
 // Returns the old value of the flag.
 bool interrupt_set_legacy_full_sync(bool full_sync);
