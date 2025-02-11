@@ -181,9 +181,9 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
     thread->preemption_disables = 0;
   }
 #if ENABLE_TSAN
-  tsan_thread_create(thread);
   thread->legacy_interrupt_sync =
       kthread_current_thread()->legacy_interrupt_sync;
+  tsan_thread_create(thread);
 #endif
 
   POP_INTERRUPTS();
