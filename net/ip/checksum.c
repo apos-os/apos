@@ -15,6 +15,7 @@
 #include "net/ip/checksum.h"
 
 #include "common/kassert.h"
+#include "common/kstring.h"
 
 uint16_t ip_checksum(const void* buf, size_t len) {
   return ip_checksum2(buf, len, NULL, 0);
@@ -23,9 +24,10 @@ uint16_t ip_checksum(const void* buf, size_t len) {
 uint16_t ip_checksum2(const void* buf, size_t len, const void* buf2,
                       size_t len2) {
   uint32_t checksum = 0;
-  const uint16_t* buf_chunks = (const uint16_t*)buf;
+  uint16_t chunk;
   for (size_t i = 0; i < len / 2; ++i) {
-    checksum += buf_chunks[i];
+    kmemcpy(&chunk, buf + 2 * i, 2);
+    checksum += chunk;
     checksum = (checksum >> 16) + (checksum & 0xFFFF);  // End-around carry.
   }
   if (len % 2 == 1) {
@@ -35,18 +37,21 @@ uint16_t ip_checksum2(const void* buf, size_t len, const void* buf2,
       buf2 = (const uint8_t*)buf2 + 1;
       len2--;
     }
-    uint8_t bridge[2] = {((const uint8_t*)buf)[len - 1], nextb};
-    checksum += *(uint16_t*)&bridge;
+    uint16_t bridge;
+    ((uint8_t*)&bridge)[0] = ((const uint8_t*)buf)[len - 1];
+    ((uint8_t*)&bridge)[1] = nextb;
+    checksum += bridge;
     checksum = (checksum >> 16) + (checksum & 0xFFFF);  // End-around carry.
   }
-  buf_chunks = (const uint16_t*)buf2;
   len = len2;
   for (size_t i = 0; i < len / 2; ++i) {
-    checksum += buf_chunks[i];
+    kmemcpy(&chunk, buf2 + 2 * i, 2);
+    checksum += chunk;
     checksum = (checksum >> 16) + (checksum & 0xFFFF);  // End-around carry.
   }
   if (len % 2 == 1) {
-    uint8_t bridge[2] = {((const uint8_t*)buf2)[len - 1], 0};
+    uint16_t bridge = 0;
+    ((uint8_t*)&bridge)[0] = ((const uint8_t*)buf2)[len - 1];
     checksum += *(uint16_t*)&bridge;
     checksum = (checksum >> 16) + (checksum & 0xFFFF);  // End-around carry.
   }
