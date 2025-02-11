@@ -133,6 +133,7 @@ void kthread_init(void) {
   POP_INTERRUPTS();
 }
 
+NO_SANITIZER
 kthread_t kthread_current_thread(void) {
   return g_current_thread;
 }
@@ -353,6 +354,9 @@ void kthread_switch(kthread_t new_thread) {
   POP_INTERRUPTS();
 }
 
+// NO_SANITIZER: because this function is used by TSAN to determine current
+// execution state.
+NO_SANITIZER
 ktctx_type_t kthread_execution_context(void) {
   // Before kthread is initialized, just assume we're always in a thread ctx.
   if (!g_current_thread) return KTCTX_THREAD;

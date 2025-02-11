@@ -14,6 +14,7 @@
 
 #include "proc/defint.h"
 
+#include "common/attributes.h"
 #include "common/kassert.h"
 #include "common/list.h"
 #include "dev/interrupts.h"
@@ -126,6 +127,7 @@ void _defint_disabled_die(void) {
   die("Leaving code block without reenabling defints");
 }
 
+NO_SANITIZER
 defint_running_t defint_running_state(void) {
   return g_defint_running;
 }
