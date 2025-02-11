@@ -12,8 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "common/attributes.h"
+#include "common/config.h"
 #include "common/kstring.h"
 #include "common/math.h"
+
+#if ENABLE_TSAN
+#include "sanitizers/tsan/tsan_hooks.h"
+#endif
 
 #include <stdint.h>
 
@@ -73,19 +79,54 @@ bool kstr_startswith(const char* s, const char* prefix) {
   return (*prefix == '\0');
 }
 
-void* kmemset(void *s, int c, size_t n) {
+// If TSAN is enabled, generate _no_tsan versions of the builtins, and
+// TSAN-aware wrappers that register the access then call the builtin.
+#if ENABLE_TSAN
+# define DEF_TSAN(name) NO_TSAN name##_no_tsan
+
+void* kmemset(void* s, int c, size_t n) {
+  return __tsan_memset(s, c, n);
+}
+
+void* kmemcpy(void* dest, const void* src, size_t n) {
+  return __tsan_memcpy(dest, src, n);
+}
+
+#else
+# define DEF_TSAN(name) name
+#endif
+
+void* DEF_TSAN(kmemset)(void* s, int c, size_t n) {
   for (size_t i = 0; i < n; ++i) {
     ((char*)s)[i] = c;
   }
   return s;
 }
 
-void* kmemcpy(void* dest, const void* src, size_t n) {
+void* DEF_TSAN(kmemcpy)(void* dest, const void* src, size_t n) {
   for (size_t i = 0; i < n; i++) {
     ((uint8_t*)dest)[i] = ((uint8_t*)src)[i];
   }
   return dest;
 }
+
+// Emit memset as an alias to kmemset.  The compiler will emit calls to memset,
+// which will now call kmemset.  Likewise with memcpy.
+//
+// If TSAN is enabled, redirect implicitly generated calls to memset/etc to the
+// no-TSAN versions --- in TSAN-instrumented code, calls to __tsan_memset() will
+// be generated instead.  In NO_TSAN code, we want implicit memset() (etc) calls
+// to direct to kmemset_no_tsan(), NOT kmemset() (which calls __tsan_memset()).
+#if ENABLE_TSAN
+void* memset(void* dest, int c, size_t n)
+    __attribute__((alias("kmemset_no_tsan")));
+void* memcpy(void* dest, const void* src, size_t n)
+    __attribute__((alias("kmemcpy_no_tsan")));
+#else
+void* memset(void* dest, int c, size_t n) __attribute__((alias("kmemset")));
+void* memcpy(void* dest, const void* src, size_t n)
+    __attribute__((alias("kmemcpy")));
+#endif
 
 int kmemcmp(const void* m1, const void* m2, size_t n) {
   const char* s1 = (const char*)m1;

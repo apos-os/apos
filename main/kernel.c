@@ -54,6 +54,7 @@
 #include "main/kshell.h"
 #include "memory/page_alloc.h"
 #include "proc/scheduler.h"
+#include "sanitizers/tsan/tsan.h"
 #include "vfs/mount_table.h"
 #include "vfs/vfs.h"
 #include "test/ktest.h"
@@ -239,6 +240,11 @@ void kmain(boot_info_t* boot, const char* cmdline) {
   klog("proc_init_stage1()\n");
   proc_init_stage1();
 
+  if (ENABLE_TSAN) {
+    klog("tsan_init_shadow_mem()\n");
+    tsan_init_shadow_mem();
+  }
+
   klog("kmalloc_init()\n");
   kmalloc_init();
 
@@ -258,6 +264,11 @@ void kmain(boot_info_t* boot, const char* cmdline) {
 
   klog("perftrace_init()\n");
   perftrace_init();
+
+  if (ENABLE_TSAN) {
+    klog("tsan_init()\n");
+    tsan_init();
+  }
 
   klog("enabling deferred interrupts\n");
   defint_set_state(true);
@@ -325,6 +336,9 @@ void kmain(boot_info_t* boot, const char* cmdline) {
         m->phys_maps[0].virt_base);
   klogf("meminfo->phys_map_length:     0x%" PRIxADDR "\n",
         m->phys_maps[0].phys.len);
+  klogf("meminfo->heap.base:           0x%" PRIxADDR "\n", m->heap.base);
+  klogf("meminfo->heap.len:            0x%" PRIxADDR "\n", m->heap.len);
+  klogf("meminfo->heap_size_max:       0x%" PRIxADDR "\n", m->heap_size_max);
 
   // TODO(aoates): reparent processes to the init process rather than the kernel
   // process?  Or run init in the kernel process (exec without fork below)?

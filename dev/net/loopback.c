@@ -61,7 +61,8 @@ static void dispatch_link_local(tasklet_t* tl, void* arg) {
     kspin_unlock(&nic->public.lock);
 
     pbuf_t* pb = container_of(link, pbuf_t, link);
-    ethertype_t protocol = *(ethertype_t*)pbuf_getc(pb);
+    ethertype_t protocol;
+    kmemcpy(&protocol, pbuf_getc(pb), sizeof(ethertype_t));
     pbuf_pop_header(pb, sizeof(ethertype_t));
 
     net_link_recv(&nic->public, pb, protocol);
@@ -81,7 +82,7 @@ void loopback_send(nic_t* public, pbuf_t* pb, ethertype_t protocol) {
 
   // Stash the protocol in the space at the top of the packet.
   pbuf_push_header(pb, sizeof(ethertype_t));
-  *(ethertype_t*)pbuf_get(pb) = protocol;
+  kmemcpy(pbuf_get(pb), &protocol, sizeof(ethertype_t));
 
   kspin_lock(&nic->public.lock);
   if (list_empty(&nic->queue)) {

@@ -142,13 +142,13 @@ void interrupt_save_test(void) {
   enable_interrupts();
   KEXPECT_NE(0, get_interrupt_state());
 
-  int saved = save_and_disable_interrupts();
+  int saved = save_and_disable_interrupts(false);
   KEXPECT_EQ(0, get_interrupt_state());
 
-  restore_interrupts(0);
+  restore_interrupts(0, false);
   KEXPECT_EQ(0, get_interrupt_state());
 
-  restore_interrupts(saved);
+  restore_interrupts(saved, false);
   KEXPECT_NE(0, get_interrupt_state());
 
   // Restore original state.

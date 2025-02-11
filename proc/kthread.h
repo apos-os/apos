@@ -28,6 +28,10 @@
 #include "common/types.h"
 #include "dev/timer.h"
 
+#if ENABLE_TSAN
+#include "sanitizers/tsan/tsan_lock.h"
+#endif
+
 typedef struct kthread_data* kthread_t;
 #define KTHREAD_NO_THREAD 0x0
 
@@ -82,6 +86,18 @@ void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg);
 void kthread_disable(kthread_t thread);
 void kthread_enable(kthread_t thread);
 
+typedef enum {
+  // Running in a thread context (user or kernel).
+  KTCTX_THREAD = 1,
+  // Running in a defint context (could be inside an interrupt).
+  KTCTX_DEFINT = 2,
+  // Running in an interrupt context.
+  KTCTX_INTERRUPT = 3,
+} ktctx_type_t;
+
+// Returns the current execution context we're running in.
+ktctx_type_t kthread_execution_context(void);
+
 /******************************* Thread Queues ********************************/
 
 // Thread queues are simple linked lists of threads, which can be pushed on the
@@ -130,10 +146,17 @@ struct kmutex {
   // Mutexes that have been held when this was locked.
   kmutex_prior_t priors[KMUTEX_DEADLOCK_LRU_SIZE];
 #endif
+
+#if ENABLE_TSAN
+  tsan_lock_data_t tsan;
+#endif
 };
 typedef struct kmutex kmutex_t;
 
-// Initialize the given mutex.
+// Initialize the given mutex.  It is also valid to zero-init the mutex (in
+// which case some portions might be lazy-initialized the first time the mutex
+// is locked).  Zero-initialization should only be used for static global
+// mutexes, not dynamically allocated ones.
 void kmutex_init(kmutex_t* m);
 
 // Lock the given mutex, blocking until the lock is acquired.

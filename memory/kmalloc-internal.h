@@ -48,7 +48,9 @@ struct block {
   struct block* next;
   uint8_t _buf[KMALLOC_SAFE_BUFFER];
   uint8_t data[0];
-};
+  // TODO(aoates): update kmalloc to always align block_t so we don't need to
+  // mark it as packed.
+} __attribute__((packed));
 typedef struct block block_t;
 
 // Returns the address (as an addr_t) of the start/end of the block_t,

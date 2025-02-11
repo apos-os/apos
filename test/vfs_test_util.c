@@ -50,7 +50,8 @@ void create_file(const char* path, const char* mode) {
 
 int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
   const int kBufSize = sizeof(kdirent_t) * 3;  // Ensure we have several calls.
-  char buf[kBufSize];
+  kdirent_t kd_buf[kBufSize / sizeof(kdirent_t)];
+  char* buf = (char*)&kd_buf[0];
   int num_dirents = 0;
 
   apos_stat_t stat;
@@ -61,6 +62,7 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
   VFS_PUT_AND_CLEAR(root_vnode);
 
   while (1) {
+    kmemset(kd_buf, 0xab, kBufSize);
     const int len = vfs_getdents(fd, (kdirent_t*)(&buf[0]), kBufSize);
     if (len < 0) {
       KEXPECT_GE(len, -0);

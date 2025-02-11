@@ -103,6 +103,7 @@ long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
          syscall_number, (unsigned long)arg1, (unsigned long)arg2,
          (unsigned long)arg3, (unsigned long)arg4, (unsigned long)arg5,
          (unsigned long)arg6);
+  KASSERT_DBG(kthread_current_thread()->interrupt_level == 0);
 
   const long result = do_syscall_dispatch(syscall_number, arg1, arg2, arg3,
       arg4, arg5, arg6);

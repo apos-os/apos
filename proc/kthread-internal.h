@@ -22,10 +22,15 @@
 #include "arch/proc/kthread-context.h"
 #include "arch/proc/kthread-stack.h"
 #include "common/list.h"
+#include "common/types.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
 #include "user/include/apos/posix_signal.h"
 #include "syscall/context.h"
+
+#if ENABLE_TSAN
+#include "sanitizers/tsan/tsan_thread.h"
+#endif
 
 typedef enum {
   KTHREAD_RUNNING = 0,    // Currently running.
@@ -36,8 +41,6 @@ typedef enum {
 
 struct process;
 typedef struct process process_t;
-
-typedef int kthread_id_t;
 
 struct kthread_data {
   kthread_id_t id;
@@ -94,9 +97,19 @@ struct kthread_data {
   // Link on the per-process thread list.
   list_link_t proc_threads_link;
 
+  // How many levels of interrupt are currently being processed (0 <= n <= 2).
+  // Arch code must maintain this --- incrementing on interrupt start,
+  // decrementing on finish, and setting to zero when user mode is entered.
+  int interrupt_level;
+
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   // List of currently-held mutexes.
   list_t mutexes_held;
+#endif
+
+#if ENABLE_TSAN
+  tsan_thread_data_t tsan;
+  bool legacy_interrupt_sync;
 #endif
 };
 typedef struct kthread_data kthread_data_t;
@@ -120,5 +133,8 @@ void kthread_switch(kthread_t new_thread);
 // scheduler_yield() (to yield and reschedule) and scheduler_wait_on() (to wait
 // on another thread queue).
 void scheduler_yield_no_reschedule(void);
+
+// Helper function to reset current interrupt level to zero.
+void kthread_reset_interrupt_level(void);
 
 #endif

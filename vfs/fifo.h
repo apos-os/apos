@@ -35,6 +35,7 @@ typedef enum {
 
 // State of a FIFO, named or anonymous.
 typedef struct {
+  kmutex_t mu;
   char buf[APOS_FIFO_BUF_SIZE];
   circbuf_t cbuf;
 
@@ -44,7 +45,7 @@ typedef struct {
   int num_readers;
   int num_writers;
 
-  poll_event_t poll_event;
+  pollable_t poll_event;
   bool hup;  // Have we ever had a writer?
 } apos_fifo_t;
 

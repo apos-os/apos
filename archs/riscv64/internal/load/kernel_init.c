@@ -23,10 +23,12 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "dev/devicetree/devicetree.h"
 #include "dev/devicetree/dtb.h"
 #include "main/kernel.h"
 #include "memory/memory.h"
+#include "sanitizers/tsan/tsan_defs.h"
 
 #include "archs/riscv64/internal/page_tables.h"
 
@@ -163,6 +165,15 @@ static void create_initial_meminfo(const dt_tree_t* fdt, memory_info_t* meminfo,
   }
   meminfo->heap.base = RSV64_HEAP_START;
   meminfo->heap.len = RSV64_HEAP_LEN;
+  if (ENABLE_TSAN) {
+    meminfo->heap_size_max =
+        mainmem_len / TSAN_HEAP_FRACTION / (TSAN_SHADOW_MEMORY_MULT + 1);
+    meminfo->heap_size_max = align_up(meminfo->heap_size_max, PAGE_SIZE);
+    meminfo->tsan_region.base = RSV64_TSAN_REGION_START;
+    meminfo->tsan_region.len = RSV64_TSAN_REGION_LEN;
+  } else {
+    meminfo->heap_size_max = meminfo->heap.len;
+  }
 
   // Point kernel_stack_base at the version of the stack in the kernel-mapped
   // space, not the physical map, to match the value of $sp.

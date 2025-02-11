@@ -17,4 +17,18 @@
 
 #define ALWAYS_INLINE __attribute__((always_inline))
 
+// Use NO_TSAN for functions whose accesses should not be annotated/intercepted.
+// The functions themselves will still be instrumented (function entry/exit).
+#define NO_TSAN __attribute__((no_sanitize("thread")))
+
+// Use NO_SANITIZER to prevent _all_ instrumentation by sanitizers, including
+// annotating function entry/exit.  Use this sparingly, only needed for
+// functions that are used by the sanitizers themselves to determine running
+// state.
+#if defined(__clang__) && defined(__has_feature) && __has_feature(thread_sanitizer)
+#define NO_SANITIZER __attribute__((disable_sanitizer_instrumentation))
+#else
+#define NO_SANITIZER
+#endif
+
 #endif

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "arch/memory/page_map.h"
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/list.h"
@@ -126,6 +127,11 @@ int vm_handle_page_fault(addr_t address, vm_fault_type_t type, vm_fault_op_t op,
   if (!area->memobj) {
     KASSERT(area->access == MEM_ACCESS_KERNEL_ONLY);
     KASSERT(mode == VM_FAULT_KERNEL);
+
+    // Always make it writable --- no need to force a double fault on these.
+    // Note that a read of this memory is undefined, but GCC at least generates
+    // extraneous reads before initializing allocated memory.
+    op = VM_FAULT_WRITE;
 
     // TODO(aoates): if no pages are available, force a swap.
     phys_addr = page_frame_alloc();

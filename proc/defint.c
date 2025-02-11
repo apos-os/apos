@@ -14,12 +14,17 @@
 
 #include "proc/defint.h"
 
+#include "common/attributes.h"
 #include "common/kassert.h"
 #include "common/list.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 #include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
+
+#if ENABLE_TSAN
+#include "sanitizers/tsan/tsan_lock.h"
+#endif
 
 #define MAX_QUEUED_DEFINTS 100
 
@@ -32,7 +37,7 @@ static defint_data_t g_defint_queue[MAX_QUEUED_DEFINTS];
 static int g_queue_start = 0;
 static int g_queue_len = 0;
 static bool g_defints_enabled = false;
-static bool g_running_defint = false;
+static defint_running_t g_defint_running = DEFINT_NONE;
 
 void defint_schedule(void (*f)(void*), void* arg) {
   PUSH_AND_DISABLE_INTERRUPTS();
@@ -43,6 +48,10 @@ void defint_schedule(void (*f)(void*), void* arg) {
   defint->f = f;
   defint->arg = arg;
   g_queue_len++;
+#if ENABLE_TSAN
+  // Release all this thread's values to the defint as an explicit sync point.
+  tsan_release(NULL, TSAN_DEFINTS);
+#endif
   POP_INTERRUPTS();
 }
 
@@ -54,12 +63,21 @@ defint_state_t defint_state(void) {
 }
 
 defint_state_t defint_set_state(defint_state_t s) {
+#if ENABLE_TSAN
+  if (s) {
+    tsan_release(NULL, TSAN_DEFINTS);
+  }
+#endif
   PUSH_AND_DISABLE_INTERRUPTS();
   bool old = g_defints_enabled;
   g_defints_enabled = s;
   POP_INTERRUPTS();
   if (s) {
     defint_process_queued(/* force= */ false);
+#if ENABLE_TSAN
+  } else {
+    tsan_acquire(NULL, TSAN_DEFINTS);
+#endif
   }
   return old;
 }
@@ -73,13 +91,15 @@ void defint_process_queued(bool force) {
     POP_INTERRUPTS();
     return;
   }
-  KASSERT_DBG(!g_running_defint);
+  KASSERT_DBG(g_defint_running == DEFINT_NONE);
 
   sched_disable_preemption();
 
   // Prevent any new defints from being processed while we're working.
   g_defints_enabled = false;
-  g_running_defint = true;
+  g_defint_running = (kthread_current_thread()->interrupt_level == 0)
+                         ? DEFINT_THREAD_CTX
+                         : DEFINT_INTERRUPT_CTX;
 
   // TODO(aoates): consider capping the number of defints we run at a given time
   // to minimize impact on the thread we're victimizing.
@@ -94,7 +114,7 @@ void defint_process_queued(bool force) {
     g_queue_start = (g_queue_start + 1) % MAX_QUEUED_DEFINTS;
     g_queue_len--;
   }
-  g_running_defint = false;
+  g_defint_running = DEFINT_NONE;
   g_defints_enabled = true;
 
   // TODO(aoates): if we would have preempted the process during the defint, do
@@ -107,6 +127,7 @@ void _defint_disabled_die(void) {
   die("Leaving code block without reenabling defints");
 }
 
-bool is_running_defint(void) {
-  return g_running_defint;
+NO_SANITIZER
+defint_running_t defint_running_state(void) {
+  return g_defint_running;
 }

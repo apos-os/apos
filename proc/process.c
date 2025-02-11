@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/math.h"
 #include "memory/kmalloc.h"

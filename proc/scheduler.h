@@ -101,4 +101,8 @@ void sched_enable_preemption_for_test(void);
 // Tick the scheduler.  Called from an interrupt context.
 void sched_tick(void);
 
+// Special hook to do a TSAN acquire of the scheduler lock state on thread
+// start.
+void scheduler_tsan_acquire(void);
+
 #endif

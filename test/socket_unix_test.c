@@ -14,18 +14,22 @@
 
 #include "test/kernel_tests.h"
 
+#include "common/hash.h"
 #include "common/kassert.h"
+#include "common/math.h"
 #include "memory/kmalloc.h"
 #include "net/socket/socket.h"
-#include "proc/kthread.h"
 #include "proc/fork.h"
+#include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "proc/umask.h"
 #include "proc/user.h"
 #include "proc/wait.h"
+#include "test/hamlet.h"
 #include "test/ktest.h"
+#include "test/test_params.h"
 #include "test/vfs_test_util.h"
 #include "user/include/apos/errors.h"
 #include "user/include/apos/net/socket/unix.h"
@@ -34,6 +38,12 @@
 #include "vfs/vfs.h"
 #include "vfs/vfs_internal.h"
 #include "vfs/vfs_test_util.h"
+
+// Multithreaded test parameters.
+#define MT_TEST_READERS (3 * CONCURRENCY_TEST_THREADS_MULT)
+#define MT_TEST_WRITERS (3 * CONCURRENCY_TEST_THREADS_MULT)
+#define MT_CONNECT_ROUNDS (1 * CONCURRENCY_TEST_ITERS_MULT)
+#define MT_WRITE_ROUNDS 2
 
 static bool has_sigpipe(void) {
   const ksigset_t sigset = proc_pending_signals(proc_current());
@@ -2104,6 +2114,160 @@ static void sockopt_test(void) {
   KEXPECT_EQ(0, vfs_close(sock));
 }
 
+typedef struct {
+  int server_fd;
+  struct sockaddr_un server_addr;
+} mt_test_args_t;
+
+// Each server thread waits for a connection then echoes back what it gets.
+static void* mt_server(void* arg) {
+  sched_enable_preemption_for_test();
+  mt_test_args_t* args = (mt_test_args_t*)arg;
+  while (true) {
+    int sock = net_accept(args->server_fd, NULL, NULL);
+    if (sock < 0) {
+      KEXPECT_EQ(-EINTR, sock);
+      sched_disable_preemption();
+      return NULL;
+    }
+
+    char buf[300];
+    while (true) {
+      int bytes = vfs_read(sock, buf, 300);
+      KEXPECT_GE(bytes, 0);
+      if (bytes == 0) {
+        KEXPECT_EQ(0, vfs_close(sock));
+        break;
+      }
+      int result = vfs_write(sock, buf, min(bytes, 100));
+      KEXPECT_GE(result, 0);
+      if (result < bytes) {
+        int result2 = vfs_write(sock, buf + result, bytes - result);
+        KEXPECT_GE(result2, 0);
+        KEXPECT_EQ(bytes, result + result2);
+      }
+    }
+  }
+}
+
+typedef struct {
+  int sock;
+  int bytes_read;
+  uint32_t hash;
+} mt_client_reader_args;
+
+// A helper thread for the client that reads and calculates a hash.
+static void* mt_client_reader(void* arg) {
+  mt_client_reader_args* args = (mt_client_reader_args*)arg;
+
+  const int kChunkSize = 999;
+  char buf[kChunkSize];
+  args->hash = fnv_hash_array_start();
+  args->bytes_read = 0;
+  while (true) {
+    int bytes = vfs_read(args->sock, buf, kChunkSize);
+    KEXPECT_GE(bytes, 0);
+    if (bytes <= 0) {
+      break;
+    }
+    args->hash = fnv_hash_array_continue(args->hash, buf, bytes);
+    args->bytes_read += bytes;
+  }
+  sched_disable_preemption();
+  return NULL;
+}
+
+// Each client thread repeatedly connects and sends data.
+static void* mt_client(void* arg) {
+  sched_enable_preemption_for_test();
+  mt_test_args_t* args = (mt_test_args_t*)arg;
+  const char* const data = kHamlet;
+  const size_t data_len = kHamletSize;
+
+  for (int i = 0; i < MT_CONNECT_ROUNDS; ++i) {
+    int sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+    KEXPECT_GE(sock, 0);
+    if (sock < 0) break;
+
+    int result = net_connect(sock, (const struct sockaddr*)&args->server_addr,
+                             sizeof(args->server_addr));
+    KEXPECT_EQ(result, 0);
+    if (result != 0) {
+      KEXPECT_EQ(0, vfs_close(sock));
+      continue;
+    }
+
+    kthread_t reader;
+    mt_client_reader_args reader_args;
+    reader_args.sock = sock;
+    KEXPECT_EQ(0, proc_thread_create(&reader, mt_client_reader, &reader_args));
+
+    uint32_t hash = fnv_hash_array_start();
+    for (int j = 0; j < MT_WRITE_ROUNDS; ++j) {
+      const char* buf = data;
+      int bytes = data_len;
+      int chunk_size = 123;
+      while (bytes > 0) {
+        int result = vfs_write(sock, buf, min(bytes, chunk_size));
+        KEXPECT_GT(result, 0);
+        if (result <= 0) {
+          KEXPECT_EQ(0, vfs_close(sock));
+          goto end;
+        }
+        hash = fnv_hash_array_continue(hash, buf, result);
+        chunk_size = chunk_size * 2;
+        if (chunk_size > 2000) chunk_size = 123;
+        bytes -= result;
+        buf += result;
+      }
+    }
+
+    // Should trigger a FIN, then the server will also close it, and then the
+    // reader will terminate.
+    KEXPECT_EQ(0, net_shutdown(sock, SHUT_WR));
+    KEXPECT_EQ(NULL, kthread_join(reader));
+    KEXPECT_EQ(MT_WRITE_ROUNDS * data_len, reader_args.bytes_read);
+    KEXPECT_EQ(hash, reader_args.hash);
+    KEXPECT_EQ(0, vfs_close(sock));
+  }
+
+end:
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void sock_unix_multi_thread_test(void) {
+  KTEST_BEGIN("AF_UNIX: multi-threaded test");
+
+  // First set up the server socket.
+  mt_test_args_t args;
+  args.server_addr.sun_family = AF_UNIX;
+  kstrcpy(args.server_addr.sun_path, kServerPath);
+  args.server_fd = create_listening_socket(kServerPath, 10);
+  if (!KEXPECT_GE(args.server_fd, 0)) {
+    return;
+  }
+
+  // New create all our threads.
+  kthread_t server_threads[MT_TEST_READERS];
+  kthread_t client_threads[MT_TEST_WRITERS];
+  for (int i = 0; i < MT_TEST_READERS; ++i) {
+    KEXPECT_EQ(0, proc_thread_create(&server_threads[i], &mt_server, &args));
+  }
+  for (int i = 0; i < MT_TEST_WRITERS; ++i) {
+    KEXPECT_EQ(0, proc_thread_create(&client_threads[i], &mt_client, &args));
+  }
+  for (int i = 0; i < MT_TEST_WRITERS; ++i) {
+    KEXPECT_EQ(NULL, kthread_join(client_threads[i]));
+  }
+  for (int i = 0; i < MT_TEST_READERS; ++i) {
+    KEXPECT_EQ(0, proc_kill_thread(server_threads[i], SIGUSR1));
+    KEXPECT_EQ(NULL, kthread_join(server_threads[i]));
+  }
+  KEXPECT_EQ(0, vfs_close(args.server_fd));
+  KEXPECT_EQ(0, vfs_unlink(kServerPath));
+}
+
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
   block_cache_clear_unpinned();
@@ -2129,6 +2293,7 @@ void socket_unix_test(void) {
   sock_unix_close_during_poll_test();
   sockname_test();
   sockopt_test();
+  sock_unix_multi_thread_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

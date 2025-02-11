@@ -25,8 +25,10 @@
 #include "internal/plic.h"
 #include "memory/vm_page_fault.h"
 #include "proc/defint.h"
+#include "proc/kthread-internal.h"
 #include "proc/signal/signal.h"
 #include "proc/user_prepare.h"
+#include "sanitizers/tsan/tsan_lock.h"
 #include "syscall/syscall_dispatch.h"
 
 // Interrupt and trap definitions (per values in scause).
@@ -107,8 +109,21 @@ static user_context_t copy_ctx(void* ctx_ptr) {
   return *(const user_context_t*)ctx_ptr;
 }
 
-void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
-                 uint64_t is_kernel) {
+// NO_TSAN: because this function manipulates interrupt_level, which is itself
+// used by TSAN to determine current execution state.
+void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
+                         uint64_t is_kernel) {
+  kthread_t thread = kthread_current_thread();
+  if (thread) {
+    thread->interrupt_level++;
+    KASSERT_DBG(thread->interrupt_level == 1 || thread->interrupt_level == 2);
+#if ENABLE_TSAN
+    // "Release" the interrupt lock --- everything past this should be
+    // considered a new epoch for the interrupt thread.
+    tsan_release(NULL, TSAN_INTERRUPTS);
+#endif
+  }
+
   klogfm(KL_GENERAL, DEBUG3,
          "interrupt: scause: 0x%lx  stval: 0x%lx  sepc: 0x%lx  is_kernel: %d\n",
          scause, stval, ctx->address, (int)is_kernel);
@@ -159,12 +174,15 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
         break;
 
       case RSV_TRAP_ENVCALL_USR:
+        KASSERT_DBG(thread->interrupt_level == 1);
+        thread->interrupt_level = 0;
         enable_interrupts();
         ctx->a0 = syscall_dispatch(ctx->a0, ctx->a1, ctx->a2, ctx->a3, ctx->a4,
                                    ctx->a5, ctx->a6);
         ctx->address += RSV_ECALL_INSTR_LEN;
         syscall_ctx = &kthread_current_thread()->syscall_ctx;
         disable_interrupts();
+        thread->interrupt_level = 1;
         break;
 
       case RSV_TRAP_BREAKPOINT:
@@ -178,9 +196,80 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
 
   defint_process_queued(/* force */ true);
 
+  if (thread) {
+    thread->interrupt_level--;
+  }
+
   if (!is_kernel) {
     proc_prep_user_return(&copy_ctx, ctx, syscall_ctx);
   }
 
   // Note: we may never get here, if there were signals to dispatch.
 }
+
+#if ENABLE_TSAN
+
+// For legacy code that uses PUSH_AND_DISABLE_INTERRUPTS() and friends, we need
+// to model each of those calls as a synchronization between threads.  This is
+// the virtual global "lock" we use to model that.
+static tsan_lock_data_t g_interrupt_lock = TSAN_LOCK_DATA_INIT;
+
+bool interrupt_set_legacy_full_sync(bool full_sync) {
+  kthread_t t = kthread_current_thread();
+  bool old = t->legacy_interrupt_sync;
+  t->legacy_interrupt_sync = full_sync;
+  return old;
+}
+
+void interrupt_do_legacy_full_sync(bool is_acquire) {
+  kthread_t t = kthread_current_thread();
+  if (!t) return;
+
+  if (is_acquire) {
+    tsan_acquire(NULL, TSAN_INTERRUPTS);
+    if (t->legacy_interrupt_sync) {
+      tsan_acquire(&g_interrupt_lock, TSAN_LOCK);
+    }
+  } else {
+    tsan_release(NULL, TSAN_INTERRUPTS);
+    if (t->legacy_interrupt_sync) {
+      tsan_release(&g_interrupt_lock, TSAN_LOCK);
+    }
+  }
+}
+
+void enable_interrupts(void) {
+  tsan_release(NULL, TSAN_INTERRUPTS);
+  enable_interrupts_raw();
+}
+
+void disable_interrupts(void) {
+  disable_interrupts_raw();
+  tsan_acquire(NULL, TSAN_INTERRUPTS);
+}
+
+interrupt_state_t save_and_disable_interrupts(bool full_sync) {
+  interrupt_state_t ret = save_and_disable_interrupts_raw();
+  tsan_acquire(NULL, TSAN_INTERRUPTS);
+  kthread_t t = kthread_current_thread();
+  if (full_sync && t && t->legacy_interrupt_sync) {
+    tsan_acquire(&g_interrupt_lock, TSAN_LOCK);
+  }
+  return ret;
+}
+
+void restore_interrupts(interrupt_state_t saved, bool full_sync) {
+  // Be conservative --- only publish values to interrupts if we're actually
+  // enabling interrupts here.  This is not required for correctness, but
+  // correct could should not be sensitive to this.
+  if (saved) {
+    tsan_release(NULL, TSAN_INTERRUPTS);
+    kthread_t t = kthread_current_thread();
+    if (full_sync && t && t->legacy_interrupt_sync) {
+      tsan_release(&g_interrupt_lock, TSAN_LOCK);
+    }
+  }
+  restore_interrupts_raw(saved);
+}
+
+#endif  // ENABLE_TSAN

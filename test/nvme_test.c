@@ -34,6 +34,11 @@ void nvme_test(void) {
     if (bds[count]) ++count;
   }
 
+  if (count == 0) {
+    KTEST_SUITE_BEGIN("NVMe (no drives");
+    KTEST_ADD_FAILURE("Cannot run NVMe tests, no NVMe drives connected\n");
+  }
+
   for (int i = 0; i < count; ++i) {
     char buf[256];
     ksprintf(buf, "NVMe (drive %d)", i);

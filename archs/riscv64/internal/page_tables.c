@@ -204,6 +204,12 @@ void rsv_set_pte_addr(rsv_sv39_pte_t* pte, phys_addr_t phys,
   *pte |= offset_ppn;
 }
 
+phys_addr_t rsv_get_pte_addr(const rsv_sv39_pte_t* pte) {
+  KASSERT(*pte & RSV_PTE_VALID);
+  return ((*pte & RSV_SV39_PTE_PPN_MASK) >> RSV_SV39_PTE_PPN_OFFSET) *
+         PAGE_SIZE;
+}
+
 void rsv_sfence(void) {
   asm volatile ("sfence.vma");
 }

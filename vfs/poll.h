@@ -45,36 +45,24 @@ typedef struct {
   list_t refs;
 } poll_state_t;
 
-// An event that can be polled.  Generally corresponds (and is embedded in) a
+// An object that can be polled.  Generally corresponds (and is embedded in) a
 // file, FIFO, etc.
 typedef struct {
   list_t refs;
-} poll_event_t;
+} pollable_t;
 
-// A hook between a poll_state_t and a poll_event_t that it is waiting on.
-typedef struct {
-  short event_mask;
-  poll_state_t* poll;
-  poll_event_t* event;
-  list_link_t poll_link;
-  list_link_t event_link;
-} poll_ref_t;
-
-void poll_init_event(poll_event_t* event);
+void poll_init_event(pollable_t* event);
 
 // Add the given event to the poll (presumably to be triggered later).
-int poll_add_event(poll_state_t* poll, poll_event_t* event, short event_mask);
+int poll_add_event(poll_state_t* poll, pollable_t* event, short event_mask);
 
 // Trigger the given event, triggering each poll that is waiting on it whose
 // event mask contains the event(s) in question.  Passing KPOLLNVAL indicates
 // that the resource owning the poll_event_t is going away, and the event must
 // not be referenced again.
 //
-// May be called from interrupts.
-void poll_trigger_event(poll_event_t* event, short events);
-
-// Cancel all the poll_ref_t's that are outstanding on the given poll.
-void poll_cancel(poll_state_t* poll);
+// May be called from defints/tasklets, but not interrupts.
+void poll_trigger_event(pollable_t* event, short events);
 
 // Perform a poll, as per the poll() syscall.
 int vfs_poll(struct apos_pollfd fds[], apos_nfds_t nfds, int timeout);

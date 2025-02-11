@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "common/alignment.h"
 #include "common/config.h"
 #include "common/endian.h"
 #include "common/errno.h"
@@ -275,7 +276,7 @@ static uint64_t print_consume32(const char** buf) {
 }
 
 static uint64_t print_consume64(const char** buf) {
-  uint64_t val = btoh64(*(const uint64_t*)*buf);
+  uint64_t val = btoh64(read_unaligned_u64(*buf));
   *buf += sizeof(uint64_t);
   return val;
 }

@@ -40,21 +40,50 @@ static inline void _interrupts_cleanup_verify(interrupt_state_t* saved) {
 #define PUSH_AND_DISABLE_INTERRUPTS() \
     interrupt_state_t _SAVED_INTERRUPTS \
       __attribute__((cleanup(_interrupts_cleanup_verify))) = \
-      save_and_disable_interrupts()
+      save_and_disable_interrupts(true)
+
+#define PUSH_AND_DISABLE_INTERRUPTS_NO_SYNC() \
+    interrupt_state_t _SAVED_INTERRUPTS_NO_SYNC \
+      __attribute__((cleanup(_interrupts_cleanup_verify))) = \
+      save_and_disable_interrupts(false)
+
+#define PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN() \
+    interrupt_state_t _SAVED_INTERRUPTS_NO_TSAN \
+      __attribute__((cleanup(_interrupts_cleanup_verify))) = \
+      save_and_disable_interrupts_raw()
 
 #else  // ENABLE_KERNEL_SAFETY_NETS
 
 #define PUSH_AND_DISABLE_INTERRUPTS() \
-    interrupt_state_t _SAVED_INTERRUPTS = save_and_disable_interrupts()
+    interrupt_state_t _SAVED_INTERRUPTS = save_and_disable_interrupts(true)
 
 #endif  // ENABLE_KERNEL_SAFETY_NETS
 
 #define POP_INTERRUPTS() \
-    restore_interrupts(_SAVED_INTERRUPTS);
+    restore_interrupts(_SAVED_INTERRUPTS, true);
+
+#define POP_INTERRUPTS_NO_SYNC() \
+    restore_interrupts(_SAVED_INTERRUPTS_NO_SYNC, false);
+
+#define POP_INTERRUPTS_NO_TSAN() \
+    restore_interrupts_raw(_SAVED_INTERRUPTS_NO_TSAN);
 
 // Returns true if interrupts are currently enabled.
 static inline bool interrupts_enabled(void) {
   return get_interrupts_state() != 0;
 }
+
+// Enables/disables (for the current thread) full synchronization for legacy
+// interrupt disabling. If disabled, code that uses
+// PUSH_AND_DISABLE_INTERRUPTS() won't synchronize with other threads, only with
+// interrupt handlers.
+//
+// Returns the old value of the flag.
+bool interrupt_set_legacy_full_sync(bool full_sync);
+
+// Does a legacy full-sync operation (if enabled).  If is_acquire is true, then
+// does an acquire (as if PUSH_AND_DISABLE_INTERRUPTS() were called); otherwise
+// does a release (as if POP_INTERRUPTS() were called).
+void interrupt_do_legacy_full_sync(bool is_acquire);
 
 #endif

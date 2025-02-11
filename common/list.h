@@ -57,7 +57,8 @@
 #define FOR_EACH_LIST(iter_name, list_expr)                           \
   for (list_link_t* iter_name = (list_expr)->head; iter_name != NULL; \
        iter_name = iter_name->next)
-#define LIST_ENTRY container_of
+#define LIST_ENTRY(iter_name, parent_type, link_field_name) \
+    container_of(iter_name, parent_type, link_field_name)
 
 // A link in the list.  Embed this in your value struct.
 typedef struct list_link {

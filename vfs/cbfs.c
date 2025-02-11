@@ -14,6 +14,8 @@
 
 #include "vfs/cbfs.h"
 
+#include <stdalign.h>
+
 #include "common/errno.h"
 #include "common/hashtable.h"
 #include "common/kassert.h"
@@ -36,7 +38,7 @@ struct cbfs_inode {
   // If type == VNODE_DIRECTORY.
   list_t entries;
   cbfs_getdents_t getdents_cb;
-  char static_entries[sizeof(cbfs_entry_t) * 2 + 5];
+  char static_entries[sizeof(cbfs_entry_t) * 2 + 16];
 
   // If type == VNODE_SYMLINK.
   cbfs_readlink_t readlink_cb;
@@ -216,6 +218,7 @@ static void create_directory_entries(int parent_num, cbfs_inode_t* dir) {
   const int inos[] = {dir->num, parent_num};
   size_t offset = 0;
   for (int i = 0; i < 2; ++i) {
+    offset = align_up(offset, sizeof(addr_t));
     KASSERT_DBG(offset + cbfs_entry_size(kNames[i]) <=
                 sizeof(dir->static_entries));
     cbfs_entry_t* entry =
@@ -683,7 +686,8 @@ static int getdents_from_list(const list_t* list, const int entries_to_skip,
     if (!n) break;
     cbfs_entry_t* entry = container_of(n, cbfs_entry_t, link);
 
-    const int dirent_len = sizeof(kdirent_t) + kstrlen(entry->name) + 1;
+    const int dirent_len = align_up(
+        sizeof(kdirent_t) + kstrlen(entry->name) + 1, alignof(kdirent_t));
     if (bytes_written + dirent_len > outbufsize) break;
 
     kdirent_t* d = (kdirent_t*)(((const char*)outbuf) + bytes_written);
@@ -711,9 +715,10 @@ static int cbfs_getdents(vnode_t* vnode, const int offset, void* outbuf,
 
   int bytes_written = 0;
   int entries_seen = 0;
-  result =
-      getdents_from_list(&inode->entries, offset, offset,
-                         outbuf, outbufsize, bytes_written, &entries_seen);
+  result = getdents_from_list(&inode->entries,
+                              offset,  // Skip |offset| entries
+                              0,       // Don't double-count the offset.
+                              outbuf, outbufsize, bytes_written, &entries_seen);
   if (result < 0) return result;
   bytes_written = result;
 
@@ -728,9 +733,11 @@ static int cbfs_getdents(vnode_t* vnode, const int offset, void* outbuf,
     if (result < 0) return result;
     entries_seen += num_dynamic_to_skip;
 
-    result = getdents_from_list(
-        &list, 0 /* entries to skip already accounted for by the getdents_cb */,
-        entries_seen, outbuf, outbufsize, bytes_written, &entries_seen);
+    result =
+        getdents_from_list(&list,
+                           0,  // Don't skip entries (getdents_cb already did)
+                           entries_seen,  // ...but set the offset correctly.
+                           outbuf, outbufsize, bytes_written, &entries_seen);
     if (result < 0) return result;
     bytes_written = result;
   }

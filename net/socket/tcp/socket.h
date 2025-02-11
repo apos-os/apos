@@ -112,7 +112,7 @@ typedef struct socket_tcp {
   // but that's it.
   list_t ooo_recv_queue;
 
-  poll_event_t poll_event;
+  pollable_t poll_event;
 
   kthread_queue_t q;
 

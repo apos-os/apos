@@ -55,6 +55,7 @@ srcs = [
   'poll_test.c',
   'proc_group_test.c',
   'proc_thread_test.c',
+  'proc_util.c',
   'ramdisk_test.c',
   'ramfs_test.c',
   'run_user_tests.c',
@@ -89,9 +90,15 @@ subdirs = ['dtb_testdata']
 if FindFile(os.path.join(env['ARCH'], 'SConscript'), '.') is not None:
   subdirs.append(env['ARCH'])
 
+if env['TSAN']:
+  subdirs.append('tsan')
+
 extra_cflags = []
 # TODO(aoates): get frame sizes small enough to reduce this.
-extra_cflags.append('-Wframe-larger-than=5000')
+if env['TSAN']:
+  extra_cflags.append('-Wframe-larger-than=10000')
+else:
+  extra_cflags.append('-Wframe-larger-than=5000')
 if env['CLANG']:
   extra_cflags.append('-Wno-self-assign')
 

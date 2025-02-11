@@ -14,9 +14,15 @@
 
 #include "proc/spinlock.h"
 
-#include "dev/interrupts.h"
+#include "common/attributes.h"
 #include "common/kassert.h"
+#include "dev/interrupts.h"
+#include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
+
+#if ENABLE_TSAN
+#include "sanitizers/tsan/tsan_lock.h"
+#endif
 
 const kspinlock_t KSPINLOCK_NORMAL_INIT = KSPINLOCK_NORMAL_INIT_STATIC;
 const kspinlock_intsafe_t KSPINLOCK_INTERRUPT_SAFE_INIT =
@@ -26,15 +32,27 @@ static void kspin_lock_internal(kspinlock_impl_t* l) {
   KASSERT(l->holder == -1);
   kthread_t me = kthread_current_thread();
   l->holder = me->id;
+  PUSH_AND_DISABLE_INTERRUPTS_NO_SYNC();
   me->spinlocks_held++;
+  POP_INTERRUPTS_NO_SYNC();
+
+#if ENABLE_TSAN
+  tsan_acquire(&l->tsan, TSAN_LOCK);
+#endif
 }
 
 static void kspin_unlock_internal(kspinlock_impl_t* l) {
   kthread_t me = kthread_current_thread();
   KASSERT(l->holder == me->id);
-  KASSERT(me->spinlocks_held > 0);
   l->holder = -1;
+  PUSH_AND_DISABLE_INTERRUPTS_NO_SYNC();
+  KASSERT(me->spinlocks_held > 0);
   me->spinlocks_held--;
+  POP_INTERRUPTS_NO_SYNC();
+
+#if ENABLE_TSAN
+  tsan_release(&l->tsan, TSAN_LOCK);
+#endif
 }
 
 void kspin_lock(kspinlock_t* l) {
@@ -52,7 +70,7 @@ void kspin_lock_int(kspinlock_intsafe_t* l) {
   // Disabling interrupts disables preemption and defints implicitly.  Later
   // code _could_ change the defint state on its own (which would be
   // ill-advised), but it won't matter since interrupts are disabled.
-  interrupt_state_t int_state = save_and_disable_interrupts();
+  interrupt_state_t int_state = save_and_disable_interrupts(false);
   l->int_state = int_state;
   kspin_lock_internal(&l->_lock);
 }
@@ -69,7 +87,7 @@ void kspin_unlock_int(kspinlock_intsafe_t* l) {
   interrupt_state_t int_state = l->int_state;
   kspin_unlock_internal(&l->_lock);
   KASSERT_DBG(interrupts_enabled() == false);
-  restore_interrupts(int_state);
+  restore_interrupts(int_state, false);
 }
 
 bool kspin_is_held(const kspinlock_t* l) {

@@ -21,11 +21,13 @@
 #include "memory/kmalloc.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
+#include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "proc/wait.h"
 #include "test/ktest.h"
+#include "test/proc_util.h"
 
 static void basic_test(block_dev_t* bd) {
   KTEST_BEGIN("block device test");
@@ -144,6 +146,8 @@ static void do_op(void* arg) {
     }
   }
   if (!success) {
+    // TODO(aoates): update all block devices to support this, then make this a
+    // test failure.
     klogfm(KL_TEST, WARNING,
            "block device interrupt test was unable to get EINTR or ETIMEDOUT "
            "after %d iterations\n",
@@ -160,6 +164,18 @@ static void interrupt_op_test(block_dev_t* bd) {
   ksleep(10);
   proc_kill(child, SIGKILL);
   KEXPECT_EQ(child, proc_wait(NULL));
+
+
+  KTEST_BEGIN("block device interrupted read test (multi-thread)");
+  child = proc_fork(&do_op, bd);
+  KEXPECT_GE(child, 0);
+  kpid_t child2 = proc_fork(&do_op, bd);
+  KEXPECT_GE(child2, 0);
+  ksleep(10);
+  proc_kill(child, SIGKILL);
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+  proc_kill(child2, SIGKILL);
+  KEXPECT_EQ(child2, proc_waitpid(child2, NULL, 0));
 }
 
 void bd_standard_test(block_dev_t* bd) {
@@ -216,6 +232,29 @@ void* bd_thread_test_func(void* arg) {
            block, t->dev_num, t->id, t->bd->sector_size, result);
       return (void*)1;
     }
+
+    // Occasionally issue a read as well.
+    kmemset(buf, 0xff, t->bd->sector_size);
+    if (i % 3 == 0) {
+      result = t->bd->read(t->bd, block, buf, t->bd->sector_size, 0);
+      if (result != t->bd->sector_size) {
+        KLOG(
+            "failed: block %d on dev %d in thread %d didn't match: "
+            "read failed (expected %d, got %d)\n",
+            block, t->dev_num, t->id, t->bd->sector_size, result);
+        return (void*)1;
+      }
+
+      for (uint32_t j = 0; j < t->bd->sector_size / sizeof(uint32_t); ++j) {
+        if (buf[j] != val) {
+          KTEST_ADD_FAILUREF(
+              "thread %d block %d index %d was 0x%x, expected 0x%x\n", t->id,
+              block, j, buf[j], val);
+          break;
+        }
+      }
+    }
+
     scheduler_yield();
   }
 

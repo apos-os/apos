@@ -18,11 +18,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-// Clang will generate calls to memset(), so we must define it.
-#if defined(__clang__) && __clang__
-#  define kmemset memset
-#endif
-
 int kstrlen(const char* s);
 // Returns the length of the string, or -1 if it would be greater than the given
 // maximum (NULL included).  Use to check the length of strings of a known-max

@@ -199,7 +199,7 @@ bool kexpect_int(const char* name, const char* file, const char* line,
                  line);
 }
 
-void ktest_add_failure(const char* msg, const char* file, const char* line) {
+void ktest_add_failure(const char* file, const char* line, const char* msg) {
   do_failure();
   klogm(KL_TEST, INFO, FAILED " Failure at ");
   klogm(KL_TEST, INFO, file);
@@ -208,6 +208,19 @@ void ktest_add_failure(const char* msg, const char* file, const char* line) {
   klogm(KL_TEST, INFO, ": ");
   klogm(KL_TEST, INFO, msg);
   klogm(KL_TEST, INFO, "\n");
+}
+
+void ktest_add_failuref(const char* file, const char* line, const char* fmt,
+                        ...) {
+  char buf[200];
+  va_list args;
+  va_start(args, fmt);
+  int r = kvsnprintf(buf, 200, fmt, args);
+  va_end(args);
+  if (r == 200) {
+    klog("warning: buffer too small in ktest_add_failuref()\n");
+  }
+  ktest_add_failure(buf, file, line);
 }
 
 static void cpy_or_trunc(char* dst, const char* start, size_t strlen,

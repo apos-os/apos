@@ -14,6 +14,7 @@
 
 #include "vfs/ext2/ext2_ops.h"
 
+#include "common/alignment.h"
 #include "common/endian.h"
 #include "common/errno.h"
 #include "common/kassert.h"
@@ -1783,13 +1784,15 @@ static int ext2_getdents_iter_func(void* arg,
   }
 
   const int dirent_out_size =
-      sizeof(kdirent_t) + little_endian_dirent->name_len + 1;
+      align_up(sizeof(kdirent_t) + little_endian_dirent->name_len + 1,
+               alignof(kdirent_t));
   if (dirent_out_size > getdents_args->bufsize) {
     // Out of room, we're done.
     return 1;
   }
 
   kdirent_t* dirent_out = (kdirent_t*)getdents_args->buf;
+  ASSERT_ALIGNED(dirent_out, kdirent_t);
   dirent_out->d_ino = ltoh32(little_endian_dirent->inode);
   dirent_out->d_offset = -1;  // We'll update this in the next iteration.
   dirent_out->d_reclen = dirent_out_size;

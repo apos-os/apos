@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stdalign.h>
 #include <stdarg.h>
 #include <stdint.h>
 
@@ -20,6 +21,7 @@
 #include "common/hash.h"
 #include "common/kassert.h"
 #include "common/kprintf.h"
+#include "common/math.h"
 #include "dev/dev.h"
 #include "dev/ramdisk/ramdisk.h"
 #include "memory/kmalloc.h"
@@ -1419,9 +1421,11 @@ static void getdents_test(void) {
 
   KTEST_BEGIN("vfs_getdents(): multiple calls");
   fd = vfs_open("/getdents", VFS_O_RDONLY);
-  kdirent_t* buf = (kdirent_t*)kmalloc(1000);
+  kdirent_t* buf = (kdirent_t*)kmalloc_aligned(1000, alignof(kdirent_t));
   kmemset(buf, 0xaa, 1000);
-  size_t expected_size = sizeof(kdirent_t) * 7 + 17;
+  size_t expected_size =
+      align_up(sizeof(kdirent_t) + 2, alignof(kdirent_t)) * 4 +  // ., a, b, c
+      align_up(sizeof(kdirent_t) + 3, alignof(kdirent_t)) * 3;   // .., f1, f2
   KEXPECT_EQ(expected_size, vfs_getdents(fd, buf, 1000));
   kmemset(buf, 0xaa, 1000);
   KEXPECT_EQ(0, vfs_getdents(fd, buf, 1000));
@@ -1433,16 +1437,24 @@ static void getdents_test(void) {
 
   kmemset(buf, 0xaa, 1000);
 #if ARCH_IS_64_BIT
-  KEXPECT_EQ(26, vfs_getdents(fd, buf, 50));
-  KEXPECT_EQ(79, vfs_getdents(fd, buf, 100));
-  KEXPECT_EQ(80, vfs_getdents(fd, buf, 100));
+  KEXPECT_EQ(32, vfs_getdents(fd, buf, 50));
+  KEXPECT_EQ(96, vfs_getdents(fd, buf, 100));
+  KEXPECT_EQ(64, vfs_getdents(fd, buf, 95));
+  KEXPECT_EQ(32, vfs_getdents(fd, buf, 95));
   KEXPECT_EQ(0, vfs_getdents(fd, buf, 100));
 #else
-  KEXPECT_EQ(43, vfs_getdents(fd, buf, 50));
-  KEXPECT_EQ(58, vfs_getdents(fd, buf, 100));
+  KEXPECT_EQ(48, vfs_getdents(fd, buf, 50));
+  KEXPECT_EQ(64, vfs_getdents(fd, buf, 100));
   KEXPECT_EQ(0, vfs_getdents(fd, buf, 100));
 #endif
   kfree(buf);
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_getdents(): unaligned buffer");
+  fd = vfs_open(".", VFS_O_RDONLY);
+  char* unaligned_buf = kmalloc(100);
+  KEXPECT_EQ(-EINVAL, vfs_getdents(fd, (kdirent_t*)(unaligned_buf + 1), 50));
+  kfree(unaligned_buf);
   vfs_close(fd);
 
   // TODO(aoates): test:
@@ -3747,8 +3759,9 @@ static void pipe_test(void) {
 
 
   KTEST_BEGIN("vfs_pipe(): vfs_getdents() on pipe fd");
-  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[0], (kdirent_t*)buf, 10));
-  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[1], (kdirent_t*)buf, 10));
+  kdirent_t kdbuf;
+  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[0], &kdbuf, 10));
+  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[1], &kdbuf, 10));
 
 
   KTEST_BEGIN("vfs_pipe(): vfs_isatty() on pipe fd");

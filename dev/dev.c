@@ -193,14 +193,15 @@ static void remove_fs_device(int major, int minor) {
 }
 
 void dev_init_fs(void) {
-  const int kBufSize = 512;
+  const int kBufSize = sizeof(kdirent_t) * 5;
   vfs_mkdir("/dev", 0);
 
   const int dev_fd = vfs_open("/dev", VFS_O_RDONLY);
   KASSERT(dev_fd >= 0);
 
   // Removing existing entries.
-  char buf[kBufSize];
+  kdirent_t kd_buf[kBufSize / sizeof(kdirent_t)];
+  char* buf = (char*)&kd_buf[0];
   char* full_path = kmalloc(VFS_MAX_PATH_LENGTH);
   while (1) {
     const int len = vfs_getdents(dev_fd, (kdirent_t*)(&buf[0]), kBufSize);

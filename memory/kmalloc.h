@@ -19,7 +19,6 @@
 
 #include "memory/allocator.h"
 
-// TODO(aoates): document these
 void kmalloc_init(void);
 void kfree(void* x);
 void* kmalloc(size_t n);

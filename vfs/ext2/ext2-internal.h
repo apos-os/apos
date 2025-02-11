@@ -217,7 +217,7 @@ typedef struct {
   uint8_t name_len;
   uint8_t file_type;
   char name[];
-} ext2_dirent_t;
+} __attribute__((packed)) ext2_dirent_t;
 void ext2_dirent_log(klog_level_t level, ext2_dirent_t* d);
 void ext2_dirent_ltoh(ext2_dirent_t* d);
 

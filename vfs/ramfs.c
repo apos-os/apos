@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stdalign.h>
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "common/alignment.h"
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
@@ -155,6 +157,7 @@ static kdirent_t* find_dirent(vnode_t* parent, const char* name,
   int offset = 0;
   while (offset < parent->len) {
     kdirent_t* d = (kdirent_t*)(inode->data + offset);
+    ASSERT_ALIGNED(d, kdirent_t);
     KASSERT((int)d->d_ino >= 0 || d->d_ino == INVALID_INO);
 
     if (kstrcmp(d->d_name, name) == 0) {
@@ -206,7 +209,8 @@ static int ramfs_link_internal(vnode_t* parent, int inode, const char* name) {
   } else {
     // This is sorta inefficient....there's really no need to create it on the
     // heap then copy it over, but whatever.
-    const int dlen = sizeof(kdirent_t) + kstrlen(name) + 1;
+    const int dlen =
+        align_up(sizeof(kdirent_t) + kstrlen(name) + 1, alignof(kdirent_t));
     kdirent_t* dirent = (kdirent_t*)kmalloc(dlen);
     dirent->d_ino = inode;
     dirent->d_reclen = dlen;
@@ -648,6 +652,7 @@ int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   int bytes_read = 0;  // Our current index into buf.
   while (offset < vnode->len) {
     kdirent_t* d = (kdirent_t*)(node->data + offset);
+    ASSERT_ALIGNED(d, kdirent_t);
     if (d->d_ino != INVALID_INO &&
         bytes_read + d->d_reclen >= (size_t)bufsize) {
       // If the buffer is too small to fit even one entry, return -EINVAL.

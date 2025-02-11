@@ -15,10 +15,12 @@
 #include "common/kassert.h"
 #include "dev/net/nic.h"
 #include "dev/net/tuntap.h"
+#include "memory/kmalloc.h"
 #include "net/addr.h"
 #include "net/eth/arp/arp.h"
 #include "net/eth/arp/arp_packet.h"
 #include "net/eth/eth.h"
+#include "net/ip/checksum.h"
 #include "net/ip/route.h"
 #include "net/mac.h"
 #include "net/neighbor_cache.h"
@@ -691,6 +693,50 @@ static void addr_cmp_tests(void) {
   KEXPECT_TRUE(sockaddr_equal((struct sockaddr*)&a, (struct sockaddr*)&b));
 }
 
+static void ip_checksum_test(void) {
+  KTEST_BEGIN("ip_checksum(): basic test");
+  const uint16_t kData[] = {0xcf58, 0xec1e, 0x038d, 0x1144, 0xb532, 0xf9bc,
+                            0x899c, 0x93b8, 0x4973, 0x3220, 0xe526, 0x6014,
+                            0x1780, 0x5530, 0x3016, 0xdeee};
+  const size_t kLen = sizeof(kData);
+  const size_t kBufLen = 2 * kLen;
+  char* buf = kmalloc_aligned(kBufLen, 16);
+  kmemcpy(buf, kData, kLen);
+  KEXPECT_EQ(0x26ee, ip_checksum(buf, kLen));
+
+
+  KTEST_BEGIN("ip_checksum(): non-uint16_t-aligned buffer");
+  kmemset(buf, 0, kBufLen);
+  KEXPECT_EQ(1, ((addr_t)(buf + 1)) % 2);
+  kmemcpy(buf + 1, kData, kLen);
+  KEXPECT_EQ(0x26ee, ip_checksum(buf + 1, kLen));
+
+
+  KTEST_BEGIN("ip_checksum2(): basic test");
+  kmemset(buf, 0, kBufLen);
+  kmemcpy(buf, kData, kLen);
+  KEXPECT_EQ(0x26ee, ip_checksum2(buf, kLen, buf, 0));
+
+
+  KTEST_BEGIN("ip_checksum2(): non-uint16_t-aligned buffers");
+  kmemset(buf, 0, kBufLen);
+  KEXPECT_EQ(1, ((addr_t)(buf + 1)) % 2);
+  kmemcpy(buf + 1, kData, kLen);
+  KEXPECT_EQ(0x26ee, ip_checksum2(buf + 1, kLen - 3, buf + 1 + kLen - 3, 3));
+  KEXPECT_EQ(0x26ee, ip_checksum2(buf + 1, kLen - 4, buf + 1 + kLen - 4, 4));
+  KEXPECT_EQ(0x7c04, ip_checksum2(buf + 1, kLen - 5, buf + 1 + kLen - 3, 3));
+  KEXPECT_EQ(0x85e4, ip_checksum2(buf + 1, kLen - 5, buf + 1 + kLen - 4, 4));
+
+  kmemset(buf, 0, kBufLen);
+  kmemcpy(buf, kData, kLen);
+  KEXPECT_EQ(0x26ee, ip_checksum2(buf, kLen - 3, buf + kLen - 3, 3));
+  KEXPECT_EQ(0x26ee, ip_checksum2(buf, kLen - 4, buf + kLen - 4, 4));
+  KEXPECT_EQ(0x7c04, ip_checksum2(buf, kLen - 5, buf + kLen - 3, 3));
+  KEXPECT_EQ(0x85e4, ip_checksum2(buf, kLen - 5, buf + kLen - 4, 4));
+
+  kfree(buf);
+}
+
 // TODO(aoates): neighbor cache tests:
 //  - time out
 //  - multiple pending requests
@@ -733,6 +779,7 @@ void net_base_test(void) {
   arp_tests(&fixture);
   ip_route_tests(&fixture);
   addr_cmp_tests();
+  ip_checksum_test();
 
   KTEST_BEGIN("Network base: test teardown");
   test_ttap_destroy(&fixture.nic);

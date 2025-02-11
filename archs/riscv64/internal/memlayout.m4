@@ -15,26 +15,29 @@ divert(-1)
 
 define(`fail', `errprint(`$1
 ')m4exit(1)')
+dnl PROVIDE(symbol, value[, C literal suffix])
 define(`PROVIDE',
   ifelse(gentype, `asm', ``.set $1, $2'',
          gentype, `ld', ``$1 = $2;'',
-         gentype, `c', ``#define $1 $2'',
+         gentype, `c', ``#define $1 $2$3'',
          `fail(`Invalid gentype')'))
 
 divert(1)dnl
 dnl
 dnl
-PROVIDE(RSV64_FIRST_KERNEL_ADDR,       0xFFFFFF8000000000)
-PROVIDE(RSV64_FIRST_USED_KERNEL_ADDR,  0xFFFFFFF000000000)
-PROVIDE(RSV64_KPHYSMAP_ADDR,           0xFFFFFFF000000000)
-PROVIDE(RSV64_KPHYSMAP_LEN,            0x0000000800000000)
-PROVIDE(RSV64_HEAP_START,              0xFFFFFFFF00000000)
-PROVIDE(RSV64_HEAP_LEN,                0x0000000080000000)
-PROVIDE(RSV64_KERNEL_VIRT_OFFSET,      0xFFFFFFFF00000000)
+PROVIDE(RSV64_FIRST_KERNEL_ADDR,       0xFFFFFF8000000000, ull)
+PROVIDE(RSV64_FIRST_USED_KERNEL_ADDR,  0xFFFFFFF000000000, ull)
+PROVIDE(RSV64_KPHYSMAP_ADDR,           0xFFFFFFF000000000, ull)
+PROVIDE(RSV64_KPHYSMAP_LEN,            0x0000000800000000, ull)
+PROVIDE(RSV64_TSAN_REGION_START,       0xFFFFFFF800000000, ull)
+PROVIDE(RSV64_TSAN_REGION_LEN,         0x0000000400000000, ull)
+PROVIDE(RSV64_HEAP_START,              0xFFFFFFFF00000000, ull)
+PROVIDE(RSV64_HEAP_LEN,                0x0000000080000000, ull)
+PROVIDE(RSV64_KERNEL_VIRT_OFFSET,      0xFFFFFFFF00000000, ull)
 dnl
 dnl Physical address of the start of the general kernel section (_not_
 dnl specifically where the kernel itself sits, but the area it is linked).
-PROVIDE(RSV64_KERNEL_PHYS_ADDR,        0x0000000080000000)
+PROVIDE(RSV64_KERNEL_PHYS_ADDR,        0x0000000080000000, ull)
 dnl
 dnl How much scratch space to reserve at the bottom (highest addresses) of every
 dnl kernel mode stack.

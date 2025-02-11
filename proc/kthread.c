@@ -32,6 +32,11 @@
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
+#include "sanitizers/tsan/tsan_lock.h"
+
+#if ENABLE_TSAN
+#include "sanitizers/tsan/tsan_thread.h"
+#endif
 
 #define KTHREAD_STACK_PROTECT_LEN PAGE_SIZE
 #define KTHREAD_STACK_SIZE \
@@ -67,8 +72,12 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->spinlocks_held = 0;
   t->all_threads_link = LIST_LINK_INIT;
   t->proc_threads_link = LIST_LINK_INIT;
+  t->interrupt_level = 0;
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   t->mutexes_held = LIST_INIT;
+#endif
+#if ENABLE_TSAN
+  t->legacy_interrupt_sync = true;
 #endif
 }
 
@@ -78,6 +87,18 @@ static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
 
   // Enable deferred interrupts for all new threads.
   defint_set_state(true);
+
+#if ENABLE_TSAN
+  // Acquire the global scheduler lock.  This is to make it so that if a
+  // non-preemptible thread creates a new thread then blocks, the new thread
+  // will see published values after the blocking.  More generally we could
+  // acquire the scheduler implicit lock every time a thread is scheduled ---
+  // this reflects the actual behavior of the underlying system, but might mask
+  // bugs.
+  // TODO(preemption): delete this when all code is preemptible (and uses
+  // locking correctly).
+  scheduler_tsan_acquire();
+#endif
 
   void* retval = start_routine(arg);
   kthread_exit(retval);
@@ -99,6 +120,9 @@ void kthread_init(void) {
   first->stack = (addr_t*)get_global_meminfo()->thread0_stack.base;
   first->stacklen = get_global_meminfo()->thread0_stack.len;
   list_push(&g_all_threads, &first->all_threads_link);
+#if ENABLE_TSAN
+  tsan_thread_create(first);
+#endif
 
   KASSERT_DBG((addr_t)(&first) < (addr_t)first->stack + first->stacklen);
 
@@ -109,6 +133,7 @@ void kthread_init(void) {
   POP_INTERRUPTS();
 }
 
+NO_SANITIZER
 kthread_t kthread_current_thread(void) {
   return g_current_thread;
 }
@@ -150,9 +175,18 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
   thread->stacklen = KTHREAD_STACK_SIZE;
   kthread_arch_init_thread(thread, kthread_trampoline, start_routine, arg);
 
+  // TODO(aoates): rather than having this and legacy_interrupt_sync, etc be
+  // implicitly copied from parent thread, add thread creation flags to make it
+  // explicit.
   if (kthread_current_thread()->preemption_disables == 0) {
     thread->preemption_disables = 0;
   }
+#if ENABLE_TSAN
+  thread->legacy_interrupt_sync =
+      kthread_current_thread()->legacy_interrupt_sync;
+  tsan_thread_create(thread);
+#endif
+
   POP_INTERRUPTS();
   return 0;
 }
@@ -162,6 +196,10 @@ void kthread_destroy(kthread_t thread) {
   PUSH_AND_DISABLE_INTERRUPTS();
   list_remove(&g_all_threads, &thread->all_threads_link);
   POP_INTERRUPTS();
+
+#if ENABLE_TSAN
+  tsan_thread_destroy(thread);
+#endif
 
   // Write gargbage to crash anyone that tries to use the thread later.
   kmemset(&thread->context, 0xAB, sizeof(kthread_arch_context_t));
@@ -195,6 +233,9 @@ void* kthread_join(kthread_t thread_ptr) {
     scheduler_wait_on(&thread->join_list);
     thread->join_list_pending--;
   }
+#if ENABLE_TSAN
+  tsan_thread_join(thread_ptr);
+#endif
   KASSERT(thread->state == KTHREAD_DONE);
   void* retval = thread->retval;
   // If we're last, clean up after the thread.
@@ -219,12 +260,7 @@ void kthread_exit(void* x) {
   g_current_thread->state = KTHREAD_DONE;
 
   // Schedule all the waiting threads.
-  kthread_data_t* t = kthread_queue_pop(&g_current_thread->join_list);
-  while (t) {
-    KASSERT(t->state == KTHREAD_PENDING);
-    scheduler_make_runnable(t);
-    t = kthread_queue_pop(&g_current_thread->join_list);
-  }
+  scheduler_wake_all(&g_current_thread->join_list);
 
   if (g_current_thread->detached) {
     kthread_queue_push(&g_reap_queue, g_current_thread);
@@ -248,6 +284,12 @@ void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg) {
   POP_INTERRUPTS();
 }
 
+void kthread_reset_interrupt_level(void) {
+  KASSERT(g_current_thread->interrupt_level == 0 ||
+          g_current_thread->interrupt_level == 1);
+  g_current_thread->interrupt_level = 0;
+}
+
 void kthread_disable(kthread_t thread) {
   thread->runnable = false;
 }
@@ -261,6 +303,17 @@ void kthread_switch(kthread_t new_thread) {
   KASSERT(g_current_thread->state != KTHREAD_RUNNING);
   kthread_id_t my_id = g_current_thread->id;
   defint_state_t defint = defint_state();
+
+#if ENABLE_TSAN
+  // All writes should now be visible to the interrupt thread.  This is only
+  // relevant for (a) writes in thread exit paths (which may touch memory that
+  // is freed then reused), and (b) writes in kthread/scheduler internals.
+  // Since we don't have a synchronizing POP_INTERRUPTS() before we actually
+  // switch threads, do one explicitly here to release all our writes.
+  interrupt_do_legacy_full_sync(/* is_acquire */ false);
+  // TODO(tsan): once all code is updated to use spinlocks and the kernel is
+  // SMP-safe, see if we can remove this.
+#endif
 
   kthread_data_t* old_thread = g_current_thread;
   g_current_thread = new_thread;
@@ -282,6 +335,10 @@ void kthread_switch(kthread_t new_thread) {
   }
   kthread_arch_swap_context(old_thread, new_thread, old_pd, new_pd);
 
+#if ENABLE_TSAN
+  interrupt_do_legacy_full_sync(/* is_acquire */ true);
+#endif
+
   // Verify that we're back on the proper stack!
   KASSERT(g_current_thread->id == my_id);
 
@@ -295,6 +352,25 @@ void kthread_switch(kthread_t new_thread) {
   }
 
   POP_INTERRUPTS();
+}
+
+// NO_SANITIZER: because this function is used by TSAN to determine current
+// execution state.
+NO_SANITIZER
+ktctx_type_t kthread_execution_context(void) {
+  // Before kthread is initialized, just assume we're always in a thread ctx.
+  if (!g_current_thread) return KTCTX_THREAD;
+
+  defint_running_t s = defint_running_state();
+  int int_level = g_current_thread->interrupt_level;
+  if (s == DEFINT_NONE) {
+    return (int_level > 0) ? KTCTX_INTERRUPT : KTCTX_THREAD;
+  } else if (s == DEFINT_THREAD_CTX) {
+    return (int_level > 0) ? KTCTX_INTERRUPT : KTCTX_DEFINT;
+  } else {
+    KASSERT_DBG(s == DEFINT_INTERRUPT_CTX);
+    return (int_level > 1) ? KTCTX_INTERRUPT : KTCTX_DEFINT;
+  }
 }
 
 void kthread_queue_init(kthread_queue_t* lst) {
@@ -369,12 +445,8 @@ int kthread_queue_empty(kthread_queue_t* lst) {
   return lst->head == 0x0;
 }
 
-void kmutex_init(kmutex_t* m) {
-  m->locked = 0;
-  m->holder = 0x0;
-  kthread_queue_init(&m->wait_queue);
-
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
+static void init_deadlock_data(kmutex_t* m) {
   // TODO(aoates): this could cause a false positive if we recreate mutexes
   // quickly enough (such that IDs are reused).
   m->id = fnv_hash_concat(fnv_hash_addr((addr_t)m), get_time_ms());
@@ -383,14 +455,28 @@ void kmutex_init(kmutex_t* m) {
     m->priors[i].id = 0;
     m->priors[i].lru = 0;
   }
+}
+#endif
+
+void kmutex_init(kmutex_t* m) {
+  m->locked = 0;
+  m->holder = 0x0;
+  kthread_queue_init(&m->wait_queue);
+
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  init_deadlock_data(m);
+#endif
+
+#if ENABLE_TSAN
+  tsan_lock_init(&m->tsan);
 #endif
 }
 
 void kmutex_lock(kmutex_t* m) {
+  PUSH_AND_DISABLE_INTERRUPTS();
   // We should never be blocking if we're holding a spinlock.
   KASSERT_DBG(kthread_current_thread()->spinlocks_held == 0);
-  KASSERT_DBG(!is_running_defint());
-  PUSH_AND_DISABLE_INTERRUPTS();
+  KASSERT_DBG(defint_running_state() == DEFINT_NONE);
   if (m->locked) {
     // Mutexes are non-reentrant, so this would deadlock.
     KASSERT_MSG(m->holder != kthread_current_thread(),
@@ -403,9 +489,16 @@ void kmutex_lock(kmutex_t* m) {
     m->holder = kthread_current_thread();
   }
   KASSERT(m->locked == 1);
+
+#if ENABLE_TSAN
+  tsan_acquire(&m->tsan, TSAN_LOCK);
+#endif
   POP_INTERRUPTS();
 
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  if (m->id == 0) {
+    init_deadlock_data(m);
+  }
   apos_ms_t now = get_time_ms();
   int lru_search_start = 0;
   FOR_EACH_LIST(link_iter, &kthread_current_thread()->mutexes_held) {
@@ -453,6 +546,9 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) {
   list_remove(&kthread_current_thread()->mutexes_held, &m->link);
 #endif
   PUSH_AND_DISABLE_INTERRUPTS();
+#if ENABLE_TSAN
+  tsan_release(&m->tsan, TSAN_LOCK);
+#endif
 
   KASSERT(m->locked == 1);
   KASSERT(m->holder == kthread_current_thread());

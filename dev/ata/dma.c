@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "dev/pci/piix.h"
@@ -20,6 +21,7 @@
 #include "memory/page_alloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/spinlock.h"
 
 // Offsets for the busmaster control registers.
 #define BM_CMD      0x00
@@ -51,11 +53,12 @@ static phys_addr_t g_prd_phys = 0;
 // operation has had a chance to copy it out.
 // TODO(aoates): we should have several DMA buffers and rotate between them to
 // reduce contention.
-static kmutex_t g_dma_buf_mutex;
+static int g_dma_buf_free = 1;
+static kthread_queue_t g_dma_buf_q;
+static kspinlock_t g_dma_buf_lock = KSPINLOCK_NORMAL_INIT_STATIC;
 
 // Returns the DMA buffer that should be written to/read from.
 static void* dma_get_buffer(void) {
-  KASSERT(g_dma_buf_mutex.locked);
   return (void*)phys2virt(g_prd_phys);
 }
 
@@ -63,12 +66,30 @@ static inline uint32_t dma_buffer_size(void) {
   return PAGE_SIZE;
 }
 
-static inline void dma_lock_buffer(void) {
-  kmutex_lock(&g_dma_buf_mutex);
+static inline int dma_lock_buffer(void) {
+  kspin_lock(&g_dma_buf_lock);
+  KASSERT(g_dma_buf_free >= 0);
+  while (g_dma_buf_free == 0) {
+    int result = scheduler_wait_on_splocked(&g_dma_buf_q, -1, &g_dma_buf_lock);
+    // TODO(aoates): write a test for this path --- hard currently because you
+    // need multiple ATA devices.
+    if (result == SWAIT_INTERRUPTED) {
+      kspin_unlock(&g_dma_buf_lock);
+      return -EINTR;
+    }
+    KASSERT(result == SWAIT_DONE);
+  }
+  g_dma_buf_free--;
+  kspin_unlock(&g_dma_buf_lock);
+  return 0;
 }
 
 static inline void dma_unlock_buffer(void) {
-  kmutex_unlock(&g_dma_buf_mutex);
+  kspin_lock(&g_dma_buf_lock);
+  KASSERT(g_dma_buf_free == 0);
+  g_dma_buf_free++;
+  scheduler_wake_one(&g_dma_buf_q);
+  kspin_unlock(&g_dma_buf_lock);
 }
 
 static void dma_setup_transfer(ata_channel_t* channel, uint32_t len,
@@ -115,7 +136,6 @@ static void dma_setup_transfer(ata_channel_t* channel, uint32_t len,
 }
 
 static void dma_start_transfer(ata_channel_t* channel) {
-  KASSERT(g_dma_buf_mutex.locked);
   KASSERT(channel->busmaster_io.base != 0);
   KASSERT(g_prdt_phys != 0);
   KASSERT(g_prd_phys != 0);
@@ -135,7 +155,7 @@ void dma_init(void) {
   while (g_prd_phys % 0x10000 != 0) {
     g_prd_phys = page_frame_alloc();
   }
-  kmutex_init(&g_dma_buf_mutex);
+  kthread_queue_init(&g_dma_buf_q);
 }
 
 // TODO(aoates): test reading/writing blocks of > 256 sectors (to make sure
@@ -150,17 +170,23 @@ void dma_perform_op(ata_disk_op_t* op) {
   }
 
   // Always acquire the DMA lock after acquiring the channel.
-  dma_lock_buffer();
+  int result = dma_lock_buffer();
+  if (result) {
+    op->status = result;
+    return;
+  }
 
   // TODO(aoates): check if DMA has been enabled (if the busmaster driver has
   // loaded) and fail gracefully if so.
 
-  // Select the drive.
-  drive_select(op->drive->channel, op->drive->drive_num);
-
   if (op->is_write) {
     kmemcpy(dma_get_buffer(), op->write_buf, op->len);
   }
+
+  kspin_lock(&op->drive->channel->mu);
+
+  // Select the drive.
+  drive_select(op->drive->channel, op->drive->drive_num);
 
   // Start the DMA.
   dma_setup_transfer(op->drive->channel, op->len, op->is_write);
@@ -179,19 +205,19 @@ void dma_perform_op(ata_disk_op_t* op) {
   }
 
   dma_start_transfer(op->drive->channel);
-  scheduler_wait_on(&op->waiters);
-  KASSERT(op->done != 0);
-
-  op->out_len = len_sectors * ATA_BLOCK_SIZE;
-  if (!op->is_write) {
-    kmemcpy(op->read_buf, dma_get_buffer(), op->out_len);
+  result =
+      scheduler_wait_on_splocked(&op->waiters, -1, &op->drive->channel->mu);
+  if (result == SWAIT_INTERRUPTED) {
+    op->status = -EINTR;  // Could race with interrupt.
+  } else {
+    KASSERT(op->done != 0);
+    KASSERT(result == SWAIT_DONE);
   }
-  dma_unlock_buffer();
+  kspin_unlock(&op->drive->channel->mu);
 }
 
 
 void dma_finish_transfer(ata_channel_t* channel) {
-  KASSERT(g_dma_buf_mutex.locked);
   KASSERT(channel->busmaster_io.base != 0);
   KASSERT(g_prdt_phys != 0);
   KASSERT(g_prd_phys != 0);
@@ -199,6 +225,19 @@ void dma_finish_transfer(ata_channel_t* channel) {
   uint8_t cmd = io_read8(channel->busmaster_io, BM_CMD);
   cmd &= ~BM_CMD_STARTSTOP;
   io_write8(channel->busmaster_io, BM_CMD, cmd);
+
+  KASSERT(kspin_is_held(&channel->mu));
+  if (channel->pending_op != NULL) {
+    ata_disk_op_t* op = channel->pending_op;
+    // TODO(aoates): test for op->len being rounded properly.
+    op->out_len = ATA_BLOCK_SIZE * (op->len / ATA_BLOCK_SIZE);
+    if (!op->is_write) {
+      kmemcpy(op->read_buf, dma_get_buffer(), op->out_len);
+    }
+  }
+
+  // We're done with the DMA buffer; let someone else use it.
+  dma_unlock_buffer();
 
   // TODO(aoates): check error status, reset interrupt line, etc.
 }

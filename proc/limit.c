@@ -14,6 +14,7 @@
 
 #include "proc/limit.h"
 
+#include "common/errno.h"
 #include "proc/process.h"
 #include "proc/user.h"
 

@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/ascii.h"
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -61,7 +62,7 @@ struct ld {
   apos_dev_t tty;
   struct ktermios termios;
 
-  poll_event_t poll_event;
+  pollable_t poll_event;
 };
 
 // Note: keep this in sync with the version in getty.c.

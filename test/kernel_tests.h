@@ -85,6 +85,10 @@ void nvme_test(void);
 void rsv64_user_test(void);
 #endif
 
+#if ENABLE_TSAN
+void tsan_test(void);
+#endif
+
 int kernel_run_ktest(const char* name);
 
 #endif

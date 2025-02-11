@@ -24,14 +24,13 @@ void dma_init(void);
 
 // Perform the given operation using DMA.  Records success or failure in the
 // op's status (and out_len) fields.
-//
-// Interrupts must be masked when this is called.
 void dma_perform_op(ata_disk_op_t* op);
 
 // Finish a DMA transfer.  Called from the interrupt handler after the transfer
-// has completed (fully or with an error) to reset the DMA.
+// has completed (fully or with an error) to reset the DMA.  If the channel has
+// a pending op, copies any data from the DMA buffer as needed.
 //
-// Interrupts must be masked when this is called.
+// The channel must be locked when this is called.
 void dma_finish_transfer(ata_channel_t* channel);
 
 #endif

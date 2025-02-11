@@ -26,6 +26,11 @@
 #include "test/ktest.h"
 
 void ata_test(void) {
+  if (ata_num_devices() == 0) {
+    KTEST_SUITE_BEGIN("ATA (no drives");
+    KTEST_ADD_FAILURE("Cannot run ATA tests, no ATA drives connected\n");
+  }
+
   block_dev_t** bds = (block_dev_t**)kmalloc(
       ata_num_devices() * sizeof(block_dev_t*));
   for (int i = 0; i < ata_num_devices(); ++i) {

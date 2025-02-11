@@ -29,3 +29,10 @@
 .note.GNU-stack : AT(ADDR(.note.GNU-stack)) { *(.note.GNU-stack) }
 .rel.text       : AT(ADDR(.rel.text))       { *(.rel.text) }
 .rela.text      : AT(ADDR(.rela.text))      { *(.rela.text) }
+
+/* Discard sections created automatically by TSAN. */
+/DISCARD/ :
+{
+    *(.init_array.0)
+    *(.text.tsan.module_ctor)
+}

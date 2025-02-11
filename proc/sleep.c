@@ -23,12 +23,10 @@ int ksleep(int ms) {
   kthread_queue_t q;
   kthread_queue_init(&q);
 
-  PUSH_AND_DISABLE_INTERRUPTS();
   const apos_ms_t start_time = get_time_ms();
   int wait_result = scheduler_wait_on_interruptable(&q, ms);
   KASSERT_DBG(wait_result == SWAIT_TIMEOUT || wait_result == SWAIT_INTERRUPTED);
   const apos_ms_t elapsed = get_time_ms() - start_time;
   int result = (wait_result == SWAIT_INTERRUPTED) ? max((ms - elapsed), 0U) : 0;
-  POP_INTERRUPTS();
   return result;
 }

@@ -17,6 +17,7 @@
 #include "archs/i586/internal/memory/gdt.h"
 #include "common/kassert.h"
 #include "common/types.h"
+#include "proc/kthread-internal.h"
 
 // Defined in user_context_asm.s
 typedef uint32_t reg_t;
@@ -31,6 +32,8 @@ void user_context_apply(const user_context_t* ctx) {
   // Make sure it matches the constants in user_mode_asm.s.
   KASSERT_DBG(segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER) == 0x23);
   KASSERT_DBG(segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER) == 0x1b);
+
+  kthread_reset_interrupt_level();
 
   switch (ctx->type) {
     case USER_CONTEXT_CALL_GATE:

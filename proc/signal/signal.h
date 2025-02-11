@@ -29,7 +29,6 @@
 // happens when returning from an interrupt or syscall.
 
 #include "arch/proc/user_context.h"
-#include "common/errno.h"
 #include "common/types.h"
 #include "proc/process.h"
 #include "syscall/context.h"

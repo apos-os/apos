@@ -26,11 +26,14 @@ void enable_interrupts(void);
 void disable_interrupts(void);
 
 // Disable interrupts and return the previous (pre-disabling) state.
-interrupt_state_t save_and_disable_interrupts(void);
+// If |full_sync| is true, this should be considered a full synchronization
+// event between all threads, not just the current thread and interrupt
+// handlers.
+interrupt_state_t save_and_disable_interrupts(bool full_sync);
 
 // Restore interrupt state (given the return value of
 // save_and_disable_interrupts).
-void restore_interrupts(interrupt_state_t saved);
+void restore_interrupts(interrupt_state_t saved, bool full_sync);
 
 // Return the current IF flag state (as per save_and_disable_interrupts).
 interrupt_state_t get_interrupts_state(void);

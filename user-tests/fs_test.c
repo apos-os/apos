@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stdalign.h>
 #include <stdbool.h>
 
 #include <apos/syscall_decls.h>
@@ -41,6 +42,10 @@ static int do_getdents(int fd, struct dirent* buf, int count) {
 
 #define NUM_EXPECTED 4
 
+static inline size_t align_up(size_t x, unsigned int align) {
+  return ((x - 1) + (align - ((x - 1) % align)));
+}
+
 static void basic_fs_test(void) {
   KTEST_BEGIN("getdents(): basic test");
   KEXPECT_EQ(0, mkdir("_fs_test_dir", S_IRWXU));
@@ -55,8 +60,12 @@ static void basic_fs_test(void) {
   fd = open("_fs_test_dir", O_DIRECTORY | O_RDONLY);
   KEXPECT_GE(fd, 0);
   int result = getdents(fd, (struct dirent*)buffer, 500);
-  KEXPECT_EQ(result, 4 * (1 + sizeof(struct dirent)) + strlen(".") +
-                         strlen("..") + strlen("fileA") + strlen("fileB"));
+  const size_t align = alignof(struct dirent);
+  KEXPECT_EQ(result,
+             align_up(sizeof(struct dirent) + 1 + strlen("."), align) +
+             align_up(sizeof(struct dirent) + 1 + strlen(".."), align) +
+             align_up(sizeof(struct dirent) + 1 + strlen("fileA"), align) +
+             align_up(sizeof(struct dirent) + 1 + strlen("fileB"), align));
   expected_dirent_t expected_dirents[NUM_EXPECTED] = {
     {".", do_stat("_fs_test_dir").st_ino, false},
     {"..", do_stat(".").st_ino, false},
@@ -67,7 +76,8 @@ static void basic_fs_test(void) {
   off_t offset = 0;
   while (offset < result) {
     const struct dirent* d = (const struct dirent*)(&buffer[offset]);
-    KEXPECT_EQ(d->d_reclen, sizeof(struct dirent) + strlen(d->d_name) + 1);
+    KEXPECT_EQ(d->d_reclen,
+               align_up(sizeof(struct dirent) + strlen(d->d_name) + 1, align));
     for (int i = 0; i < NUM_EXPECTED; ++i) {
       if (strcmp(d->d_name, expected_dirents[i].name) == 0) {
         KEXPECT_EQ(false, expected_dirents[i].matched);

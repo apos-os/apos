@@ -16,6 +16,7 @@
 
 #include "arch/proc/signal/signal_enter.h"
 #include "arch/syscall/context.h"
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"

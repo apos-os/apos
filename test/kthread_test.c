@@ -38,6 +38,7 @@
 //  * multiple threads join()'d onto one thread
 
 static void* thread_func(void* arg) {
+  KEXPECT_EQ(KTCTX_THREAD, kthread_execution_context());
   int id = (intptr_t)arg;
   KLOG("THREAD STARTED: %d\n", id);
   for (int i = 0; i < 3; ++i) {
@@ -61,6 +62,7 @@ static void yield_test(void) {
 
 static void basic_test(void) {
   KTEST_BEGIN("basic test");
+  KEXPECT_EQ(KTCTX_THREAD, kthread_execution_context());
   kthread_t thread1;
   kthread_t thread2;
   kthread_t thread3;
@@ -470,6 +472,7 @@ static void scheduler_wake_all_race_test(void) {
 }
 
 static void slow_defint(void* arg) {
+  KEXPECT_EQ(KTCTX_DEFINT, kthread_execution_context());
   bool* done = (bool*)arg;
   for (volatile int x = 0; x < 1000000; ++x);
   *done = true;
@@ -491,6 +494,87 @@ static void scheduler_spin_lock_race_test(void) {
     // The slow defint should have run.
     KEXPECT_EQ(true, done);
     kspin_unlock(&lock);
+  }
+}
+
+static void interrupted_defint_timer2(void* arg);
+
+static void slow_defint_interrupted(void* arg) {
+  KEXPECT_EQ(KTCTX_DEFINT, kthread_execution_context());
+  bool done_nested = false;
+  register_event_timer(get_time_ms() + 10, &interrupted_defint_timer2,
+                       &done_nested, NULL);
+  bool* done = (bool*)arg;
+  for (volatile int x = 0; x < 10000000; ++x);
+  *done = true;
+  PUSH_AND_DISABLE_INTERRUPTS();
+  KEXPECT_TRUE(done_nested);
+  POP_INTERRUPTS();
+}
+
+static void interrupted_defint_timer1(void* arg) {
+  KEXPECT_EQ(KTCTX_INTERRUPT, kthread_execution_context());
+  defint_schedule(&slow_defint_interrupted, arg);
+}
+
+static void interrupted_defint_timer2(void* arg) {
+  KEXPECT_EQ(KTCTX_INTERRUPT, kthread_execution_context());
+  bool* done = (bool*)arg;
+  *done = true;
+}
+
+// Test that a defint can be interrupted.  Uses a timer to schedule a defint
+// (ensuring that the defint itself runs in an interrupt context), and the
+// defint then triggers a nested timer interrupt as well.
+static void interrupted_defint_test(void) {
+  KTEST_BEGIN("Deferred interrupt can be interrupted");
+  bool done = false;
+
+  // We can't use spinlocks here as we want the defint to be run from the
+  // interrupt, not synchronously from a spinlock unlock.  Disabling interrupts
+  // is sufficient for single-core synchronization with the defint, though.
+  {
+    PUSH_AND_DISABLE_INTERRUPTS();
+    register_event_timer(get_time_ms() + 10, &interrupted_defint_timer1, &done,
+                         NULL);
+    POP_INTERRUPTS();
+  }
+  for (int i = 0; i < 1000; ++i) {
+    for (volatile int x = 0; x < 10000; ++x)
+      ; // Do nothing
+    PUSH_AND_DISABLE_INTERRUPTS();
+    if (done) {
+      POP_INTERRUPTS();
+      break;
+    }
+    POP_INTERRUPTS();
+  }
+
+  {
+    PUSH_AND_DISABLE_INTERRUPTS();
+    KEXPECT_TRUE(done);
+    POP_INTERRUPTS();
+  }
+}
+
+// As above, but with a defint that's run synchronously (not from an interrupt
+// context).  Makes sure that (a) it can be interrupted (easy) and (b) the
+// execution context is tracked correctly (subtle and was buggy).
+static void interrupted_defint_test2(void) {
+  KTEST_BEGIN("Deferred interrupt can be interrupted (synchronous)");
+  bool done = false;
+
+  kspinlock_t mu = KSPINLOCK_NORMAL_INIT;
+  kspin_lock(&mu);
+  defint_schedule(&slow_defint_interrupted, &done);
+  kspin_unlock(&mu);  // Should run the defint synchronously, and it should be
+                      // interrupted.
+
+  // Block interrupts for safety, though it isn't necessary if the test worked
+  {
+    PUSH_AND_DISABLE_INTERRUPTS();
+    KEXPECT_TRUE(done);
+    POP_INTERRUPTS();
   }
 }
 
@@ -803,6 +887,33 @@ static void kmutex_test(void) {
   KEXPECT_EQ(1000 * KMUTEX_TEST_SIZE, out);
 }
 
+static void* zeroinit_thread(void* arg) {
+  kmutex_t* lock = (kmutex_t*)arg;
+  kmutex_lock(lock);
+  ksleep(10);
+  kmutex_unlock(lock);
+  return NULL;
+}
+
+static void kmutex_zero_init_test(void) {
+  KTEST_BEGIN("kmutex zero-init test");
+  kmutex_t a, b;
+  kmemset(&a, 0, sizeof(a));
+  kmemset(&b, 0, sizeof(b));
+
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, &zeroinit_thread, &a));
+  scheduler_make_runnable(thread);
+
+  kmutex_lock(&a);
+  kmutex_lock(&b);
+  ksleep(10);
+  kmutex_unlock(&b);
+  kmutex_unlock(&a);
+
+  KEXPECT_EQ(NULL, kthread_join(thread));
+}
+
 static void kmutex_auto_lock_test(void) {
   KTEST_BEGIN("kmutex auto lock test");
   kmutex_t m;
@@ -898,6 +1009,7 @@ static void* preemption_test_check_enabled(void* arg) {
 }
 
 static void preemption_test_interrupt_cb(void* arg) {
+  KEXPECT_EQ(KTCTX_INTERRUPT, kthread_execution_context());
   preemption_test_args_t* args = (preemption_test_args_t*)arg;
   kspin_lock_int(&args->intsafe_lock);
   args->x++;
@@ -1557,10 +1669,12 @@ static void refcount_test(void) {
 }
 
 static void tasklet_fn(tasklet_t* tl, void* arg) {
+  KEXPECT_EQ(KTCTX_DEFINT, kthread_execution_context());
   (*(int*)arg)++;
 }
 
 static void tasklet_timer(void* arg) {
+  KEXPECT_EQ(KTCTX_INTERRUPT, kthread_execution_context());
   tasklet_schedule((tasklet_t*)arg);
 }
 
@@ -1642,13 +1756,19 @@ void kthread_test(void) {
   scheduler_wake_race_test();
   scheduler_wake_all_race_test();
   scheduler_spin_lock_race_test();
+  interrupted_defint_test();
+  interrupted_defint_test2();
   scheduler_interrupt_test();
   scheduler_interrupt_timeout_test();
   kthread_is_done_test();
-  stress_test();
+  if (!ENABLE_TSAN) {
+    // These tests spawn too many threads for TSAN.
+    stress_test();
+    ksleep_test();
+  }
   kmutex_test();
+  kmutex_zero_init_test();
   kmutex_auto_lock_test();
-  ksleep_test();
   preemption_test();
   wait_on_locked_test();
   wait_on_spin_locked_test();

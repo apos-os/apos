@@ -39,8 +39,12 @@ void page_frame_map_virtual(addr_t virt, phys_addr_t phys, int prot,
                                     /* create= */ true);
   KASSERT(pte != NULL);
   KASSERT(size == RSV_MAP_PAGE);  // We never create large mappings today.
-  // TODO(aoates): assert that if the mapping is valid, the physical addr isn't
-  // changing.
+  if (access == MEM_ACCESS_KERNEL_ONLY && *pte & RSV_PTE_VALID) {
+    // Assert that if the mapping is valid and a kernel mapping, the physical
+    // addr isn't changing.  For user addresses, we do shadow memobj remapping,
+    // so this doesn't apply.
+    KASSERT(rsv_get_pte_addr(pte) == phys);
+  }
   rsv_set_pte_addr(pte, phys, RSV_MAP_PAGE);
   *pte |= RSV_PTE_READ;
   if (prot & MEM_PROT_WRITE) *pte |= RSV_PTE_WRITE;

@@ -13,6 +13,7 @@
 // limitations under the License.
 #include "dev/nvme/block_dev.h"
 
+#include "common/errno.h"
 #include "common/kstring.h"
 #include "common/math.h"
 #include "dev/block_dev.h"

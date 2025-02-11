@@ -14,6 +14,7 @@
 #include "proc/user_thread.h"
 
 #include "arch/proc/user_mode.h"
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "memory/kmalloc.h"
 #include "proc/process.h"

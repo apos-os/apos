@@ -14,11 +14,13 @@
 
 Import('env')
 
-srcs = ['builtins.c', 'errno.c',
+srcs = [
     'circbuf.c',
     'crc.c',
+    'errno.c',
     'hash.c',
     'hashtable.c',
+    'initer.c',
     'kassert.c',
     'klog.c',
     'kprintf.c',

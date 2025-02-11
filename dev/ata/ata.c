@@ -28,6 +28,7 @@
 #include "dev/interrupts.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/tasklet.h"
 
 static ata_t g_ata;
 static int g_init = 0;
@@ -260,10 +261,20 @@ static void ata_dump_state(ata_channel_t* channel) {
 }
 
 static void handle_interrupt(ata_channel_t* channel) {
+  kspin_lock(&channel->mu);
+  dma_finish_transfer(channel);
+  channel->in_use = false;
+  scheduler_wake_one(&channel->channel_waiters);
+
+  // If the operation was interrupted or cancelled, nothing to do.
+  if (channel->pending_op == NULL) {
+    kspin_unlock(&channel->mu);
+    klogf("ATA: dropped finished operation on channel\n");
+    return;
+  }
+
   KASSERT(channel->pending_op != 0x0);
   KASSERT(channel->pending_op->drive->channel == channel);
-
-  dma_finish_transfer(channel);
 
   ata_disk_op_t* op = channel->pending_op;
 
@@ -283,18 +294,22 @@ static void handle_interrupt(ata_channel_t* channel) {
   // Set the channel to free and wake up a thread waiting to do disk IO on this
   // channel.
   channel->pending_op = 0x0;
-  scheduler_wake_one(&channel->channel_waiters);
+  kspin_unlock(&channel->mu);
+}
+
+static void ata_tasklet(tasklet_t* tl, void* arg) {
+  handle_interrupt((ata_channel_t*)arg);
 }
 
 // IRQ handlers for the primary and secondary channels.
 static void irq_handler_primary(void* arg) {
   //klogf("IRQ for primary ATA device\n");
-  handle_interrupt(&g_ata.primary);
+  tasklet_schedule(&g_ata.primary.tasklet);
 }
 
 static void irq_handler_secondary(void* arg) {
   //klogf("IRQ for secondary ATA device\n");
-  handle_interrupt(&g_ata.secondary);
+  tasklet_schedule(&g_ata.secondary.tasklet);
 }
 
 static void ata_do_op(ata_disk_op_t* op) {
@@ -320,19 +335,37 @@ static void ata_do_op(ata_disk_op_t* op) {
     return;
   }
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock(&op->drive->channel->mu);
 
   // If the channel is busy, wait until it's free.
-  while (op->drive->channel->pending_op != 0x0) {
-    scheduler_wait_on(&op->drive->channel->channel_waiters);
+  while (op->drive->channel->in_use) {
+    int result = scheduler_wait_on_splocked(
+        &op->drive->channel->channel_waiters, -1, &op->drive->channel->mu);
+    if (result == SWAIT_INTERRUPTED) {
+      // TODO(aoates): test this
+      scheduler_wake_one(&op->drive->channel->channel_waiters);
+      kspin_unlock(&op->drive->channel->mu);
+      op->status = -EINTR;
+      return;
+    }
   }
 
   KASSERT(op->drive->channel->pending_op == 0x0);
+  KASSERT(!op->drive->channel->in_use);
+  op->drive->channel->in_use = true;
   op->drive->channel->pending_op = op;
+  kspin_unlock(&op->drive->channel->mu);
 
   dma_perform_op(op);
 
-  POP_INTERRUPTS();
+  // If the operation was cancelled, we need to clean up.
+  kspin_lock(&op->drive->channel->mu);
+  // Even if we were interrupted, the operation may have finished and another
+  // could have started.
+  if (op->status == -EINTR && op->drive->channel->pending_op == op) {
+    op->drive->channel->pending_op = NULL;
+  }
+  kspin_unlock(&op->drive->channel->mu);
 }
 
 static int ata_read(struct block_dev* dev, size_t offset,
@@ -451,8 +484,12 @@ static void ata_init_internal(const ata_t* ata) {
   dma_init();
 
   // Set up IRQs.
+  g_ata.primary.mu = KSPINLOCK_NORMAL_INIT;
+  g_ata.secondary.mu = KSPINLOCK_NORMAL_INIT;
   register_irq_handler(g_ata.primary.irq, &irq_handler_primary, 0x0);
   register_irq_handler(g_ata.secondary.irq, &irq_handler_secondary, 0x0);
+  tasklet_init(&g_ata.primary.tasklet, &ata_tasklet, &g_ata.primary);
+  tasklet_init(&g_ata.secondary.tasklet, &ata_tasklet, &g_ata.secondary);
 
   // TODO(aoates): enable interrupts with device control register
 }
@@ -482,6 +519,7 @@ void ata_init(void) {
   ata.primary.busmaster_io.base = g_busmaster_prim_offset;
   ata.primary.irq = 14;
   ata.primary.pending_op = 0x0;
+  ata.primary.in_use = false;
   kthread_queue_init(&ata.primary.channel_waiters);
   ata.secondary.cmd_io.type = IO_PORT;
   ata.secondary.ctrl_io.type = IO_PORT;
@@ -491,6 +529,7 @@ void ata_init(void) {
   ata.secondary.busmaster_io.base = g_busmaster_secd_offset;
   ata.secondary.irq = 15;
   ata.secondary.pending_op = 0x0;
+  ata.secondary.in_use = false;
   kthread_queue_init(&ata.secondary.channel_waiters);
 
   // TODO(aoates): Sometimes we could have 4 ATA channels -- try to
