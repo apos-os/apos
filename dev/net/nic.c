@@ -154,7 +154,7 @@ void nic_ref(nic_t* nic) {
 
 void nic_put(nic_t* nic) {
   // Crude and incorrect safety check to catch refcount leaks.
-  KASSERT(nic->ref.ref < 100);
+  KASSERT(refcount_get(&nic->ref) < 100);
 
   bool cleanup = false;
   if (refcount_dec(&nic->ref) == 0) {
