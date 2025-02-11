@@ -14,8 +14,9 @@
 
 #include "proc/spinlock.h"
 
-#include "dev/interrupts.h"
+#include "common/attributes.h"
 #include "common/kassert.h"
+#include "dev/interrupts.h"
 #include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
 
@@ -31,7 +32,9 @@ static void kspin_lock_internal(kspinlock_impl_t* l) {
   KASSERT(l->holder == -1);
   kthread_t me = kthread_current_thread();
   l->holder = me->id;
+  PUSH_AND_DISABLE_INTERRUPTS_NO_SYNC();
   me->spinlocks_held++;
+  POP_INTERRUPTS_NO_SYNC();
 
 #if ENABLE_TSAN
   tsan_acquire(&l->tsan, TSAN_LOCK);
@@ -41,9 +44,11 @@ static void kspin_lock_internal(kspinlock_impl_t* l) {
 static void kspin_unlock_internal(kspinlock_impl_t* l) {
   kthread_t me = kthread_current_thread();
   KASSERT(l->holder == me->id);
-  KASSERT(me->spinlocks_held > 0);
   l->holder = -1;
+  PUSH_AND_DISABLE_INTERRUPTS_NO_SYNC();
+  KASSERT(me->spinlocks_held > 0);
   me->spinlocks_held--;
+  POP_INTERRUPTS_NO_SYNC();
 
 #if ENABLE_TSAN
   tsan_release(&l->tsan, TSAN_LOCK);
