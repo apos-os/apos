@@ -13,8 +13,10 @@
 // limitations under the License.
 #include "sanitizers/tsan/tsan_access.h"
 
+#include "arch/proc/stack_trace.h"
 #include "common/attributes.h"
 #include "common/kassert.h"
+#include "common/klog.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
 #include "common/math.h"
@@ -35,6 +37,9 @@
 
 bool g_tsan_log = false;
 static tsan_report_fn_t g_tsan_report_fn = NULL;
+
+// An address to trace accesses to.
+static addr_t g_tsan_trace = 0;
 
 static ALWAYS_INLINE uint8_t make_mask(uint8_t offset, uint8_t size) {
   KASSERT_DBG(size > 0 && size <= 8);
@@ -184,6 +189,15 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
 
 static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
                                 tsan_access_type_t type) {
+  if (addr == g_tsan_trace) {
+    klogf("TSAN access traced: %d-byte %s by thread %d on address 0x%" PRIxADDR
+          " at \n",
+          size, type2str(type), tsan_current_thread()->id, addr);
+    addr_t stack_trace[16];
+    int len = get_stack_trace(stack_trace, 16);
+    print_stack_trace(stack_trace, len);
+  }
+
   if (addr < TSAN_HEAP_START_ADDR || addr >= TSAN_HEAP_START_ADDR +
       TSAN_HEAP_LEN_ADDR) {
     // Access outside the heap.  Ignore.
