@@ -1216,6 +1216,8 @@ static void interrupt_test1f(void) {
   register_event_timer(get_time_ms() + 10, &interrupt_fn, x, NULL);
   KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_interruptable(&q, 20));
   POP_INTERRUPTS();
+
+  kthread_join(thread);
   tsan_test_cleanup();
 }
 
