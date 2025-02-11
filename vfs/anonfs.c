@@ -17,6 +17,7 @@
 #include "common/kstring.h"
 #include "dev/dev.h"
 #include "memory/kmalloc.h"
+#include "proc/kthread.h"
 #include "proc/user.h"
 #include "vfs/anonfs.h"
 #include "vfs/fs.h"
@@ -46,6 +47,7 @@ static int anonfs_write_page(vnode_t* vnode, int page_offset, const void* buf);
 typedef struct {
   fs_t fs;
   vnode_type_t type;
+  kmutex_t mu;
   kino_t next_inode;
 } anonfs_t;
 
@@ -61,6 +63,7 @@ fs_t* anonfs_create(vnode_type_t type) {
   fs->fs.dev = kmakedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
   fs->fs.open_vnodes = 0;
   fs->type = type;
+  kmutex_init(&fs->mu);
   fs->next_inode = 0;
 
   fs->fs.destroy_fs = &anonfs_destroy;
@@ -89,6 +92,7 @@ fs_t* anonfs_create(vnode_type_t type) {
 
 kino_t anonfs_create_vnode(fs_t* fs) {
   anonfs_t* afs = (anonfs_t*)fs;
+  KMUTEX_AUTO_LOCK(lock, &afs->mu);
   return afs->next_inode++;
 }
 
