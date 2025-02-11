@@ -17,7 +17,7 @@
 static void file_init_file(file_t* f) {
   f->index = -1;
   f->vnode = 0x0;
-  f->refcount = 0;
+  f->refcount = REFCOUNT_INIT;
   f->pos = 0;
   f->mode = 0xFF;  // A bad mode.
   f->flags = 0;

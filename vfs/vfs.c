@@ -21,6 +21,7 @@
 #include "common/hashtable.h"
 #include "common/kstring.h"
 #include "common/math.h"
+#include "common/refcount.h"
 #include "dev/dev.h"
 #include "dev/interrupts.h"
 #include "dev/tty.h"
@@ -545,21 +546,20 @@ static void vfs_close_fifo(vnode_t* vnode, kmode_t mode) {
 
 // TODO(aoates): move these to vfs_internal.c (requires moving some helpers).
 void file_ref(file_t* file) {
-  KASSERT(file->refcount >= 0);
+  KASSERT(refcount_get(&file->refcount) >= 0);
   KASSERT(file->index >= 0);
   KASSERT(file->index < VFS_MAX_FILES);
   KASSERT(g_file_table[file->index] == file);
-  file->refcount++;
+  refcount_inc(&file->refcount);
 }
 
 void file_unref(file_t* file) {
-  KASSERT(file->refcount >= 1);
+  KASSERT(refcount_get(&file->refcount) >= 1);
   KASSERT(file->index >= 0);
   KASSERT(file->index < VFS_MAX_FILES);
   KASSERT(g_file_table[file->index] == file);
 
-  file->refcount--;
-  if (file->refcount == 0) {
+  if (refcount_dec(&file->refcount) == 0) {
     if (file->vnode->type == VNODE_FIFO)
       vfs_close_fifo(file->vnode, file->mode);
 
@@ -638,7 +638,6 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   g_file_table[idx] = file_alloc();
   g_file_table[idx]->index = idx;
   g_file_table[idx]->vnode = VFS_COPY_REF(child);
-  g_file_table[idx]->refcount = 1;
   g_file_table[idx]->mode = mode;
   g_file_table[idx]->flags = flags;
   pmutex_unlock(&g_file_table_mu);

@@ -15,6 +15,7 @@
 #ifndef APOO_FILE_H
 #define APOO_FILE_H
 
+#include "common/refcount.h"
 #include "common/types.h"
 #include "memory/kmalloc.h"
 
@@ -27,7 +28,7 @@ struct vnode;
 struct file {
   int index;  // Index in the global file table.
   struct vnode* vnode;
-  int refcount;
+  refcount_t refcount;  // Interrupt-safe refcount is overkill.
   koff_t pos;  // Current position within the vnode.
   kmode_t mode;
   int flags;

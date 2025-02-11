@@ -34,4 +34,7 @@ void refcount_inc(refcount_t* ref);
 // held the last refcount and can safely clean up the object.
 int refcount_dec(refcount_t* ref);
 
+// Return the current value of the refcount.
+int refcount_get(const refcount_t* ref);
+
 #endif

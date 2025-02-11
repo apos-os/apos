@@ -30,3 +30,12 @@ int refcount_dec(refcount_t* ref) {
   kspin_unlock_int(&ref->spin);
   return result;
 }
+
+int refcount_get(const refcount_t* ref) {
+  kspinlock_intsafe_t* spin = (kspinlock_intsafe_t*)&ref->spin;
+  kspin_lock_int(spin);
+  KASSERT_DBG(ref->ref >= 1);
+  int result = ref->ref;
+  kspin_unlock_int(spin);
+  return result;
+}

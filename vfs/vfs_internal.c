@@ -427,7 +427,7 @@ int lookup_fd_locked(int fd, file_t** file_out) {
   // Sanity checks.
   KASSERT_DBG(file->index == proc->fds[fd].file);
   KASSERT_DBG(file->vnode != NULL);
-  KASSERT_DBG(file->refcount > 0);
+  KASSERT_DBG(refcount_get(&file->refcount) > 0);
   KASSERT_DBG(file->pos >= 0);
   file_ref(file);
   *file_out = file;
