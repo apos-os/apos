@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 #include "arch/memory/layout.h"
+#include "common/attributes.h"
 #include "common/debug.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
@@ -108,7 +109,7 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   }
 }
 
-phys_addr_t page_frame_alloc(void) {
+phys_addr_t NO_TSAN page_frame_alloc(void) {
   if (stack_idx <= 0) {
     return 0;
   }
@@ -127,7 +128,8 @@ phys_addr_t page_frame_alloc(void) {
   return frame;
 }
 
-void page_frame_free(phys_addr_t frame_addr) {
+// TODO(SMP): make these SMP-safe with a raw spinlock.
+void NO_TSAN page_frame_free(phys_addr_t frame_addr) {
   KASSERT(is_page_aligned(frame_addr));
   KASSERT(stack_idx <= stack_size);
 
