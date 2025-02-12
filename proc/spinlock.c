@@ -28,7 +28,18 @@ const kspinlock_t KSPINLOCK_NORMAL_INIT = KSPINLOCK_NORMAL_INIT_STATIC;
 const kspinlock_intsafe_t KSPINLOCK_INTERRUPT_SAFE_INIT =
     KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC;
 
-static void kspin_lock_internal(kspinlock_impl_t* l) {
+// NO_TSAN: these are all underlying synchronization constructs that trigger
+// false positives when instrumented with TSAN (for example, races on
+// l->defint_state).  When (re)implemented for SMP, these should in theory be
+// instrumentable as they will use atomics that TSAN can understand --- it
+// still won't make sense to instrument them, though, as it would induce
+// redundant (expensive) synchronization tracking on both the lock itself and
+// the implementing atomics.
+// TODO(SMP): when these use atomics, update this comment, and consider having a
+// mode where they _are_ instrumented for TSAN to validate the underlying
+// synchronization implementation.
+
+NO_TSAN static void kspin_lock_internal(kspinlock_impl_t* l) {
   KASSERT(l->holder == -1);
   kthread_t me = kthread_current_thread();
   l->holder = me->id;
@@ -41,7 +52,7 @@ static void kspin_lock_internal(kspinlock_impl_t* l) {
 #endif
 }
 
-static void kspin_unlock_internal(kspinlock_impl_t* l) {
+NO_TSAN static void kspin_unlock_internal(kspinlock_impl_t* l) {
   kthread_t me = kthread_current_thread();
   KASSERT(l->holder == me->id);
   l->holder = -1;
@@ -55,7 +66,7 @@ static void kspin_unlock_internal(kspinlock_impl_t* l) {
 #endif
 }
 
-void kspin_lock(kspinlock_t* l) {
+NO_TSAN void kspin_lock(kspinlock_t* l) {
   // TODO(aoates): write a test that that catches the scenario where we modify
   // the lock before we actually hold it (preemption and defints are disabled).
   bool defint_state = defint_set_state(false);
@@ -66,7 +77,7 @@ void kspin_lock(kspinlock_t* l) {
   kspin_lock_internal(&l->_lock);
 }
 
-void kspin_lock_int(kspinlock_intsafe_t* l) {
+NO_TSAN void kspin_lock_int(kspinlock_intsafe_t* l) {
   // Disabling interrupts disables preemption and defints implicitly.  Later
   // code _could_ change the defint state on its own (which would be
   // ill-advised), but it won't matter since interrupts are disabled.
@@ -75,7 +86,7 @@ void kspin_lock_int(kspinlock_intsafe_t* l) {
   kspin_lock_internal(&l->_lock);
 }
 
-void kspin_unlock(kspinlock_t* l) {
+NO_TSAN void kspin_unlock(kspinlock_t* l) {
   bool defint_state = l->defint_state;
   kspin_unlock_internal(&l->_lock);
   sched_restore_preemption();
@@ -83,17 +94,17 @@ void kspin_unlock(kspinlock_t* l) {
   KASSERT(defint_prev_state == false);
 }
 
-void kspin_unlock_int(kspinlock_intsafe_t* l) {
+NO_TSAN void kspin_unlock_int(kspinlock_intsafe_t* l) {
   interrupt_state_t int_state = l->int_state;
   kspin_unlock_internal(&l->_lock);
   KASSERT_DBG(interrupts_enabled() == false);
   restore_interrupts(int_state, false);
 }
 
-bool kspin_is_held(const kspinlock_t* l) {
+NO_TSAN bool kspin_is_held(const kspinlock_t* l) {
   return (l->_lock.holder == kthread_current_thread()->id);
 }
 
-bool kspin_is_held_int(const kspinlock_intsafe_t* l) {
+NO_TSAN bool kspin_is_held_int(const kspinlock_intsafe_t* l) {
   return (l->_lock.holder == kthread_current_thread()->id);
 }
