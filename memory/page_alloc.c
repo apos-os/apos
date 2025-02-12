@@ -21,6 +21,7 @@
 #include "common/debug.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "dev/interrupts.h"
 #include "memory/page_alloc.h"
 
 // The number of frames we reserve for DMA by device drivers.  This is a crappy
@@ -110,11 +111,14 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
 }
 
 phys_addr_t NO_TSAN page_frame_alloc(void) {
+  PUSH_AND_DISABLE_INTERRUPTS();
   if (stack_idx <= 0) {
+    POP_INTERRUPTS();
     return 0;
   }
 
   phys_addr_t frame = free_frame_stack[--stack_idx];
+  POP_INTERRUPTS();
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
     KASSERT_DBG(frame < meminfo_mainmem_end(get_global_meminfo()));
@@ -131,6 +135,16 @@ phys_addr_t NO_TSAN page_frame_alloc(void) {
 // TODO(SMP): make these SMP-safe with a raw spinlock.
 void NO_TSAN page_frame_free(phys_addr_t frame_addr) {
   KASSERT(is_page_aligned(frame_addr));
+
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    // Fill the page with crap.
+    addr_t virt_frame = phys2virt(frame_addr);
+    for (size_t i = 0; i < PAGE_SIZE / sizeof(uint32_t); ++i) {
+      ((uint32_t*)virt_frame)[i] = 0xDEADBEEF;
+    }
+  }
+
+  PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(stack_idx <= stack_size);
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
@@ -139,30 +153,30 @@ void NO_TSAN page_frame_free(phys_addr_t frame_addr) {
     for (size_t i = 0; i < stack_idx; ++i) {
       KASSERT(free_frame_stack[i] != frame_addr);
     }
-
-    // Fill the page with crap.
-    addr_t virt_frame = phys2virt(frame_addr);
-    for (size_t i = 0; i < PAGE_SIZE / sizeof(uint32_t); ++i) {
-      ((uint32_t*)virt_frame)[i] = 0xDEADBEEF;
-    }
   }
 
-  page_frame_free_nocheck(frame_addr);
+  free_frame_stack[stack_idx++] = frame_addr;
+  POP_INTERRUPTS();
 }
 
 void page_frame_free_nocheck(phys_addr_t frame_addr) {
+  PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(is_page_aligned(frame_addr));
   KASSERT(stack_idx <= stack_size);
 
   free_frame_stack[stack_idx++] = frame_addr;
+  POP_INTERRUPTS();
 }
 
 phys_addr_t page_frame_dma_alloc(size_t pages) {
+  PUSH_AND_DISABLE_INTERRUPTS();
   if (pages == 0 || pages > DMA_RESERVED_FRAMES - dma_reserved_first_free_idx) {
+    POP_INTERRUPTS();
     return 0;
   }
   const phys_addr_t result =
       dma_reserved_first_frame + dma_reserved_first_free_idx * PAGE_SIZE;
   dma_reserved_first_free_idx += pages;
+  POP_INTERRUPTS();
   return result;
 }

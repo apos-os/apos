@@ -16,12 +16,18 @@
 
 #include "archs/i586/internal/memory/page_fault-x86.h"
 #include "common/debug.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/page_alloc.h"
+#include "proc/notification.h"
+#include "proc/process.h"
+#include "proc/scheduler.h"
+#include "proc/sleep.h"
 #include "test/ktest.h"
+#include "test/test_params.h"
 
 // The maximum amount of memory (in MB) that the test_alloc_all test will
 // attempt to allocate.  If it's too big, we might run out of space to track all
@@ -142,9 +148,63 @@ void test_basic(void) {
   //page_frame_free(page4);
 }
 
+static void* mt_page_alloc_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  notification_t* done = (notification_t*)arg;
+
+  uint32_t rand = (uintptr_t)&done;
+  const size_t kMaxPages = 10;
+  phys_addr_t pages[kMaxPages];
+  size_t page = 0;
+  // Have two loops so that we don't accidentally cross-thread synchronize on
+  // the notification too frequently.
+  int total = 0;
+  while (!ntfn_has_been_notified(done)) {
+    for (int i = 0; i < 1000; ++i) {
+      rand = fnv_hash(rand);
+      KASSERT(rand != 0);
+      if (page == 0 || (rand % 2 == 0 && page < kMaxPages)) {
+        pages[page] = page_frame_alloc();
+        page++;
+        total++;
+      } else {
+        KASSERT(page > 0);
+        page--;
+        page_frame_free(pages[page]);
+      }
+    }
+  }
+
+  for (size_t i = 0; i < page; ++i) {
+    page_frame_free(pages[i]);
+  }
+  KLOG("Page alloc thread: allocated %d pages total during test\n", total);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void multithread_test(void) {
+  KTEST_BEGIN("page allocator multi-threaded test");
+  const int kNumThreads = 2 * CONCURRENCY_TEST_THREADS_MULT;
+  kthread_t threads[kNumThreads];
+  notification_t done;
+  ntfn_init(&done);
+  for (int i = 0; i < kNumThreads; ++i) {
+    KEXPECT_EQ(0, proc_thread_create(&threads[i], &mt_page_alloc_thread,
+                                     &done));
+  }
+
+  ksleep(100 * CONCURRENCY_TEST_ITERS_MULT);
+  ntfn_notify(&done);
+  for (int i = 0; i < kNumThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+}
+
 void page_alloc_test(void) {
   KTEST_SUITE_BEGIN("page_frame_alloc() test");
 
   test_alloc_all();
   test_basic();
+  multithread_test();
 }
