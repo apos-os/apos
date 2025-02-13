@@ -188,14 +188,21 @@ bool kexpect_int(const char* name, const char* file, const char* line,
   // If the expected value is written as hex, print the actual value as hex too.
   if (a_type == PRINT_HEX ||
       kstrncmp(astr, "0x", 2) == 0 || kstrncmp(bstr, "0x", 2) == 0) {
-    ksprintf(aval_str, "0x%s", kutoa_hex(aval));
-    ksprintf(bval_str, "0x%s", kutoa_hex(bval));
+    // Get around the fact that ksprintf() can't do 64-bit numbers on 32-bit
+    // platforms :/  Note that this truncates anyway when the intmax_t is passed
+    // to kutoa_hex_r.
+    // TODO(aoates): figure out 64-bit versions of the kstring functions on
+    // 32-bit platforms and make them work.
+    kstrcpy(aval_str, "0x");
+    kutoa_hex_r(aval, aval_str + 2, kBufSize - 2);
+    kstrcpy(bval_str, "0x");
+    kutoa_hex_r(bval, bval_str + 2, kBufSize - 2);
   } else if (b_type == PRINT_SIGNED ||
              kstrncmp(astr, "-", 1) == 0 || kstrncmp(bstr, "-", 1) == 0) {
     kexpect_int_to_string(aval, bval, aval_str, bval_str, kBufSize);
   } else {
-    kstrcpy(aval_str, kutoa(aval));
-    kstrcpy(bval_str, kutoa(bval));
+    kutoa_r(aval, aval_str, kBufSize);
+    kutoa_r(bval, bval_str, kBufSize);
   }
   return kexpect(result, name, astr, bstr, aval_str, bval_str, "", opstr, file,
                  line);
