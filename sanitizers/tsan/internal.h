@@ -17,9 +17,11 @@
 
 #include "common/attributes.h"
 #include "common/kassert.h"
+#include "common/linker_symbols.h"
 #include "proc/kthread-internal.h"
 #include "sanitizers/tsan/internal_types.h"
 #include "sanitizers/tsan/tsan_event.h"
+#include "sanitizers/tsan/tsan_layout.h"
 #include "sanitizers/tsan/tsan_thread_slot.h"
 
 typedef unsigned long uptr;
@@ -37,6 +39,19 @@ static ALWAYS_INLINE void tsan_thread_epoch_inc(kthread_t thread) {
 }
 
 void tsan_per_cpu_init(void);
+
+// Returns true if the address is in an instrumented region.  This must be a
+// dynamic check because we only map the writable portions of the kernel image
+// plus the heap, not read-only data or code, which also appear in the overall
+// mapped region.
+static inline ALWAYS_INLINE bool tsan_is_mapped_addr(addr_t addr) {
+  // N.B. this is an abstraction leak (to access
+  // KERNEL_DATA_START/KERNEL_DATA_END directly), but means this can hopefully
+  // be done without any memory accesses.
+  return (addr >= TSAN_HEAP_START_ADDR && addr < TSAN_HEAP_END_ADDR) ||
+         (addr >= (addr_t)&KERNEL_DATA_START &&
+          addr < (addr_t)&KERNEL_DATA_END);
+}
 
 // Returns the current "TSAN thread."  This will be the actual current thread if
 // we're executing in a thread context, or a TSAN-specific virtual thread

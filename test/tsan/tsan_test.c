@@ -2526,6 +2526,38 @@ static void multilock_tests(void) {
   multilock_legacy_interrupt_spinlock_test();
 }
 
+static void do_basic_race_test(uint64_t* x) {
+  tsan_rw_u64(x);
+
+  intercept_reports();
+  tsan_rw_u64(x);
+  kthread_t thread1, thread2;
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u64, x));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &access_u64, x));
+
+  KEXPECT_TRUE(wait_for_race());
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  EXPECT_REPORT(x, 8, "?", x, 8, "w");
+  intercept_reports_done();
+}
+
+static uint64_t g_tsan_val_bss = 0;
+static uint64_t g_tsan_val_data = 1234;
+
+static void kernel_writable_data_tests(void) {
+  KTEST_BEGIN("TSAN: kernel writable data sanity test (using heap)");
+  uint64_t* x = TS_MALLOC(uint64_t);
+  do_basic_race_test(x);
+  tsan_test_cleanup();
+
+  KTEST_BEGIN("TSAN: catches race in .bss");
+  do_basic_race_test(&g_tsan_val_bss);
+
+  KTEST_BEGIN("TSAN: catches race in .data");
+  do_basic_race_test(&g_tsan_val_data);
+}
+
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   // For most of these tests, having the legacy full-sync behavior will break
@@ -2545,6 +2577,7 @@ void tsan_test(void) {
   special_functions_tests();
   evict_test();
   multilock_tests();
+  kernel_writable_data_tests();
 
   interrupt_set_legacy_full_sync(old_legacy);
 

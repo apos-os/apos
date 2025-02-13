@@ -36,6 +36,7 @@ bool g_tsan_init = false;
 static vm_area_t g_root_tsan_heap_vm_area;
 
 static void tsan_alloc_pages(addr_t start, size_t num_pages) {
+  KASSERT(start % PAGE_SIZE == 0);
   KASSERT(start >= get_global_meminfo()->tsan_region.base);
   KASSERT(start + num_pages * PAGE_SIZE <
           get_global_meminfo()->tsan_region.base +
@@ -56,6 +57,55 @@ static void tsan_alloc_pages(addr_t start, size_t num_pages) {
       ((uint64_t*)virt)[i] = 0;
     }
   }
+}
+
+// Set up a TSAN-mapped region.  Allocates and initializes all the shadow and
+// metadata pages needed to cover the given virtual address range.
+static void tsan_map_vregion(addr_t start, size_t len) {
+  KASSERT(start % PAGE_SIZE == 0);
+  KASSERT(start >= TSAN_MAPPED_START_ADDR);
+  KASSERT(start + len - TSAN_MAPPED_LEN_ADDR < TSAN_MAPPED_START_ADDR);
+  const size_t len_pages = ceiling_div(len, PAGE_SIZE);
+  const size_t offset = start - TSAN_MAPPED_START_ADDR;
+  KASSERT(offset % PAGE_SIZE == 0);
+  klogfm(KL_GENERAL, INFO, "TSAN: mapping virtual region %p-%p\n",
+         (void*)start, (void*)(start + len));
+
+  // Allocate the shadow pages.
+  const size_t shadow_offset = TSAN_SHADOW_MEMORY_MULT * offset;
+  const size_t shadow_pages = TSAN_SHADOW_MEMORY_MULT * len_pages;
+  tsan_alloc_pages(TSAN_SHADOW_START_ADDR + shadow_offset, shadow_pages);
+
+  // Create the page metadata region.
+  // N.B.: this may overlap with other calls to tsan_map_vregion() if the
+  // regions are close to each other (within ~4MB), in which case this will
+  // panic.  In that case this code will need to be updated to deal with that.
+
+  // Illustration, showing a pmdata byte region that is less that one page but
+  // crosses a page boundary, and therefore requires two full pages to be
+  // allocated to it:
+  // |             |             |             |  <-- page boundaries
+  // |             |          AAAAAAAA         |  <-- pmdata actual bytes
+  // |             |xxxxxxxxxxAAAAAAAA         |  <-- pmdata offset aligned
+  // |             |xxxxxxxxxxAAAAAAAAyyyyyyyyy|  <-- full allocated region
+
+  // First get the byte offset and length of our new metadata region.
+  const size_t pmdata_offset_bytes =
+      (offset / PAGE_SIZE) * sizeof(tsan_page_metadata_t);
+  const size_t pmdata_len_bytes = len_pages * sizeof(tsan_page_metadata_t);
+
+  // Now round down to get the first page address we need to map containing that
+  // byte offset (adds "xxx" region above).
+  const size_t pmdata_offset_aligned =
+      PAGE_SIZE * (pmdata_offset_bytes / PAGE_SIZE);
+
+  // ...and use the actual "end" address in bytes to calculate the number of
+  // pages to map (adds "yyy" region above).
+  const size_t pmdata_pages = ceiling_div(
+      pmdata_offset_bytes + pmdata_len_bytes - pmdata_offset_aligned,
+      PAGE_SIZE);
+  tsan_alloc_pages(TSAN_PAGE_METADATA_START + pmdata_offset_aligned,
+                   pmdata_pages);
 }
 
 void tsan_init_shadow_mem(void) {
@@ -80,21 +130,14 @@ void tsan_init_shadow_mem(void) {
   // Force-allocate enough pages in the TSAN heap region to cover the entire
   // heap (actual heap size, not mapped heap size).
   KASSERT(meminfo->heap_size_max % PAGE_SIZE == 0);
-  const size_t heap_pages = meminfo->heap_size_max / PAGE_SIZE;
-  const size_t shadow_heap_pages = TSAN_SHADOW_MEMORY_MULT * heap_pages;
-  tsan_alloc_pages(TSAN_SHADOW_HEAP_START_ADDR, shadow_heap_pages);
+  tsan_map_vregion(meminfo->heap.base, meminfo->heap_size_max);
 
-  // Create the page metadata region.
-  const size_t page_metadata_bytes = heap_pages * sizeof(tsan_page_metadata_t);
-  const size_t page_metadata_pages =
-      ceiling_div(page_metadata_bytes, PAGE_SIZE);
-  tsan_alloc_pages(TSAN_PAGE_METADATA_START, page_metadata_pages);
+  // Allocate shadow and metadata for the static data (.data/.bss) areas.
+  KASSERT(meminfo->kernel_writable_data.len > 0);
+  tsan_map_vregion(meminfo->kernel_writable_data.base,
+                   meminfo->kernel_writable_data.len);
 
-  // TODO(tsan): set up shadow mappings and TSAN support for non-heap memory
-  // (.data and .bss sections of the kernel, in particular).
-
-  KASSERT(meminfo->heap.base == TSAN_HEAP_START_ADDR);
-  KASSERT(meminfo->tsan_region.base == TSAN_SHADOW_HEAP_START_ADDR);
+  KASSERT(meminfo->tsan_region.base == TSAN_SHADOW_START_ADDR);
   g_tsan_mem_init = true;
 }
 

@@ -21,6 +21,7 @@
 #include "common/kstring.h"
 #include "common/math.h"
 #include "dev/interrupts.h"
+#include "memory/memory.h"
 #include "proc/kthread-internal.h"
 #include "sanitizers/tsan/internal.h"
 #include "sanitizers/tsan/report.h"
@@ -68,16 +69,18 @@ static ALWAYS_INLINE uint8_t shadow_size(tsan_shadow_t s) {
 }
 
 static ALWAYS_INLINE tsan_shadow_t* get_shadow_cells(addr_t addr) {
-  addr_t offset = (addr & ~0x7) - TSAN_HEAP_START_ADDR;
+  KASSERT_DBG(addr >= TSAN_MAPPED_START_ADDR &&
+              addr - TSAN_MAPPED_LEN_ADDR < TSAN_MAPPED_START_ADDR);
+  addr_t offset = (addr & ~0x7) - TSAN_MAPPED_START_ADDR;
   KASSERT_DBG((offset % TSAN_MEMORY_CELL_SIZE) == 0);
   addr_t shadow =
-      TSAN_SHADOW_HEAP_START_ADDR + (offset / TSAN_MEMORY_CELL_SIZE *
+      TSAN_SHADOW_START_ADDR + (offset / TSAN_MEMORY_CELL_SIZE *
                                      sizeof(tsan_shadow_t) * TSAN_SHADOW_CELLS);
   return (tsan_shadow_t*)shadow;
 }
 
 static ALWAYS_INLINE tsan_page_metadata_t* get_page_md(addr_t addr) {
-  addr_t heap_page = (addr - TSAN_HEAP_START_ADDR) / PAGE_SIZE;
+  addr_t heap_page = (addr - TSAN_MAPPED_START_ADDR) / PAGE_SIZE;
   addr_t md_addr =
       TSAN_PAGE_METADATA_START + (heap_page * sizeof(tsan_page_metadata_t));
   return (tsan_page_metadata_t*)md_addr;
@@ -198,9 +201,13 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
     print_stack_trace(stack_trace, len);
   }
 
-  if (addr < TSAN_HEAP_START_ADDR || addr >= TSAN_HEAP_START_ADDR +
-      TSAN_HEAP_LEN_ADDR) {
-    // Access outside the heap.  Ignore.
+  if (!tsan_is_mapped_addr(addr)) {
+    // Access outside the mapped areas.  Ignore.
+    // Sanity checks to make sure we're not missing any important writes:
+    KASSERT(type == TSAN_ACCESS_READ ||
+            addr < get_global_meminfo()->kernel.virt_base ||  // User addr
+            smmap_region_in(&get_global_meminfo()->thread0_stack, addr) ||
+            is_direct_mapped(addr));
     return false;
   }
 
@@ -372,9 +379,9 @@ void tsan_set_report_func(tsan_report_fn_t fn) {
 void tsan_mark_stack(addr_t start, size_t len, bool is_stack) {
   KASSERT(start % PAGE_SIZE == 0);
   KASSERT(len % PAGE_SIZE == 0);
-  KASSERT(start >= TSAN_HEAP_START_ADDR);
-  KASSERT(len < TSAN_HEAP_LEN_ADDR);
-  KASSERT(start + len < TSAN_HEAP_START_ADDR + TSAN_HEAP_LEN_ADDR);
+  KASSERT(start >= TSAN_MAPPED_START_ADDR);
+  KASSERT(len < TSAN_MAPPED_LEN_ADDR);
+  KASSERT(start + len - TSAN_MAPPED_LEN_ADDR < TSAN_MAPPED_START_ADDR);
 
   for (addr_t addr = start; addr < start + len; addr += PAGE_SIZE) {
     get_page_md(addr)->is_stack = is_stack;

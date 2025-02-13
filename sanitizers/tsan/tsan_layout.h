@@ -20,10 +20,15 @@
 
 // Hard-coded memory layout parameters.  We hard-code so that they can be easily
 // optimized, and because in practice they are always set the same.
+#define TSAN_MAPPED_START_ADDR RSV64_TSAN_MAPPED_START
+#define TSAN_MAPPED_LEN_ADDR RSV64_TSAN_MAPPED_LEN
+#define TSAN_SHADOW_START_ADDR RSV64_TSAN_SHADOW_START
+#define TSAN_SHADOW_LEN RSV64_TSAN_SHADOW_LEN
+
+// Hard-code these for fast calculations on most accesses.
 #define TSAN_HEAP_START_ADDR RSV64_HEAP_START
 #define TSAN_HEAP_LEN_ADDR RSV64_HEAP_LEN
-#define TSAN_SHADOW_HEAP_START_ADDR RSV64_TSAN_SHADOW_START
-#define TSAN_SHADOW_HEAP_LEN (RSV64_HEAP_LEN * TSAN_SHADOW_MEMORY_MULT)
+#define TSAN_HEAP_END_ADDR (TSAN_HEAP_START_ADDR + TSAN_HEAP_LEN_ADDR)
 
 // Per-page metadata block.
 #define TSAN_PAGE_METADATA_START RSV64_TSAN_MDATA_START
