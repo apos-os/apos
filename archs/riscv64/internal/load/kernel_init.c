@@ -35,7 +35,8 @@
 _Static_assert(ARCH == ARCH_riscv64, "bad ARCH");
 _Static_assert(ARCH_IS_64_BIT, "ARCH_IS_64_BIT should be set");
 
-extern int KERNEL_START_SYMBOL, KERNEL_END_SYMBOL;
+extern int KERNEL_START_SYMBOL, KERNEL_END_SYMBOL, KERNEL_DATA_START,
+    KERNEL_DATA_END;
 
 static memory_info_t g_meminfo;
 
@@ -152,6 +153,10 @@ static void create_initial_meminfo(const dt_tree_t* fdt, memory_info_t* meminfo,
   meminfo->kernel_mapped.base =
       RSV64_KERNEL_PHYS_ADDR + RSV64_KERNEL_VIRT_OFFSET;
   meminfo->kernel_mapped.len = RSV_MAP_GIGAPAGE_SIZE;
+
+  meminfo->kernel_writable_data.base = (addr_t)&KERNEL_DATA_START;
+  meminfo->kernel_writable_data.len = (addr_t)&KERNEL_DATA_END -
+      (addr_t)&KERNEL_DATA_START;
 
   meminfo->mainmem_phys.base = mainmem_addr;
   meminfo->mainmem_phys.len = mainmem_len;

@@ -74,6 +74,7 @@ SECTIONS
 
     .data ALIGN (0x1000) : AT(ADDR(.data) - _OFFSET)
     {
+        KERNEL_DATA_START = .;
         *(.data)
         *(.ldata)
         *(.sdata)
@@ -86,6 +87,7 @@ SECTIONS
         *(.lbss)
         *(.sbss)
     }
+    KERNEL_DATA_END = .;
     KERNEL_END_SYMBOL = .;
 
     . = 0;

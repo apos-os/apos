@@ -53,6 +53,10 @@ typedef struct {
   // binary (so, this _contains_ the kernel_virt region)
   smmap_region_t kernel_mapped;
 
+  // The area of virtual memory that contains kernel writable data (.data and
+  // .bss sections).
+  smmap_region_t kernel_writable_data;
+
   // The physical main memory region.
   // TODO(aoates): replace this with a more flexible memory map approach.
   smmap_region_t mainmem_phys;
