@@ -16,6 +16,7 @@
 
 #include "archs/common/arch/dev/interrupts.h"
 
+#include "common/attributes.h"
 #include "common/config.h"
 
 // The direct assembly implementations of these functions.  In non-TSAN mode,
@@ -33,5 +34,16 @@ void restore_interrupts_raw(interrupt_state_t saved);
 #define restore_interrupts(saved, full_sync) restore_interrupts_raw(saved)
 
 #endif  // !ENABLE_TSAN
+
+// Software-triggered supervisor interrupts.
+
+// Triggers a synchronous preemption if there are other threads waiting.
+#define RSV_SOFTINT_PREEMPT 1
+
+static inline ALWAYS_INLINE void rsv_raise_softint(int type) {
+  asm volatile(
+      "mv a0, %[type]\n\t"
+      "csrsi sip, 0x2\n\t" ::[type] "r"(type));
+}
 
 #endif

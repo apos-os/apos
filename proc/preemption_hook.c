@@ -13,6 +13,7 @@
 // limitations under the License.
 #include "proc/preemption_hook.h"
 
+#include "arch/dev/interrupts.h"
 #include "common/hash.h"
 #include "dev/interrupts.h"
 #include "dev/timer.h"
@@ -47,7 +48,13 @@ void sched_preempt_me(int level) {
     kspin_unlock(&rng_lock);
 
     if (tick) {
+#if ARCH == ARCH_riscv64
+      rsv_raise_softint(RSV_SOFTINT_PREEMPT);
+#else
+      PUSH_AND_DISABLE_INTERRUPTS();
       sched_tick();
+      POP_INTERRUPTS();
+#endif
     }
   }
 }

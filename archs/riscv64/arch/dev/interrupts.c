@@ -26,6 +26,7 @@
 #include "memory/vm_page_fault.h"
 #include "proc/defint.h"
 #include "proc/kthread-internal.h"
+#include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/user_prepare.h"
 #include "sanitizers/tsan/tsan_lock.h"
@@ -97,11 +98,24 @@ static void rsv_page_fault(int trap, addr_t addr, bool is_kernel) {
   vm_handle_page_fault(addr, type, op,mode);
 }
 
+static void rsv_software_interrupt(rsv_context_t* ctx) {
+  asm volatile("csrci sip, 0x2");
+  switch (ctx->a0) {
+    case RSV_SOFTINT_PREEMPT:
+      sched_tick();
+      break;
+
+    default:
+      // These should never be generated (currently).
+      die("Unexpected software interrupt");
+  }
+}
+
 void interrupts_init(void) {
   // Enable timer interupts by setting STIE.
   // TODO(aoates): consider safer boot sequence and not enabling these until
   // timers are fully set up.
-  uint64_t sie_bits = 0x20;
+  uint64_t sie_bits = 0x22;
   asm volatile("csrs sie, %0" ::"r"(sie_bits));
 }
 
@@ -141,8 +155,9 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
         break;
 
       case RSV_INT_SSOFTWARE:
-        // These should never be generated (currently).
-        die("Unexpected software interrupt");
+        KASSERT_DBG(is_kernel);
+        rsv_software_interrupt(ctx);
+        break;
 
       default:
         klogfm(
