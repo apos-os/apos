@@ -1379,7 +1379,8 @@ void kshell_main(apos_dev_t tty) {
   char read_buf[READ_BUF_SIZE];
 
   if (KSHELL_INITIAL_COMMAND[0]) {
-    parse_and_dispatch(&shell, KSHELL_INITIAL_COMMAND);
+    kstrcpy(read_buf, KSHELL_INITIAL_COMMAND);
+    parse_and_dispatch(&shell, read_buf);
   }
 
   while (1) {
