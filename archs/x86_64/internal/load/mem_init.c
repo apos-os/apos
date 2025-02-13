@@ -16,14 +16,8 @@
 
 #include "archs/x86_64/internal/load/mem_init.h"
 #include "archs/x86_64/internal/memory/page_tables.h"
+#include "common/linker_symbols.h"
 #include "memory/memory.h"
-
-// Memory limits of the kernel --- symbols defined at the start and end of the
-// kernel.  Defined in loader.s.
-//
-// Note: these are the VIRTUAL addresses of the start and end.
-extern uint64_t KERNEL_START_SYMBOL;
-extern uint64_t KERNEL_END_SYMBOL;
 
 // We will additionally set up a linear map for physical memory into the
 // kernel's virtual memory space, starting at the following address.

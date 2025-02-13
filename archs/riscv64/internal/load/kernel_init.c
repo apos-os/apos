@@ -23,6 +23,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "common/linker_symbols.h"
 #include "common/math.h"
 #include "dev/devicetree/devicetree.h"
 #include "dev/devicetree/dtb.h"
@@ -34,9 +35,6 @@
 
 _Static_assert(ARCH == ARCH_riscv64, "bad ARCH");
 _Static_assert(ARCH_IS_64_BIT, "ARCH_IS_64_BIT should be set");
-
-extern int KERNEL_START_SYMBOL, KERNEL_END_SYMBOL, KERNEL_DATA_START,
-    KERNEL_DATA_END;
 
 static memory_info_t g_meminfo;
 
