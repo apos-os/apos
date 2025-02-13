@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 #include "arch/memory/layout.h"
+#include "common/attributes.h"
 #include "common/types.h"
 
 // A top-level page directory pointer.
@@ -39,6 +40,18 @@ typedef struct {
   smmap_region_t phys;
   addr_t virt_base;
 } smmap_map_t;
+
+ALWAYS_INLINE static inline bool smmap_region_in(const smmap_region_t* r, addr_t a) {
+  return a >= r->base && a - r->len < r->base;
+}
+
+ALWAYS_INLINE static inline bool smmap_map_in_phys(const smmap_map_t* m, addr_t a) {
+  return a >= m->phys.base && a - m->phys.len < m->phys.base;
+}
+
+ALWAYS_INLINE static inline bool smmap_map_in_virt(const smmap_map_t* m, addr_t a) {
+  return a >= m->virt_base && a - m->phys.len < m->virt_base;
+}
 
 #define MEM_MAX_PHYS_MAPS 2
 

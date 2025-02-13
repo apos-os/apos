@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "common/config.h"
 #include "arch/common/types.h"
 #include "user/include/apos/posix_types.h"
 
@@ -31,5 +32,11 @@ _Static_assert(sizeof(ssize_t) == sizeof(size_t), "bad ssize_t size");
 #define PTR_ALIGN sizeof(void*)
 
 typedef int kthread_id_t;
+
+#if ARCH_IS_64_BIT
+# define ADDR_T_MAX UINT64_MAX
+#else
+# define ADDR_T_MAX UINT32_MAX
+#endif
 
 #endif

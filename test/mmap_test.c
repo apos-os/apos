@@ -137,6 +137,59 @@ static void flush_all_mappings(void* start, int pages) {
   }
 }
 
+static void memory_util_tests(void) {
+  KTEST_BEGIN("Memory utility tests");
+
+  smmap_region_t r;
+  r.base = 100;
+  r.len = 50;
+  KEXPECT_TRUE(smmap_region_in(&r, 100));
+  KEXPECT_TRUE(smmap_region_in(&r, 120));
+  KEXPECT_TRUE(smmap_region_in(&r, 149));
+  KEXPECT_FALSE(smmap_region_in(&r, 0));
+  KEXPECT_FALSE(smmap_region_in(&r, 99));
+  KEXPECT_FALSE(smmap_region_in(&r, 150));
+  KEXPECT_FALSE(smmap_region_in(&r, ADDR_T_MAX));
+
+  r.base = ADDR_T_MAX - 10;
+  r.len = 10;
+  KEXPECT_TRUE(smmap_region_in(&r, ADDR_T_MAX - 1));
+  KEXPECT_TRUE(smmap_region_in(&r, ADDR_T_MAX - 10));
+  KEXPECT_FALSE(smmap_region_in(&r, ADDR_T_MAX));
+  KEXPECT_FALSE(smmap_region_in(&r, ADDR_T_MAX - 11));
+  KEXPECT_FALSE(smmap_region_in(&r, ADDR_T_MAX + 1));
+
+  r.base = ADDR_T_MAX - 10;
+  r.len = 11;
+  KEXPECT_TRUE(smmap_region_in(&r, ADDR_T_MAX));
+  KEXPECT_FALSE(smmap_region_in(&r, ADDR_T_MAX + 1));
+
+  smmap_map_t m;
+  m.phys.base = 100;
+  m.phys.len = 50;
+  m.virt_base = 500;
+
+  KEXPECT_TRUE(smmap_map_in_phys(&m, 100));
+  KEXPECT_TRUE(smmap_map_in_phys(&m, 120));
+  KEXPECT_TRUE(smmap_map_in_phys(&m, 149));
+  KEXPECT_FALSE(smmap_map_in_virt(&m, 100));
+  KEXPECT_FALSE(smmap_map_in_virt(&m, 120));
+  KEXPECT_FALSE(smmap_map_in_virt(&m, 149));
+
+  KEXPECT_FALSE(smmap_map_in_phys(&m, 0));
+  KEXPECT_FALSE(smmap_map_in_phys(&m, 99));
+  KEXPECT_FALSE(smmap_map_in_phys(&m, 150));
+  KEXPECT_FALSE(smmap_map_in_phys(&m, ADDR_T_MAX));
+
+  KEXPECT_FALSE(smmap_map_in_phys(&m, 500));
+  KEXPECT_FALSE(smmap_map_in_phys(&m, 520));
+  KEXPECT_FALSE(smmap_map_in_phys(&m, 549));
+  KEXPECT_TRUE(smmap_map_in_virt(&m, 500));
+  KEXPECT_TRUE(smmap_map_in_virt(&m, 520));
+  KEXPECT_TRUE(smmap_map_in_virt(&m, 549));
+
+}
+
 static void mmap_invalid_args(void) {
   const char kFile[] = "mmap_file";
   const int fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_CREAT, 0);
@@ -840,6 +893,8 @@ static void do_mmap_test(void* unused_arg) {
   KTEST_BEGIN("Cleanup existing user mappings");
   KEXPECT_EQ(0, do_munmap(0x0, MEM_LAST_USER_MAPPABLE_ADDR + 1));
   EXPECT_MMAP(0, MMAP_EMPTY);
+
+  memory_util_tests();
 
   mmap_invalid_args();
   munmap_invalid_args();

@@ -72,18 +72,13 @@ phys_addr_t virt2phys(addr_t x) {
 }
 
 bool is_direct_mappable(phys_addr_t x) {
-  return (x > global_meminfo->phys_maps[0].phys.base &&
-          x < global_meminfo->phys_maps[0].phys.len);
+  return smmap_map_in_phys(&global_meminfo->phys_maps[0], x);
 }
 
 bool is_direct_mapped(addr_t x) {
-  return (x >= global_meminfo->phys_maps[0].virt_base &&
-          x < global_meminfo->phys_maps[0].virt_base +
-                  global_meminfo->phys_maps[0].phys.len);
+  return smmap_map_in_virt(&global_meminfo->phys_maps[0], x);
 }
 
 bool is_valid_callback(void* cb) {
-  return (addr_t)cb >= global_meminfo->kernel.virt_base &&
-         (addr_t)cb <
-             global_meminfo->kernel.virt_base + global_meminfo->kernel.phys.len;
+  return smmap_map_in_virt(&global_meminfo->kernel, (addr_t)cb);
 }
