@@ -20,12 +20,23 @@
 // +-----------------------------------------+------+----------------------+
 // | 0x0000000000000000 - 0x0000003FFFFFFFFF | 256G | User mode addresses  |
 // | 0x0000004000000000 - 0xFFFFFF7FFFFFFFFF |      | Unusable addresses   |
-// | 0xFFFFFF8000000000 - 0xFFFFFFEFFFFFFFFF | 248G | Kernel (unused)      |
+// | 0xFFFFFFC000000000 - 0xFFFFFFDFFFFFFFFF | 128G | Kernel (unused)      |
+// | 0xFFFFFFE000000000 - 0xFFFFFFE7FFFFFFFF | 32G  | TSAN data (shadow)   |
+// | 0xFFFFFFE800000000 - 0xFFFFFFEFFFFFFFFF | 32G  | TSAN data (other)    |
 // | 0xFFFFFFF000000000 - 0xFFFFFFF7FFFFFFFF | 32G  | Physical memory map  |
+// | 0xFFFFFFF800000000 - 0xFFFFFFFEFFFFFFFF | 28G  | <unused>             |
+// | 0xFFFFFFFF00000000+                     |      | TSAN-shadowed range  |
 // | 0xFFFFFFFF00000000 - 0xFFFFFFFF7FFFFFFF | 2G   | Kernel heap          |
 // | 0xFFFFFFFF80000000 - 0xFFFFFFFFFFFFFFFF | 2G   | Kernel (code + data) |
 // |   0xFFFFFFFF88000000+ -> kernel image   |      |                      |
 // +-----------------------------------------+------+----------------------+
+//
+// The TSAN region is split into two parts:
+//  - TSAN data (shadow): 32GB of virtual address space set aside as direct
+//    shadow-mapped equivalents of the last 4GB of virtual address space
+//    (depending on configuration).
+//  - TSAN data (other): another 32GB of virtual address space that can be used
+//    for other TSAN data structures (such as page metadata).
 
 #define PAGE_SIZE          0x00001000
 #define PAGE_INDEX_MASK    0xFFFFFFFFFFFFF000
