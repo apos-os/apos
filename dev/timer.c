@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "arch/dev/timer.h"
+#include "common/atomic.h"
 #include "common/debug.h"
 #include "common/errno.h"
 #include "common/kassert.h"
@@ -47,7 +48,7 @@ typedef struct {
 // dependency on kmalloc or slab_alloc.
 static timer_t timers[KMAX_TIMERS];
 static unsigned int num_timers = 0;
-static apos_ms_t time_ms = 0;  // Time (in ms) since timer initialization.
+static atomic32_t time_ms = ATOMIC32_INIT(0);  // Time (in ms) since timer initialization.
 static int list_head = -1;  // Head (idx) of linked list.
 
 #if ENABLE_KERNEL_SAFETY_NETS
@@ -77,7 +78,7 @@ static void internal_timer_handler(void* arg) {
     KASSERT_DBG(thread->interrupt_level == 1 || thread->interrupt_level == 2);
   }
 
-  time_ms += KTIMESLICE_MS;
+  atomic_add_relaxed(&time_ms, KTIMESLICE_MS);
   int idx = list_head;
   while (idx >= 0) {
     if (timers[idx].counter == 0) {
@@ -106,9 +107,10 @@ static void internal_timer_handler(void* arg) {
   }
 
   // Handle any pending event timers.
+  apos_ms_t now = atomic_load_relaxed(&time_ms);
   while (!list_empty(&event_timers)) {
     event_timer_t* timer = container_of(event_timers.head, event_timer_t, link);
-    if (timer->deadline_ms > time_ms) break;
+    if (timer->deadline_ms > now) break;
 
     list_pop(&event_timers);
     timer->handler(timer->handler_arg);
@@ -232,5 +234,5 @@ void cancel_all_event_timers_for_tests(void) {
 }
 
 apos_ms_t get_time_ms(void) {
-  return time_ms;
+  return atomic_load_relaxed(&time_ms);
 }
