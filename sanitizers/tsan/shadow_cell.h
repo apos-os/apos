@@ -29,7 +29,7 @@ typedef struct {
   uint32_t epoch;
   uint8_t sid;
   uint8_t mask;  // Which bytes were accessed (gets offset and size).
-  uint8_t is_write:1;
+  uint8_t is_read:1;
   uint8_t is_atomic:1;
   uint16_t _unused2:14;
 } tsan_shadow_t;

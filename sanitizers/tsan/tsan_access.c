@@ -57,8 +57,7 @@ static ALWAYS_INLINE tsan_shadow_t make_shadow(kthread_t thread, addr_t addr,
   shadow.epoch = thread->tsan.clock.ts[thread->tsan.sid];
   shadow.sid = thread->tsan.sid;
   shadow.mask = make_mask(addr % 8, size);
-  // Need to coerce these into 1 or 0 so they aren't truncated to zero.
-  shadow.is_write = tsan_is_write(type);
+  shadow.is_read = tsan_is_read(type);
   shadow.is_atomic = tsan_is_atomic(type);
   return shadow;
 }
@@ -100,7 +99,7 @@ static ALWAYS_INLINE void store_shadow(tsan_shadow_t* dst, tsan_shadow_t data) {
 
 // Returns true if the given access can overwrite the other given access.
 static ALWAYS_INLINE bool can_overwrite(tsan_shadow_t a, tsan_shadow_t b) {
-  return a.is_write || !b.is_write;
+  return !a.is_read || b.is_read;
 }
 
 #define SHADOW_PRETTY_LEN 64
@@ -114,8 +113,8 @@ static char* print_shadow(char* buf, tsan_shadow_t s) {
   uint8_t size  = shadow_size(s);
   KASSERT_DBG(__builtin_clzg(s.mask) + offset + size == 8);
   ksnprintf(buf, SHADOW_PRETTY_LEN,
-            "{tid=%u@%u offset=%d size=%d is_write=%d is_atomic=%d}",
-            (uint32_t)(s.sid), s.epoch, offset, size, s.is_write, s.is_atomic);
+            "{tid=%u@%u offset=%d size=%d is_read=%d is_atomic=%d}",
+            (uint32_t)(s.sid), s.epoch, offset, size, s.is_read, s.is_atomic);
   return buf;
 }
 
@@ -129,7 +128,7 @@ static const char* type2str(tsan_access_type_t t) {
 }
 
 static tsan_access_type_t shadow2type(tsan_shadow_t s) {
-  tsan_access_type_t t = s.is_write ? TSAN_ACCESS_WRITE : TSAN_ACCESS_READ;
+  tsan_access_type_t t = s.is_read ? TSAN_ACCESS_READ : TSAN_ACCESS_WRITE;
   if (s.is_atomic) {
     t |= TSAN_ACCESS_IS_ATOMIC;
   }
@@ -279,7 +278,7 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
       }
       continue;
     }
-    if (!old.is_write && !shadow.is_write) {
+    if (old.is_read && shadow.is_read) {
       // Safe, both are reads.
       continue;
     }
