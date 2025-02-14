@@ -43,6 +43,7 @@ typedef enum {
 typedef struct {
   tsan_event_type_t type : 1;
   bool is_read : 1;
+  bool is_atomic : 1;
   uint8_t size : 8;                  // Access size.  If zero, extended event
                                      // (next tsan_event_t has full size).
   addr_t addr : TSAN_ADDR_MAX_BITS;  // Address accessed, if an access.

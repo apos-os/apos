@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include "common/atomic.h"
 #include "common/endian.h"
 #include "common/hash.h"
 #include "common/kassert.h"
@@ -108,8 +109,12 @@ static bool type_matches(const char* s, tsan_access_type_t t) {
     return true;
   } else if (kstrcmp(s, "r") == 0) {
     return (t == TSAN_ACCESS_READ);
+  } else if (kstrcmp(s, "atomic_r") == 0) {
+    return (t == (TSAN_ACCESS_READ | TSAN_ACCESS_IS_ATOMIC));
   } else if (kstrcmp(s, "w") == 0) {
     return (t == TSAN_ACCESS_WRITE);
+  } else if (kstrcmp(s, "atomic_w") == 0) {
+    return (t == (TSAN_ACCESS_WRITE | TSAN_ACCESS_IS_ATOMIC));
   } else {
     KEXPECT_STREQ("?", s);
     KTEST_ADD_FAILURE("Invalid type string");
@@ -754,6 +759,14 @@ static void* read_u8(void* arg) {
   sched_enable_preemption_for_test();
   ksleep(10);
   tsan_read8((uint8_t*)arg);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* read_u32(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  tsan_read32((uint32_t*)arg);
   sched_disable_preemption();
   return NULL;
 }
@@ -2558,6 +2571,201 @@ static void kernel_writable_data_tests(void) {
   do_basic_race_test(&g_tsan_val_data);
 }
 
+static void* atomic_read_relaxed_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  atomic32_t* x = (atomic32_t*)arg;
+  tsan_atomic_read(x, ATOMIC_RELAXED);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* atomic_write_relaxed_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  atomic32_t* x = (atomic32_t*)arg;
+  tsan_atomic_write(x, 42, ATOMIC_RELAXED);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* atomic_rmw_relaxed_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  atomic32_t* x = (atomic32_t*)arg;
+  tsan_atomic_rmw(x, 3, ATOMIC_RELAXED);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void atomic_relaxed_safe_test(void) {
+  KTEST_BEGIN("TSAN: atomic read/write/RMW are safe (relaxed)");
+  atomic32_t* x = TS_MALLOC(atomic32_t);
+  atomic_store_relaxed(x, 0);
+  kthread_t threads[4];
+
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &atomic_read_relaxed_thread, x));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &atomic_write_relaxed_thread, x));
+  KEXPECT_EQ(0, proc_thread_create(&threads[2], &atomic_rmw_relaxed_thread, x));
+  KEXPECT_EQ(0, proc_thread_create(&threads[3], &atomic_rmw_relaxed_thread, x));
+
+  for (int i = 0; i < 4; ++i) {
+    kthread_join(threads[i]);
+  }
+  tsan_test_cleanup();
+}
+
+static void atomic_relaxed_safe_test2(void) {
+  KTEST_BEGIN("TSAN: atomic read and non-atomic read are safe (relaxed)");
+  atomic32_t* x = TS_MALLOC(atomic32_t);
+  atomic_store_relaxed(x, 0);
+  kthread_t threads[2];
+
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &atomic_read_relaxed_thread, x));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &read_u32, &x->_val));
+
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  tsan_test_cleanup();
+}
+
+static void atomic_relaxed_race_test1(void) {
+  KTEST_BEGIN("TSAN: atomic read and non-atomic write are racy (relaxed)");
+  atomic32_t* x = TS_MALLOC(atomic32_t);
+  atomic_store_relaxed(x, 0);
+  kthread_t threads[2];
+
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &atomic_read_relaxed_thread, x));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &access_u32, &x->_val));
+
+  wait_for_race();
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  EXPECT_REPORT(x, 4, "atomic_r", x, 4, "w");
+  intercept_reports_done();
+  tsan_test_cleanup();
+}
+
+static void atomic_relaxed_race_test2(void) {
+  KTEST_BEGIN("TSAN: non-atomic read and atomic write are racy (relaxed)");
+  atomic32_t* x = TS_MALLOC(atomic32_t);
+  atomic_store_relaxed(x, 0);
+  kthread_t threads[2];
+
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &read_u32, &x->_val));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &atomic_write_relaxed_thread, x));
+
+  wait_for_race();
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  EXPECT_REPORT(x, 4, "r", x, 4, "atomic_w");
+  intercept_reports_done();
+  tsan_test_cleanup();
+}
+
+static void atomic_relaxed_race_test3(void) {
+  KTEST_BEGIN("TSAN: non-atomic read and atomic RMW are racy (relaxed)");
+  atomic32_t* x = TS_MALLOC(atomic32_t);
+  atomic_store_relaxed(x, 0);
+  kthread_t threads[2];
+
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &read_u32, &x->_val));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &atomic_rmw_relaxed_thread, x));
+
+  wait_for_race();
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  EXPECT_REPORT(x, 4, "r", x, 4, "atomic_w");
+  intercept_reports_done();
+  tsan_test_cleanup();
+}
+
+static void atomic_relaxed_race_test4(void) {
+  KTEST_BEGIN("TSAN: non-atomic overlapping read and atomic RMW are racy (relaxed)");
+  atomic32_t* x = TS_MALLOC(atomic32_t);
+  atomic_store_relaxed(x, 0);
+  kthread_t threads[2];
+
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &read_u8, ((uint8_t*)&x->_val) + 1));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &atomic_rmw_relaxed_thread, x));
+
+  wait_for_race();
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  EXPECT_REPORT((uint8_t*)x + 1, 1, "r", x, 4, "atomic_w");
+  intercept_reports_done();
+  tsan_test_cleanup();
+}
+
+typedef struct {
+  atomic32_t flag;
+  uint32_t val;
+} sync_test_args_t;
+
+static void* sync_test_reader(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  sync_test_args_t* args = (sync_test_args_t*)arg;
+  while (atomic_load_relaxed(&args->flag) == 0)
+    ; // Spin
+  uint32_t val = tsan_read32(&args->val);
+  sched_disable_preemption();
+  return (void*)(uintptr_t)val;
+}
+
+static void* sync_test_writer(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  sync_test_args_t* args = (sync_test_args_t*)arg;
+  tsan_write32(&args->val, 42);
+  atomic_store_relaxed(&args->flag, 1);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void atomic_relaxed_doesnt_sync_test(void) {
+  KTEST_BEGIN("TSAN: relaxed atomic accesses don't synchronize");
+  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  atomic_store_relaxed(&args->flag, 0);
+  args->val = 100;
+  kthread_t threads[2];
+
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &sync_test_reader, args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &sync_test_writer, args));
+
+  wait_for_race();
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  EXPECT_REPORT(&args->val, 4, "r", &args->val, 4, "w");
+  intercept_reports_done();
+  tsan_test_cleanup();
+}
+
+static void atomic_relaxed_tests(void) {
+  atomic_relaxed_safe_test();
+  atomic_relaxed_safe_test2();
+  atomic_relaxed_race_test1();
+  atomic_relaxed_race_test2();
+  atomic_relaxed_race_test3();
+  atomic_relaxed_race_test4();
+  atomic_relaxed_doesnt_sync_test();
+}
+
+static void atomic_tests(void) {
+  atomic_relaxed_tests();
+}
+
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   // For most of these tests, having the legacy full-sync behavior will break
@@ -2578,6 +2786,7 @@ void tsan_test(void) {
   evict_test();
   multilock_tests();
   kernel_writable_data_tests();
+  atomic_tests();
 
   interrupt_set_legacy_full_sync(old_legacy);
 

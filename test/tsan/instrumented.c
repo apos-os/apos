@@ -15,6 +15,8 @@
 
 #include <stdint.h>
 
+#include "common/atomic.h"
+#include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/kstring-tsan.h"
 
@@ -113,4 +115,29 @@ void tsan_implicit_memcpy(tsan_test_struct_t* x) {
   tsan_test_struct_t b;
   kmemset_no_tsan(&b, 0x12, sizeof(b));
   *x = b;
+}
+
+uint32_t tsan_atomic_read(atomic32_t* x, int memorder) {
+  switch (memorder) {
+    case ATOMIC_RELAXED:
+      return atomic_load_relaxed(x);
+  }
+  die("Bad memory order");
+}
+
+void tsan_atomic_write(atomic32_t* x, uint32_t val, int memorder) {
+  switch (memorder) {
+    case ATOMIC_RELAXED:
+      atomic_store_relaxed(x, val);
+      return;
+  }
+  die("Bad memory order");
+}
+
+uint32_t tsan_atomic_rmw(atomic32_t* x, uint32_t val, int memorder) {
+  switch (memorder) {
+    case ATOMIC_RELAXED:
+      return atomic_add_relaxed(x, val);
+  }
+  die("Bad memory order");
 }

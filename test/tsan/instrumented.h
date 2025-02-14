@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "common/atomic.h"
 #include "common/types.h"
 
 // Reads the given value, then stores an incremented value back to the pointer.
@@ -58,5 +59,10 @@ typedef struct {
 // Triggers an implicit (compiler-generated) call to memset/kmemcpy.
 void tsan_implicit_memset(tsan_test_struct_t* x);
 void tsan_implicit_memcpy(tsan_test_struct_t* x);
+
+// Atomics.
+uint32_t tsan_atomic_read(atomic32_t* x, int memorder);
+void tsan_atomic_write(atomic32_t* x, uint32_t val, int memorder);
+uint32_t tsan_atomic_rmw(atomic32_t* x, uint32_t val, int memorder);
 
 #endif

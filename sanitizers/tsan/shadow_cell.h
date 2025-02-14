@@ -30,7 +30,8 @@ typedef struct {
   uint8_t sid;
   uint8_t mask;  // Which bytes were accessed (gets offset and size).
   uint8_t is_write:1;
-  uint16_t _unused2:15;
+  uint8_t is_atomic:1;
+  uint16_t _unused2:14;
 } tsan_shadow_t;
 
 _Static_assert(sizeof(tsan_shadow_t) == TSAN_SHADOW_CELL_SIZE,

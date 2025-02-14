@@ -14,6 +14,7 @@
 #include "sanitizers/tsan/tsan_access.h"
 
 #include "arch/proc/stack_trace.h"
+#include "common/atomic.h"
 #include "common/attributes.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -56,7 +57,9 @@ static ALWAYS_INLINE tsan_shadow_t make_shadow(kthread_t thread, addr_t addr,
   shadow.epoch = thread->tsan.clock.ts[thread->tsan.sid];
   shadow.sid = thread->tsan.sid;
   shadow.mask = make_mask(addr % 8, size);
-  shadow.is_write = (type == TSAN_ACCESS_WRITE);
+  // Need to coerce these into 1 or 0 so they aren't truncated to zero.
+  shadow.is_write = tsan_is_write(type);
+  shadow.is_atomic = tsan_is_atomic(type);
   return shadow;
 }
 
@@ -110,20 +113,27 @@ static char* print_shadow(char* buf, tsan_shadow_t s) {
   uint8_t offset = shadow_offset(s);
   uint8_t size  = shadow_size(s);
   KASSERT_DBG(__builtin_clzg(s.mask) + offset + size == 8);
-  ksnprintf(buf, SHADOW_PRETTY_LEN, "{tid=%u@%u offset=%d size=%d is_write=%d}",
-            (uint32_t)(s.sid), s.epoch, offset, size, s.is_write);
+  ksnprintf(buf, SHADOW_PRETTY_LEN,
+            "{tid=%u@%u offset=%d size=%d is_write=%d is_atomic=%d}",
+            (uint32_t)(s.sid), s.epoch, offset, size, s.is_write, s.is_atomic);
   return buf;
 }
 
 static const char* type2str(tsan_access_type_t t) {
-  switch (t) {
-    case TSAN_ACCESS_READ: return "READ";
-    case TSAN_ACCESS_WRITE: return "WRITE";
+  if (t & TSAN_ACCESS_READ) {
+    return (t & TSAN_ACCESS_IS_ATOMIC) ? "ATOMIC READ" : "READ";
+  } else if (t & TSAN_ACCESS_WRITE) {
+    return (t & TSAN_ACCESS_IS_ATOMIC) ? "ATOMIC WRITE" : "WRITE";
   }
+  die("bad tsan access type");
 }
 
 static tsan_access_type_t shadow2type(tsan_shadow_t s) {
-  return s.is_write ? TSAN_ACCESS_WRITE : TSAN_ACCESS_READ;
+  tsan_access_type_t t = s.is_write ? TSAN_ACCESS_WRITE : TSAN_ACCESS_READ;
+  if (s.is_atomic) {
+    t |= TSAN_ACCESS_IS_ATOMIC;
+  }
+  return t;
 }
 
 static void log_access(const tsan_access_t* access) {
@@ -192,6 +202,9 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
 
 static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
                                 tsan_access_type_t type) {
+  // RMWs should be marked as writes --- internal tracking with single-bit
+  // 'is_read' bools can get subtle bugs easily otherwise.
+  KASSERT_DBG(tsan_is_read(type) ^ tsan_is_write(type));
   if (addr == g_tsan_trace) {
     klogf("TSAN access traced: %d-byte %s by thread %d on address 0x%" PRIxADDR
           " at \n",
@@ -204,7 +217,7 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
   if (!tsan_is_mapped_addr(addr)) {
     // Access outside the mapped areas.  Ignore.
     // Sanity checks to make sure we're not missing any important writes:
-    KASSERT(type == TSAN_ACCESS_READ ||
+    KASSERT((type & TSAN_ACCESS_READ) ||
             addr < get_global_meminfo()->kernel.virt_base ||  // User addr
             smmap_region_in(&get_global_meminfo()->thread0_stack, addr) ||
             is_direct_mapped(addr));
@@ -270,6 +283,10 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
       // Safe, both are reads.
       continue;
     }
+    if (old.is_atomic && shadow.is_atomic) {
+      // Safe, both are atomic.
+      continue;
+    }
     if (thread->tsan.clock.ts[old.sid] >= old.epoch) {
       // Safe, we synchronized.
       continue;
@@ -305,6 +322,17 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
   kthread_t thread = tsan_current_thread();
   tsan_log_access(tsan_log(thread), pc, addr, size, type);
   return tsan_check_internal(pc, addr, size, type);
+}
+
+bool tsan_check_atomic(addr_t pc, addr_t addr, uint8_t size,
+                       tsan_access_type_t type, int memorder) {
+  KASSERT_DBG(memorder == ATOMIC_RELAXED);
+  if (!g_tsan_init) return false;
+
+  kthread_t thread = tsan_current_thread();
+  tsan_log_access(tsan_log(thread), pc, addr, size,
+                  type | TSAN_ACCESS_IS_ATOMIC);
+  return tsan_check_internal(pc, addr, size, type | TSAN_ACCESS_IS_ATOMIC);
 }
 
 bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
