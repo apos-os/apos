@@ -96,6 +96,7 @@ static const test_entry_t TESTS[] = {
   { "net_base", &net_base_test, 1 },
   { "echo", &net_echo_test, 1 },
   { "arena", &arena_test, 1 },
+  { "atomic", &atomic_test, 1 },
 
 #if ENABLE_TSAN
   { "tsan", &tsan_test, 1 },

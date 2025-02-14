@@ -20,6 +20,7 @@ srcs = [
   'ansi_escape_test.c',
   'arena_test.c',
   'ata_test.c',
+  'atomic_test.c',
   'block_cache_test.c',
   'block_dev_test.c',
   'cbfs_test.c',
