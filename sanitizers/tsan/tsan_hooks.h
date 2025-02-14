@@ -52,5 +52,7 @@ void __tsan_atomic32_store(
     volatile __tsan_atomic32* a, __tsan_atomic32 val, __tsan_mo mo);
 __tsan_atomic32 __tsan_atomic32_fetch_add(
     volatile __tsan_atomic32* a, __tsan_atomic32 val, __tsan_mo mo);
+__tsan_atomic32 __tsan_atomic32_fetch_sub(
+    volatile __tsan_atomic32* a, __tsan_atomic32 val, __tsan_mo mo);
 
 #endif

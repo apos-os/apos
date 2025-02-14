@@ -147,3 +147,9 @@ __tsan_atomic32 __tsan_atomic32_fetch_add(
   tsan_check_atomic(CALLERPC, (addr_t)a, 4, TSAN_ACCESS_WRITE, mo);
   return __atomic_fetch_add(a, val, mo);
 }
+
+__tsan_atomic32 __tsan_atomic32_fetch_sub(
+    volatile __tsan_atomic32* a, __tsan_atomic32 val, __tsan_mo mo) {
+  tsan_check_atomic(CALLERPC, (addr_t)a, 4, TSAN_ACCESS_WRITE, mo);
+  return __atomic_fetch_sub(a, val, mo);
+}
