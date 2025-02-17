@@ -21,6 +21,7 @@
 
 #include "arch/proc/kthread-context.h"
 #include "arch/proc/kthread-stack.h"
+#include "common/atomic.h"
 #include "common/list.h"
 #include "common/types.h"
 #include "memory/memory.h"
@@ -83,8 +84,9 @@ struct kthread_data {
   // first.
   bool wait_timeout_ran;
 
-  // Current preemption-disabled counter.  If zero, preemption is allowed.
-  int preemption_disables;
+  // Current preemption-disabled counter.  If zero, preemption is allowed.  Only
+  // accessed from the current thread or an interrupt context thereon.
+  atomic32_t preemption_disables;
 
   // How many spinlocks we're holding, for bug-catching.
   int spinlocks_held;

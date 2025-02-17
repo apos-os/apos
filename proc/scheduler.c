@@ -16,6 +16,7 @@
 
 #include "arch/dev/timer.h"
 #include "arch/proc/stack_trace.h"
+#include "common/atomic.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -188,13 +189,13 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
     kmutex_unlock_no_yield(mu);
   }
 #if ENABLE_TSAN
-  if (!sp && !mu && current->preemption_disables > 0) {
+  if (!sp && !mu && atomic_load_relaxed(&current->preemption_disables) > 0) {
     tsan_release(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
   }
 #endif
   scheduler_yield_no_reschedule();
 #if ENABLE_TSAN
-  if (!sp && !mu && current->preemption_disables > 0) {
+  if (!sp && !mu && atomic_load_relaxed(&current->preemption_disables) > 0) {
     tsan_acquire(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
   }
 #endif
@@ -259,30 +260,31 @@ void scheduler_wake_all(kthread_queue_t* queue) {
 }
 
 void sched_disable_preemption(void) {
-  // TODO(aoates): use an interrupt-safe atomic here.
-  PUSH_AND_DISABLE_INTERRUPTS();
-  kthread_current_thread()->preemption_disables++;
-  POP_INTERRUPTS();
+  atomic_add_relaxed(&kthread_current_thread()->preemption_disables, 1);
 }
 
 void sched_restore_preemption(void) {
-  PUSH_AND_DISABLE_INTERRUPTS();
-  kthread_current_thread()->preemption_disables--;
-  KASSERT(kthread_current_thread()->preemption_disables >= 0);
-  POP_INTERRUPTS();
+  uint32_t val =
+      atomic_sub_relaxed(&kthread_current_thread()->preemption_disables, 1);
+  KASSERT((int)val >= 0);
 }
 
 void sched_enable_preemption_for_test(void) {
-  PUSH_AND_DISABLE_INTERRUPTS();
-  KASSERT(kthread_current_thread()->preemption_disables == 1);
-  kthread_current_thread()->preemption_disables = 0;
-  POP_INTERRUPTS();
+  kthread_t me = kthread_current_thread();
+  KASSERT(atomic_load_relaxed(&me->preemption_disables) == 1);
+  atomic_store_relaxed(&me->preemption_disables, 0);
+}
+
+bool sched_preemption_enabled(void) {
+  kthread_t me = kthread_current_thread();
+  return atomic_load_relaxed(&me->preemption_disables) == 0;
 }
 
 void sched_tick(void) {
   // TODO(aoates): move g_run_queue short-circuit into scheduler_yield() after
   // verifying it won't break any tests.
-  if (kthread_current_thread()->preemption_disables == 0 &&
+  kthread_t me = kthread_current_thread();
+  if (atomic_load_relaxed(&me->preemption_disables) == 0 &&
       !kthread_queue_empty(&g_run_queue)) {
     scheduler_yield();
   }

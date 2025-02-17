@@ -998,14 +998,15 @@ static void preemption_test_defintB(void* arg) {
 static void preemption_test_defintC(void* arg) {
   preemption_test_args_t* args = (preemption_test_args_t*)arg;
   // Must be read without the lock.
-  int val = kthread_current_thread()->preemption_disables > 0 ? 1 : 2;
+  int val = sched_preemption_enabled() ? 2 : 1;
   kspin_lock(&args->lock);
   args->x = val;
   kspin_unlock(&args->lock);
 }
 
 static void* preemption_test_check_enabled(void* arg) {
-  return (void*)(intptr_t)kthread_current_thread()->preemption_disables;
+  return (void*)(intptr_t)atomic_load_relaxed(
+      &kthread_current_thread()->preemption_disables);
 }
 
 static void preemption_test_interrupt_cb(void* arg) {

@@ -16,6 +16,7 @@
 
 #include "arch/memory/page_map.h"
 #include "arch/proc/kthread.h"
+#include "common/atomic.h"
 #include "common/hash.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -68,7 +69,7 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->wait_status = SWAIT_DONE;
   t->wait_timeout_ran = false;
   // TODO(aoates): enable preemption by default.
-  t->preemption_disables = 1;
+  atomic_store_relaxed(&t->preemption_disables, 1);
   t->spinlocks_held = 0;
   t->all_threads_link = LIST_LINK_INIT;
   t->proc_threads_link = LIST_LINK_INIT;
@@ -178,8 +179,8 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
   // TODO(aoates): rather than having this and legacy_interrupt_sync, etc be
   // implicitly copied from parent thread, add thread creation flags to make it
   // explicit.
-  if (kthread_current_thread()->preemption_disables == 0) {
-    thread->preemption_disables = 0;
+  if (sched_preemption_enabled()) {
+    atomic_store_relaxed(&thread->preemption_disables, 0);
   }
 #if ENABLE_TSAN
   thread->legacy_interrupt_sync =

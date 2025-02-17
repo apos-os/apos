@@ -40,7 +40,7 @@ void sched_preempt_me(int level) {
   // If interrupts are enabled, then we know we're not currently processing an
   // interrupt.
   if (kthread_current_thread() && interrupts_enabled() &&
-      kthread_current_thread()->preemption_disables == 0) {
+      sched_preemption_enabled()) {
     kspin_lock(&rng_lock);
     rng = fnv_hash(rng);
     if (rng == 0) rng = get_time_ms();

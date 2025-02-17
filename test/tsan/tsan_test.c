@@ -336,7 +336,7 @@ static void tsan_basic_sanity_test3(void) {
 }
 
 static void* rw_value_thread_kspinlock(void* arg) {
-  KASSERT(kthread_current_thread()->preemption_disables == 0);
+  KASSERT(sched_preemption_enabled());
 
   mutex_test_args_t* args = (mutex_test_args_t*)arg;
 
@@ -392,7 +392,7 @@ static void tsan_basic_sanity_test3_spinlock(void) {
 }
 
 static void* rw_value_thread_kspinlock_int(void* arg) {
-  KASSERT(kthread_current_thread()->preemption_disables == 0);
+  KASSERT(sched_preemption_enabled());
 
   mutex_test_args_t* args = (mutex_test_args_t*)arg;
 
