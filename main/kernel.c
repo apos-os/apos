@@ -270,6 +270,9 @@ void kmain(boot_info_t* boot, const char* cmdline) {
     tsan_init();
   }
 
+  klog("block_cache_init()\n");
+  block_cache_init();
+
   klog("enabling deferred interrupts\n");
   defint_set_state(true);
 

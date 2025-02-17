@@ -41,7 +41,6 @@
 #define KLOG(...) klogfm(KL_BLOCK_CACHE, __VA_ARGS__)
 
 static int g_size = 0;
-static bool g_initialized = false;
 static int g_max_size = DEFAULT_CACHE_SIZE;
 // TODO(aoates): make this an atomic.
 static int g_flush_queue_period_ms = 5000;
@@ -382,14 +381,12 @@ static void maybe_free_cache_space(int max_entries) {
   // TODO(aoates): if something is currently flushing, block for it to finish.
 }
 
-static void init_block_cache(void) {
-  KASSERT(!g_initialized);
+void block_cache_init(void) {
   kmutex_init(&g_mu);
   htbl_init(&g_table, g_max_size * 2);
   kthread_queue_init(&g_flush_queue_wakeup_queue);
   KASSERT(kthread_create(&g_flush_queue_thread, &flush_queue_thread, 0x0) == 0);
   scheduler_make_runnable(g_flush_queue_thread);
-  g_initialized = true;
 }
 
 // Given an existing table entry, wait for it to be initialized (if applicable)
@@ -508,10 +505,6 @@ static int block_cache_get_internal(memobj_t* obj, int offset,
 }
 
 int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
-  if (!g_initialized) {
-    init_block_cache();
-  }
-
   kmutex_lock(&g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
@@ -534,10 +527,6 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
 }
 
 int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
-  if (!g_initialized) {
-    init_block_cache();
-  }
-
   KMUTEX_AUTO_LOCK(lock, &g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
@@ -556,8 +545,6 @@ int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
 }
 
 int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
-  KASSERT(g_initialized);
-
   KMUTEX_AUTO_LOCK(lock, &g_mu);
   bc_entry_internal_t* entry = container_of(entry_pub, bc_entry_internal_t, pub);
   KASSERT(entry->pin_count > 0);
@@ -590,7 +577,6 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
 
 int block_cache_migrate(bc_entry_t* entry_pub, struct memobj* target,
                         bc_entry_t** target_entry_out) {
-  KASSERT(g_initialized);
   KASSERT(entry_pub->obj != target);
 
   KMUTEX_AUTO_LOCK(lock, &g_mu);
@@ -692,10 +678,6 @@ int block_cache_free_all(struct memobj* obj) {
 }
 
 int block_cache_get_pin_count(memobj_t* obj, int offset) {
-  if (!g_initialized) {
-    return 0;
-  }
-
   KMUTEX_AUTO_LOCK(lock, &g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;

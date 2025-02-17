@@ -43,6 +43,10 @@ typedef struct bc_entry {
   phys_addr_t block_phys;
 } bc_entry_t;
 
+// Initialize the block cache.  Should be called after core memory systems are
+// initialized, but before VFS or storage devices are.
+void block_cache_init(void);
+
 // Return a pointer to the block cache for the given block.  If no entry exists,
 // the data is read from the memory object into a fresh (or reused) buffer.
 //
