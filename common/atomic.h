@@ -26,7 +26,7 @@
 // An unsigned 32-bit value that can only be accessed with atomic operations.
 struct atomic32;
 typedef struct atomic32 atomic32_t;
-#define ATOMIC32_INIT(x) { x }
+#define ATOMIC32_INIT(x) { x, 0 }
 
 // Basic relaxed (non-synchronizing) atomic operations.
 #define atomic_load_relaxed(x) __atomic_load_n(&(x)->_val, ATOMIC_RELAXED)
@@ -38,8 +38,12 @@ typedef struct atomic32 atomic32_t;
   __atomic_sub_fetch(&(x)->_val, val, ATOMIC_RELAXED)
 
 // Internal definitions.
+// We align and size atomic32_t to ensure it always gets its own TSAN memory
+// cell to avoid false shared synchronization with any nearby data hiding data
+// races.
 struct atomic32 {
   uint32_t _val;  // Must not be accessed directly.
-};
+  uint32_t _padding;
+} __attribute__((aligned(8)));
 
 #endif
