@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "common/types.h"
+#include "sanitizers/tsan/tsan_lock.h"
 #include "sanitizers/tsan/vector_clock.h"
 
 // Dynamic synchronization object.  Used for synchronizing atomics, which are
@@ -29,7 +30,7 @@
 // memory model.
 typedef struct tsan_sync {
   addr_t addr;
-  tsan_vc_t clock;
+  tsan_lock_data_t lock;
   struct tsan_sync* next;
 } tsan_sync_t;
 

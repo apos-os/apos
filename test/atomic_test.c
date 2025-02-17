@@ -26,6 +26,13 @@ static void atomic32_test(void) {
   KEXPECT_EQ(11, atomic_load_relaxed(&x));
   atomic_sub_relaxed(&x, 3);
   KEXPECT_EQ(8, atomic_load_relaxed(&x));
+
+  KTEST_BEGIN("atomic32_t: basic acquire/release operations test");
+  atomic_store_release(&x, 100);
+  KEXPECT_EQ(100, atomic_load_acquire(&x));
+  KEXPECT_EQ(100, atomic_load_relaxed(&x));
+  KEXPECT_EQ(110, atomic_add_acq_rel(&x, 10));
+  KEXPECT_EQ(110, atomic_load_relaxed(&x));
 }
 
 void atomic_test(void) {

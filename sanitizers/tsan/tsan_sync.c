@@ -24,7 +24,7 @@
 #include "memory/page_alloc.h"
 #include "sanitizers/tsan/shadow_cell.h"
 #include "sanitizers/tsan/tsan_layout.h"
-#include "sanitizers/tsan/vector_clock.h"
+#include "sanitizers/tsan/tsan_lock.h"
 
 // We only support 32-bit atomic accesses currently for efficiency.
 #define TSAN_SYNC_OBJ_SIZE 4
@@ -105,7 +105,7 @@ tsan_sync_t* tsan_sync_get(addr_t addr, size_t access_size, bool create) {
   } else if (!entry) {
     entry = alloc_sync();
     entry->addr = addr;
-    tsan_vc_init(&entry->clock);
+    tsan_lock_init(&entry->lock);
     entry->next = bucket->entries;
     bucket->entries = entry;
     pmd->num_sync_objs++;
@@ -117,7 +117,7 @@ tsan_sync_t* tsan_sync_get(addr_t addr, size_t access_size, bool create) {
   return entry;
 }
 
-static void free_range(addr_t start, addr_t end) {
+static void free_range(tsan_page_metadata_t* pmd, addr_t start, addr_t end) {
   // Align the start up and end down to the minimum sync object size.  By
   // definition, any smaller chunks on each end can't be associated with sync
   // objects.
@@ -137,6 +137,7 @@ static void free_range(addr_t start, addr_t end) {
       sync->addr = 0;
       sync->next = g_sync_freelist;
       g_sync_freelist = sync;
+      pmd->num_sync_objs--;
     }
   }
 }
@@ -153,7 +154,7 @@ void tsan_sync_free(addr_t range_start, size_t len) {
 
     // Process to the end of the page, or end of the range, whichever is first.
     addr_t chunk_end = min(addr2page(addr) + PAGE_SIZE, range_end);
-    free_range(addr, chunk_end);
+    free_range(pmd, addr, chunk_end);
   }
   POP_INTERRUPTS_NO_TSAN();
 }

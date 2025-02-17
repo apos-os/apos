@@ -121,6 +121,9 @@ uint32_t tsan_atomic_read(atomic32_t* x, int memorder) {
   switch (memorder) {
     case ATOMIC_RELAXED:
       return atomic_load_relaxed(x);
+
+    case ATOMIC_ACQUIRE:
+      return atomic_load_acquire(x);
   }
   die("Bad memory order");
 }
@@ -130,6 +133,10 @@ void tsan_atomic_write(atomic32_t* x, uint32_t val, int memorder) {
     case ATOMIC_RELAXED:
       atomic_store_relaxed(x, val);
       return;
+
+    case ATOMIC_RELEASE:
+      atomic_store_release(x, val);
+      return;
   }
   die("Bad memory order");
 }
@@ -138,6 +145,9 @@ uint32_t tsan_atomic_rmw(atomic32_t* x, uint32_t val, int memorder) {
   switch (memorder) {
     case ATOMIC_RELAXED:
       return atomic_add_relaxed(x, val);
+
+    case ATOMIC_ACQ_REL:
+      return atomic_add_acq_rel(x, val);
   }
   die("Bad memory order");
 }
