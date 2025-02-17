@@ -301,8 +301,8 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
   }
 
   // Store in a random slot.
-  // TODO(tsan): come up with a better algorithm for picking.
-  uint32_t hash[3] = {fnv_hash_addr((addr_t)thread), fnv_hash_addr(addr),
+  const tsan_tslot_t* slot = tsan_get_tslot(thread->tsan.sid);
+  uint32_t hash[3] = {slot->log.pos, fnv_hash_addr(addr),
                       thread->tsan.clock.ts[thread->tsan.sid]};
   int idx = fnv_hash_array(&hash, sizeof(hash)) % TSAN_SHADOW_CELLS;
   store_shadow(&shadow_mem[idx], shadow);
