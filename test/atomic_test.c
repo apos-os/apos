@@ -33,6 +33,13 @@ static void atomic32_test(void) {
   KEXPECT_EQ(100, atomic_load_relaxed(&x));
   KEXPECT_EQ(110, atomic_add_acq_rel(&x, 10));
   KEXPECT_EQ(110, atomic_load_relaxed(&x));
+
+  KTEST_BEGIN("atomic32_t: basic sequential consistency operations test");
+  atomic_store_seq_cst(&x, 200);
+  KEXPECT_EQ(200, atomic_load_seq_cst(&x));
+  KEXPECT_EQ(200, atomic_load_relaxed(&x));
+  atomic_store_seq_cst(&x, 210);
+  KEXPECT_EQ(210, atomic_load_relaxed(&x));
 }
 
 void atomic_test(void) {

@@ -321,7 +321,8 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
 bool tsan_check_atomic(addr_t pc, addr_t addr, uint8_t size,
                        tsan_access_type_t type, int memorder) {
   KASSERT_DBG(memorder == ATOMIC_RELAXED || memorder == ATOMIC_ACQUIRE ||
-              memorder == ATOMIC_RELEASE || memorder == ATOMIC_ACQ_REL);
+              memorder == ATOMIC_RELEASE || memorder == ATOMIC_ACQ_REL ||
+              memorder == ATOMIC_SEQ_CST);
   if (!g_tsan_init) return false;
 
   kthread_t thread = tsan_current_thread();
@@ -331,7 +332,6 @@ bool tsan_check_atomic(addr_t pc, addr_t addr, uint8_t size,
   if (memorder != ATOMIC_RELAXED) {
     PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
     tsan_sync_t* sync = NULL;
-    // TODO(atomics): support SEQ_CST
     switch (memorder) {
       case ATOMIC_ACQUIRE:
         sync = tsan_sync_get(addr, size, false);
@@ -346,6 +346,7 @@ bool tsan_check_atomic(addr_t pc, addr_t addr, uint8_t size,
         break;
 
       case ATOMIC_ACQ_REL:
+      case ATOMIC_SEQ_CST:
         sync = tsan_sync_get(addr, size, true);
         tsan_acquire(&sync->lock, TSAN_LOCK);
         tsan_release(&sync->lock, TSAN_LOCK);

@@ -127,6 +127,9 @@ uint32_t tsan_atomic_read(atomic32_t* x, int memorder) {
 
     case ATOMIC_ACQ_REL:
       return atomic_add_acq_rel(x, 0);
+
+    case ATOMIC_SEQ_CST:
+      return atomic_load_seq_cst(x);
   }
   die("Bad memory order");
 }
@@ -144,6 +147,10 @@ void tsan_atomic_write(atomic32_t* x, uint32_t val, int memorder) {
     case ATOMIC_ACQ_REL:
       // Not really atomic...
       atomic_add_acq_rel(x, val - atomic_load_relaxed(x));
+      return;
+
+    case ATOMIC_SEQ_CST:
+      atomic_store_seq_cst(x, val);
       return;
   }
   die("Bad memory order");

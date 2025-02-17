@@ -25,6 +25,7 @@
 #define ATOMIC_ACQUIRE __ATOMIC_ACQUIRE
 #define ATOMIC_RELEASE __ATOMIC_RELEASE
 #define ATOMIC_ACQ_REL __ATOMIC_ACQ_REL
+#define ATOMIC_SEQ_CST __ATOMIC_SEQ_CST
 
 // An unsigned 32-bit value that can only be accessed with atomic operations.
 struct atomic32;
@@ -47,6 +48,12 @@ typedef struct atomic32 atomic32_t;
   __atomic_store_n(&(x)->_val, val, ATOMIC_RELEASE)
 #define atomic_add_acq_rel(x, val) \
   __atomic_add_fetch(&(x)->_val, val, ATOMIC_ACQ_REL)
+
+// Sequential consistency atomic operations
+#define atomic_load_seq_cst(x) \
+    __atomic_load_n(&(x)->_val, ATOMIC_SEQ_CST)
+#define atomic_store_seq_cst(x, val) \
+  __atomic_store_n(&(x)->_val, val, ATOMIC_SEQ_CST)
 
 // Internal definitions.
 // We align and size atomic32_t to ensure it always gets its own TSAN memory
