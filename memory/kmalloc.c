@@ -37,6 +37,7 @@
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_access.h"
+#include "sanitizers/tsan/tsan_sync.h"
 #endif
 
 #define KLOG(...) klogfm(KL_KMALLOC, __VA_ARGS__)
@@ -310,6 +311,9 @@ void kfree(void* x) {
   if (ENABLE_KERNEL_SAFETY_NETS) {
     fill_block(b, 0xDEADBEEF);
   }
+#if ENABLE_TSAN
+  tsan_sync_free((addr_t)&b->data, b->length);
+#endif
 
   KMALLOC_LOCK();
   b->free = true;

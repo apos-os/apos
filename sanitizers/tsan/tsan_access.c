@@ -13,9 +13,12 @@
 // limitations under the License.
 #include "sanitizers/tsan/tsan_access.h"
 
+#define HASH_H_DISABLE_TSAN
+
 #include "arch/proc/stack_trace.h"
 #include "common/atomic.h"
 #include "common/attributes.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kprintf.h"
@@ -33,9 +36,6 @@
 #include "sanitizers/tsan/tsan_params.h"
 #include "sanitizers/tsan/tsan_thread.h"
 #include "sanitizers/tsan/tsan_thread_slot.h"
-
-#define HASH_H_DISABLE_TSAN
-#include "common/hash.h"
 
 bool g_tsan_log = false;
 static tsan_report_fn_t g_tsan_report_fn = NULL;
@@ -79,13 +79,6 @@ static ALWAYS_INLINE tsan_shadow_t* get_shadow_cells(addr_t addr) {
       TSAN_SHADOW_START_ADDR + (offset / TSAN_MEMORY_CELL_SIZE *
                                      sizeof(tsan_shadow_t) * TSAN_SHADOW_CELLS);
   return (tsan_shadow_t*)shadow;
-}
-
-static ALWAYS_INLINE tsan_page_metadata_t* get_page_md(addr_t addr) {
-  addr_t heap_page = (addr - TSAN_MAPPED_START_ADDR) / PAGE_SIZE;
-  addr_t md_addr =
-      TSAN_PAGE_METADATA_START + (heap_page * sizeof(tsan_page_metadata_t));
-  return (tsan_page_metadata_t*)md_addr;
 }
 
 static ALWAYS_INLINE uint8_t get_shadow_mask(addr_t offset, uint8_t log_size) {
@@ -251,7 +244,7 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
   }
 
   bool stored = false;
-  const tsan_page_metadata_t* page_md = get_page_md(addr);
+  const tsan_page_metadata_t* page_md = tsan_get_page_md(addr);
   for (int i = 0; i < TSAN_SHADOW_CELLS; ++i) {
     tsan_shadow_t old = shadow_mem[i];
     if (old.epoch == 0) {
@@ -411,6 +404,6 @@ void tsan_mark_stack(addr_t start, size_t len, bool is_stack) {
   KASSERT(start + len - TSAN_MAPPED_LEN_ADDR < TSAN_MAPPED_START_ADDR);
 
   for (addr_t addr = start; addr < start + len; addr += PAGE_SIZE) {
-    get_page_md(addr)->is_stack = is_stack;
+    tsan_get_page_md(addr)->is_stack = is_stack;
   }
 }

@@ -19,6 +19,7 @@ srcs = [
   'tsan_access.c',
   'tsan_event.c',
   'tsan_hooks.c',
+  'tsan_sync.c',
   'tsan_thread.c',
   'vector_clock.c',
 ]

@@ -33,4 +33,13 @@
 // Per-page metadata block.
 #define TSAN_PAGE_METADATA_START RSV64_TSAN_MDATA_START
 
+// Maximum length (512 MB).  Should be more than enough for the full kernel
+// address space.
+#define TSAN_PAGE_METADATA_LEN (512 * 1024 * 1024)
+
+// Start address of the sync object table.  Give a page buffer in case of bugs.
+#define TSAN_SYNC_OBJ_TABLE_START \
+  (TSAN_PAGE_METADATA_START + TSAN_PAGE_METADATA_LEN + PAGE_SIZE)
+#define TSAN_SYNC_OBJ_TABLE_LEN (10 * PAGE_SIZE)
+
 #endif

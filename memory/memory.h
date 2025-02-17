@@ -107,7 +107,10 @@ void set_global_meminfo(memory_info_t* meminfo);
 const memory_info_t* get_global_meminfo(void);
 
 // Returns the page containing the given address.
-addr_t addr2page(addr_t addr);
+static inline ALWAYS_INLINE
+addr_t addr2page(addr_t addr) {
+  return addr & PAGE_INDEX_MASK;
+}
 
 // Returns the next page/frame start address after x (or x if x is
 // page-aligned).

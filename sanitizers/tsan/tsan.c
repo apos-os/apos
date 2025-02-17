@@ -104,6 +104,8 @@ static void tsan_map_vregion(addr_t start, size_t len) {
   const size_t pmdata_pages = ceiling_div(
       pmdata_offset_bytes + pmdata_len_bytes - pmdata_offset_aligned,
       PAGE_SIZE);
+  KASSERT(pmdata_offset_aligned + pmdata_pages * PAGE_SIZE <
+          TSAN_PAGE_METADATA_LEN);
   tsan_alloc_pages(TSAN_PAGE_METADATA_START + pmdata_offset_aligned,
                    pmdata_pages);
 }
@@ -136,6 +138,11 @@ void tsan_init_shadow_mem(void) {
   KASSERT(meminfo->kernel_writable_data.len > 0);
   tsan_map_vregion(meminfo->kernel_writable_data.base,
                    meminfo->kernel_writable_data.len);
+
+  // Statically allocate the sync object table.
+  KASSERT(TSAN_SYNC_OBJ_TABLE_LEN % PAGE_SIZE == 0);
+  tsan_alloc_pages(TSAN_SYNC_OBJ_TABLE_START,
+                   TSAN_SYNC_OBJ_TABLE_LEN / PAGE_SIZE);
 
   KASSERT(meminfo->tsan_region.base == TSAN_SHADOW_START_ADDR);
   g_tsan_mem_init = true;
