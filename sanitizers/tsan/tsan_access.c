@@ -41,7 +41,7 @@ bool g_tsan_log = false;
 static tsan_report_fn_t g_tsan_report_fn = NULL;
 
 // An address to trace accesses to.
-static addr_t g_tsan_trace = 0;
+addr_t g_tsan_trace = 0;
 
 static ALWAYS_INLINE uint8_t make_mask(uint8_t offset, uint8_t size) {
   KASSERT_DBG(size > 0 && size <= 8);
@@ -224,7 +224,7 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
   tsan_shadow_t shadow = make_shadow(thread, addr, size, type);
 
   tsan_shadow_t* shadow_mem = get_shadow_cells(addr);
-  if (g_tsan_log) {
+  if (g_tsan_log || addr == g_tsan_trace) {
     char pretty_shadow[4][SHADOW_PRETTY_LEN];
     klogf("#%d: Access: %d@%d %p/%zd typ=0x%x {%s, %s, %s, %s}\n", thread->id,
           thread->tsan.sid, thread->tsan.clock.ts[thread->tsan.sid],
