@@ -26,14 +26,6 @@
 
 #define SHADOW_CHAIN_MAX 100
 
-// Global lock that protects all shadow chain manipulations.  Possible point of
-// contention, but much much simpler than trying to get the fine-grained locking
-// right given different traversal strategies.  Could be easily sharded.
-static kmutex_t g_shadow_chain_lock;
-// TODO(aoates): replace bool+spinlock with something better.
-static bool g_shadow_inited = false;
-static kspinlock_t g_shadow_inited_lock = KSPINLOCK_NORMAL_INIT_STATIC;
-
 static void shadow_ref(memobj_t* obj);
 static void shadow_unref(memobj_t* obj);
 static int shadow_get_page(memobj_t* obj, int page_offset, int writable,
@@ -329,13 +321,6 @@ static int collapse_and_count(memobj_t* parent) {
 }
 
 memobj_t* memobj_create_shadow(memobj_t* subobj) {
-  kspin_lock(&g_shadow_inited_lock);
-  if (!g_shadow_inited) {
-    kmutex_init(&g_shadow_chain_lock);
-    g_shadow_inited = true;
-  }
-  kspin_unlock(&g_shadow_inited_lock);
-
   if (subobj->type == MEMOBJ_SHADOW) {
     // TODO(aoates): check for and handle too-deep chains.
     collapse_and_count(subobj);
