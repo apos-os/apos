@@ -2908,6 +2908,17 @@ static void* sync_test_reader_acquire(void* arg) {
   return (void*)(uintptr_t)val;
 }
 
+static void* sync_test_reader_acqrel(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  sync_test_args_t* args = (sync_test_args_t*)arg;
+  while (tsan_atomic_read(&args->flag, ATOMIC_ACQ_REL) == 0)
+    ; // Spin
+  uint32_t val = tsan_read32(&args->val);
+  sched_disable_preemption();
+  return (void*)(uintptr_t)val;
+}
+
 static void* sync_test_writer_release(void* arg) {
   sched_enable_preemption_for_test();
   ksleep(10);
@@ -2918,8 +2929,18 @@ static void* sync_test_writer_release(void* arg) {
   return NULL;
 }
 
+static void* sync_test_writer_acqrel(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  sync_test_args_t* args = (sync_test_args_t*)arg;
+  tsan_write32(&args->val, 42);
+  tsan_atomic_write(&args->flag, 1, ATOMIC_ACQ_REL);
+  sched_disable_preemption();
+  return NULL;
+}
+
 static void atomic_acqrel_syncs_test(void) {
-  KTEST_BEGIN("TSAN: acqrel atomic accesses synchronizes");
+  KTEST_BEGIN("TSAN: acq/rel atomic accesses synchronizes (ACQUIRE+RELEASE");
   sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
@@ -2927,6 +2948,78 @@ static void atomic_acqrel_syncs_test(void) {
 
   KEXPECT_EQ(0, proc_thread_create(&threads[0], &sync_test_reader_acquire, args));
   KEXPECT_EQ(0, proc_thread_create(&threads[1], &sync_test_writer_release, args));
+
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  tsan_test_cleanup();
+}
+
+static void atomic_acqrel_syncs_test2(void) {
+  KTEST_BEGIN("TSAN: acq/rel atomic accesses synchronizes (ACQ_REL reader)");
+  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  atomic_store_relaxed(&args->flag, 0);
+  args->val = 100;
+  kthread_t threads[2];
+
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &sync_test_reader_acqrel, args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &sync_test_writer_release, args));
+
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  tsan_test_cleanup();
+}
+
+// As above, but we do a synchronized write to the flag beforehand, ensuring a
+// sync object exists for it already.  This way we exercise both the "newly
+// created sync object" and "already existing sync object" paths.
+static void atomic_acqrel_syncs_test2b(void) {
+  KTEST_BEGIN("TSAN: acq/rel atomic accesses synchronizes (ACQ_REL reader, existing sync object)");
+  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  atomic_store_relaxed(&args->flag, 0);
+  args->val = 100;
+  kthread_t threads[2];
+
+  tsan_atomic_write(&args->flag, 0, ATOMIC_RELEASE);
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &sync_test_reader_acqrel, args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &sync_test_writer_release, args));
+
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  tsan_test_cleanup();
+}
+
+static void atomic_acqrel_syncs_test3(void) {
+  KTEST_BEGIN("TSAN: acq/rel atomic accesses synchronizes (ACQ_REL writer)");
+  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  atomic_store_relaxed(&args->flag, 0);
+  args->val = 100;
+  kthread_t threads[2];
+
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &sync_test_reader_acquire, args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &sync_test_writer_acqrel, args));
+
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  tsan_test_cleanup();
+}
+
+// See above.  This is particularly important for an ACQ_REL write because
+// creating a sync object does an implicit release, so we need this test to
+// verify we do _another_ release after that (if the object already exists).
+static void atomic_acqrel_syncs_test3b(void) {
+  KTEST_BEGIN("TSAN: acq/rel atomic accesses synchronizes (ACQ_REL writer, existing sync object)");
+  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  atomic_store_relaxed(&args->flag, 0);
+  args->val = 100;
+  kthread_t threads[2];
+
+  tsan_atomic_write(&args->flag, 0, ATOMIC_RELEASE);
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &sync_test_reader_acquire, args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &sync_test_writer_acqrel, args));
 
   for (int i = 0; i < 2; ++i) {
     kthread_join(threads[i]);
@@ -2984,6 +3077,10 @@ static void atomic_acq_rel_tests(void) {
   atomic_acqrel_race_test3();
   atomic_acqrel_race_test4();
   atomic_acqrel_syncs_test();
+  atomic_acqrel_syncs_test2();
+  atomic_acqrel_syncs_test2b();
+  atomic_acqrel_syncs_test3();
+  atomic_acqrel_syncs_test3b();
   atomic_acqrel_syncs_relaxed_test();
   atomic_acqrel_syncs_relaxed_test2();
 }
