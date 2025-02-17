@@ -3338,10 +3338,81 @@ static void atomic_seq_cst_tests(void) {
   atomic_seqcst_syncs_relaxed_test2();
 }
 
+typedef struct {
+  atomic_flag_t flag;
+  bool expected;
+  uint32_t val;
+} atomic_flag_test_args;
+
+static void* atomic_flag_reader(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  atomic_flag_test_args* args = (atomic_flag_test_args*)arg;
+  while (tsan_flag_get(&args->flag) != args->expected)
+    ; // Spin
+  uint32_t val = tsan_read32(&args->val);
+  sched_disable_preemption();
+  return (void*)(uintptr_t)val;
+}
+
+static void* atomic_flag_writer(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  atomic_flag_test_args* args = (atomic_flag_test_args*)arg;
+  tsan_write32(&args->val, 42);
+  if (args->expected) {
+    tsan_flag_set(&args->flag);
+  } else {
+    tsan_flag_clear(&args->flag);
+  }
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void atomic_flag_test1(void) {
+  KTEST_BEGIN("TSAN: atomic_flag_t syncs when set");
+  atomic_flag_test_args* args = TS_MALLOC(atomic_flag_test_args);
+  atomic_flag_clear(&args->flag);
+  args->expected = true;
+  args->val = 100;
+  kthread_t threads[2];
+
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &atomic_flag_reader, args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &atomic_flag_writer, args));
+
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  tsan_test_cleanup();
+}
+
+static void atomic_flag_test2(void) {
+  KTEST_BEGIN("TSAN: atomic_flag_t syncs when cleared");
+  atomic_flag_test_args* args = TS_MALLOC(atomic_flag_test_args);
+  atomic_flag_set(&args->flag);
+  args->expected = false;
+  args->val = 100;
+  kthread_t threads[2];
+
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &atomic_flag_reader, args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &atomic_flag_writer, args));
+
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  tsan_test_cleanup();
+}
+
+static void atomic_flag_tests(void) {
+  atomic_flag_test1();
+  atomic_flag_test2();
+}
+
 static void atomic_tests(void) {
   atomic_relaxed_tests();
   atomic_acq_rel_tests();
   atomic_seq_cst_tests();
+  atomic_flag_tests();
 }
 
 void tsan_test(void) {

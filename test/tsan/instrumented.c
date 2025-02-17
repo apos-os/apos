@@ -166,3 +166,15 @@ uint32_t tsan_atomic_rmw(atomic32_t* x, uint32_t val, int memorder) {
   }
   die("Bad memory order");
 }
+
+bool tsan_flag_get(const atomic_flag_t* f) {
+  return atomic_flag_get(f);
+}
+
+void tsan_flag_set(atomic_flag_t* f) {
+  atomic_flag_set(f);
+}
+
+void tsan_flag_clear(atomic_flag_t* f) {
+  atomic_flag_clear(f);
+}

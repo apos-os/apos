@@ -65,4 +65,8 @@ uint32_t tsan_atomic_read(atomic32_t* x, int memorder);
 void tsan_atomic_write(atomic32_t* x, uint32_t val, int memorder);
 uint32_t tsan_atomic_rmw(atomic32_t* x, uint32_t val, int memorder);
 
+bool tsan_flag_get(const atomic_flag_t* f);
+void tsan_flag_set(atomic_flag_t* f);
+void tsan_flag_clear(atomic_flag_t* f);
+
 #endif

@@ -18,7 +18,10 @@
 #ifndef APOO_COMMON_ATOMIC_H
 #define APOO_COMMON_ATOMIC_H
 
+#include <stdbool.h>
 #include <stdint.h>
+
+#include "common/attributes.h"
 
 // Memory orders.
 #define ATOMIC_RELAXED __ATOMIC_RELAXED
@@ -54,6 +57,27 @@ typedef struct atomic32 atomic32_t;
     __atomic_load_n(&(x)->_val, ATOMIC_SEQ_CST)
 #define atomic_store_seq_cst(x, val) \
   __atomic_store_n(&(x)->_val, val, ATOMIC_SEQ_CST)
+
+// An atomic flag that can be set and cleared.  Always has acquire/release
+// semantics.
+typedef struct {
+  uint32_t _flag;
+  uint32_t _padding;
+} __attribute__((aligned(8))) atomic_flag_t;
+#define ATOMIC_FLAG_INIT { false, 0 }
+
+// Flag operations.
+static inline ALWAYS_INLINE bool atomic_flag_get(const atomic_flag_t* f) {
+  return __atomic_load_n(&f->_flag, ATOMIC_ACQUIRE);
+}
+
+static inline ALWAYS_INLINE void atomic_flag_set(atomic_flag_t* f) {
+  __atomic_store_n(&f->_flag, 1, ATOMIC_RELEASE);
+}
+
+static inline ALWAYS_INLINE void atomic_flag_clear(atomic_flag_t* f) {
+  __atomic_store_n(&f->_flag, 0, ATOMIC_RELEASE);
+}
 
 // Internal definitions.
 // We align and size atomic32_t to ensure it always gets its own TSAN memory

@@ -42,8 +42,18 @@ static void atomic32_test(void) {
   KEXPECT_EQ(210, atomic_load_relaxed(&x));
 }
 
+static void atomic_flag_test(void) {
+  KTEST_BEGIN("atomic_flag_t: basic /write test");
+  atomic_flag_t f = ATOMIC_FLAG_INIT;
+  KEXPECT_FALSE(atomic_flag_get(&f));
+  atomic_flag_set(&f);
+  KEXPECT_TRUE(atomic_flag_get(&f));
+  atomic_flag_clear(&f);
+  KEXPECT_FALSE(atomic_flag_get(&f));
+}
+
 void atomic_test(void) {
   KTEST_SUITE_BEGIN("Atomics");
   atomic32_test();
+  atomic_flag_test();
 }
-
