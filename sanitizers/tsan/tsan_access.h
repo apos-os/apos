@@ -17,15 +17,38 @@
 
 #include <stdbool.h>
 
+#include "common/attributes.h"
 #include "common/types.h"
 
 typedef enum {
-  TSAN_ACCESS_READ = 0,
-  TSAN_ACCESS_WRITE = 1,
+  TSAN_ACCESS_READ = 1,
+  TSAN_ACCESS_WRITE = 2,
+  TSAN_ACCESS_IS_ATOMIC = 4,
 } tsan_access_type_t;
+
+// Helpers that force the result to be a bool to avoid truncation issues when
+// storing in bitfields.
+ALWAYS_INLINE
+static inline bool tsan_is_read(tsan_access_type_t t) {
+  return t & TSAN_ACCESS_READ;
+}
+
+ALWAYS_INLINE
+static inline bool tsan_is_write(tsan_access_type_t t) {
+  return t & TSAN_ACCESS_WRITE;
+}
+
+ALWAYS_INLINE
+static inline bool tsan_is_atomic(tsan_access_type_t t) {
+  return t & TSAN_ACCESS_IS_ATOMIC;
+}
 
 // Call to check an access from a hook.
 bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type);
+
+// Check an atomic access.
+bool tsan_check_atomic(addr_t pc, addr_t addr, uint8_t size,
+                       tsan_access_type_t type, int memorder);
 
 // As above, but allowed to be an unaligned load that hits two shadow cells.
 bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,

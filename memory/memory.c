@@ -25,10 +25,6 @@ const memory_info_t* get_global_meminfo(void) {
   return global_meminfo;
 }
 
-addr_t addr2page(addr_t addr) {
-  return addr & PAGE_INDEX_MASK;
-}
-
 // Returns the next frame start address after x (or x if x is page-aligned).
 addr_t next_page(addr_t x) {
   if (is_page_aligned(x)) {

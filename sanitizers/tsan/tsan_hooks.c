@@ -128,3 +128,28 @@ void __tsan_func_exit(void) {
     tsan_log_func_exit(tsan_log(tsan_current_thread()));
   }
 }
+
+// Atomic hooks.
+__tsan_atomic32 __tsan_atomic32_load(const volatile __tsan_atomic32* a,
+                                     __tsan_mo mo) {
+  tsan_check_atomic(CALLERPC, (addr_t)a, 4, TSAN_ACCESS_READ, mo);
+  return __atomic_load_n(a, mo);
+}
+
+void __tsan_atomic32_store(volatile __tsan_atomic32* a, __tsan_atomic32 val,
+                           __tsan_mo mo) {
+  tsan_check_atomic(CALLERPC, (addr_t)a, 4, TSAN_ACCESS_WRITE, mo);
+  return __atomic_store_n(a, val, mo);
+}
+
+__tsan_atomic32 __tsan_atomic32_fetch_add(
+    volatile __tsan_atomic32* a, __tsan_atomic32 val, __tsan_mo mo) {
+  tsan_check_atomic(CALLERPC, (addr_t)a, 4, TSAN_ACCESS_WRITE, mo);
+  return __atomic_fetch_add(a, val, mo);
+}
+
+__tsan_atomic32 __tsan_atomic32_fetch_sub(
+    volatile __tsan_atomic32* a, __tsan_atomic32 val, __tsan_mo mo) {
+  tsan_check_atomic(CALLERPC, (addr_t)a, 4, TSAN_ACCESS_WRITE, mo);
+  return __atomic_fetch_sub(a, val, mo);
+}

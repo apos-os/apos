@@ -12,9 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include "sanitizers/tsan/tsan_access.h"
+#include "sanitizers/tsan/tsan_lock.h"
+#include "sanitizers/tsan/tsan_sync.h"
+
+#define HASH_H_DISABLE_TSAN
 
 #include "arch/proc/stack_trace.h"
+#include "common/atomic.h"
 #include "common/attributes.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kprintf.h"
@@ -33,14 +39,11 @@
 #include "sanitizers/tsan/tsan_thread.h"
 #include "sanitizers/tsan/tsan_thread_slot.h"
 
-#define HASH_H_DISABLE_TSAN
-#include "common/hash.h"
-
 bool g_tsan_log = false;
 static tsan_report_fn_t g_tsan_report_fn = NULL;
 
 // An address to trace accesses to.
-static addr_t g_tsan_trace = 0;
+addr_t g_tsan_trace = 0;
 
 static ALWAYS_INLINE uint8_t make_mask(uint8_t offset, uint8_t size) {
   KASSERT_DBG(size > 0 && size <= 8);
@@ -56,7 +59,8 @@ static ALWAYS_INLINE tsan_shadow_t make_shadow(kthread_t thread, addr_t addr,
   shadow.epoch = thread->tsan.clock.ts[thread->tsan.sid];
   shadow.sid = thread->tsan.sid;
   shadow.mask = make_mask(addr % 8, size);
-  shadow.is_write = (type == TSAN_ACCESS_WRITE);
+  shadow.is_read = tsan_is_read(type);
+  shadow.is_atomic = tsan_is_atomic(type);
   return shadow;
 }
 
@@ -79,13 +83,6 @@ static ALWAYS_INLINE tsan_shadow_t* get_shadow_cells(addr_t addr) {
   return (tsan_shadow_t*)shadow;
 }
 
-static ALWAYS_INLINE tsan_page_metadata_t* get_page_md(addr_t addr) {
-  addr_t heap_page = (addr - TSAN_MAPPED_START_ADDR) / PAGE_SIZE;
-  addr_t md_addr =
-      TSAN_PAGE_METADATA_START + (heap_page * sizeof(tsan_page_metadata_t));
-  return (tsan_page_metadata_t*)md_addr;
-}
-
 static ALWAYS_INLINE uint8_t get_shadow_mask(addr_t offset, uint8_t log_size) {
   return (uint8_t)((uint16_t)((1 << (1 << log_size)) - 1) << offset);
 }
@@ -97,7 +94,7 @@ static ALWAYS_INLINE void store_shadow(tsan_shadow_t* dst, tsan_shadow_t data) {
 
 // Returns true if the given access can overwrite the other given access.
 static ALWAYS_INLINE bool can_overwrite(tsan_shadow_t a, tsan_shadow_t b) {
-  return a.is_write || !b.is_write;
+  return !a.is_read || b.is_read;
 }
 
 #define SHADOW_PRETTY_LEN 64
@@ -110,20 +107,27 @@ static char* print_shadow(char* buf, tsan_shadow_t s) {
   uint8_t offset = shadow_offset(s);
   uint8_t size  = shadow_size(s);
   KASSERT_DBG(__builtin_clzg(s.mask) + offset + size == 8);
-  ksnprintf(buf, SHADOW_PRETTY_LEN, "{tid=%u@%u offset=%d size=%d is_write=%d}",
-            (uint32_t)(s.sid), s.epoch, offset, size, s.is_write);
+  ksnprintf(buf, SHADOW_PRETTY_LEN,
+            "{tid=%u@%u offset=%d size=%d is_read=%d is_atomic=%d}",
+            (uint32_t)(s.sid), s.epoch, offset, size, s.is_read, s.is_atomic);
   return buf;
 }
 
 static const char* type2str(tsan_access_type_t t) {
-  switch (t) {
-    case TSAN_ACCESS_READ: return "READ";
-    case TSAN_ACCESS_WRITE: return "WRITE";
+  if (t & TSAN_ACCESS_READ) {
+    return (t & TSAN_ACCESS_IS_ATOMIC) ? "ATOMIC READ" : "READ";
+  } else if (t & TSAN_ACCESS_WRITE) {
+    return (t & TSAN_ACCESS_IS_ATOMIC) ? "ATOMIC WRITE" : "WRITE";
   }
+  die("bad tsan access type");
 }
 
 static tsan_access_type_t shadow2type(tsan_shadow_t s) {
-  return s.is_write ? TSAN_ACCESS_WRITE : TSAN_ACCESS_READ;
+  tsan_access_type_t t = s.is_read ? TSAN_ACCESS_READ : TSAN_ACCESS_WRITE;
+  if (s.is_atomic) {
+    t |= TSAN_ACCESS_IS_ATOMIC;
+  }
+  return t;
 }
 
 static void log_access(const tsan_access_t* access) {
@@ -192,6 +196,9 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
 
 static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
                                 tsan_access_type_t type) {
+  // RMWs should be marked as writes --- internal tracking with single-bit
+  // 'is_read' bools can get subtle bugs easily otherwise.
+  KASSERT_DBG(tsan_is_read(type) ^ tsan_is_write(type));
   if (addr == g_tsan_trace) {
     klogf("TSAN access traced: %d-byte %s by thread %d on address 0x%" PRIxADDR
           " at \n",
@@ -204,7 +211,7 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
   if (!tsan_is_mapped_addr(addr)) {
     // Access outside the mapped areas.  Ignore.
     // Sanity checks to make sure we're not missing any important writes:
-    KASSERT(type == TSAN_ACCESS_READ ||
+    KASSERT((type & TSAN_ACCESS_READ) ||
             addr < get_global_meminfo()->kernel.virt_base ||  // User addr
             smmap_region_in(&get_global_meminfo()->thread0_stack, addr) ||
             is_direct_mapped(addr));
@@ -219,7 +226,7 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
   tsan_shadow_t shadow = make_shadow(thread, addr, size, type);
 
   tsan_shadow_t* shadow_mem = get_shadow_cells(addr);
-  if (g_tsan_log) {
+  if (g_tsan_log || addr == g_tsan_trace) {
     char pretty_shadow[4][SHADOW_PRETTY_LEN];
     klogf("#%d: Access: %d@%d %p/%zd typ=0x%x {%s, %s, %s, %s}\n", thread->id,
           thread->tsan.sid, thread->tsan.clock.ts[thread->tsan.sid],
@@ -239,7 +246,7 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
   }
 
   bool stored = false;
-  const tsan_page_metadata_t* page_md = get_page_md(addr);
+  const tsan_page_metadata_t* page_md = tsan_get_page_md(addr);
   for (int i = 0; i < TSAN_SHADOW_CELLS; ++i) {
     tsan_shadow_t old = shadow_mem[i];
     if (old.epoch == 0) {
@@ -266,8 +273,12 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
       }
       continue;
     }
-    if (!old.is_write && !shadow.is_write) {
+    if (old.is_read && shadow.is_read) {
       // Safe, both are reads.
+      continue;
+    }
+    if (old.is_atomic && shadow.is_atomic) {
+      // Safe, both are atomic.
       continue;
     }
     if (thread->tsan.clock.ts[old.sid] >= old.epoch) {
@@ -290,8 +301,8 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
   }
 
   // Store in a random slot.
-  // TODO(tsan): come up with a better algorithm for picking.
-  uint32_t hash[3] = {fnv_hash_addr((addr_t)thread), fnv_hash_addr(addr),
+  const tsan_tslot_t* slot = tsan_get_tslot(thread->tsan.sid);
+  uint32_t hash[3] = {slot->log.pos, fnv_hash_addr(addr),
                       thread->tsan.clock.ts[thread->tsan.sid]};
   int idx = fnv_hash_array(&hash, sizeof(hash)) % TSAN_SHADOW_CELLS;
   store_shadow(&shadow_mem[idx], shadow);
@@ -305,6 +316,49 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
   kthread_t thread = tsan_current_thread();
   tsan_log_access(tsan_log(thread), pc, addr, size, type);
   return tsan_check_internal(pc, addr, size, type);
+}
+
+bool tsan_check_atomic(addr_t pc, addr_t addr, uint8_t size,
+                       tsan_access_type_t type, int memorder) {
+  KASSERT_DBG(memorder == ATOMIC_RELAXED || memorder == ATOMIC_ACQUIRE ||
+              memorder == ATOMIC_RELEASE || memorder == ATOMIC_ACQ_REL ||
+              memorder == ATOMIC_SEQ_CST);
+  if (!g_tsan_init) return false;
+
+  kthread_t thread = tsan_current_thread();
+  tsan_log_access(tsan_log(thread), pc, addr, size,
+                  type | TSAN_ACCESS_IS_ATOMIC);
+
+  if (memorder != ATOMIC_RELAXED) {
+    PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
+    tsan_sync_t* sync = NULL;
+    switch (memorder) {
+      case ATOMIC_ACQUIRE:
+        sync = tsan_sync_get(addr, size, false);
+        if (sync) {
+          tsan_acquire(&sync->lock, TSAN_LOCK);
+        }
+        break;
+
+      case ATOMIC_RELEASE:
+        sync = tsan_sync_get(addr, size, true);
+        tsan_release(&sync->lock, TSAN_LOCK);
+        break;
+
+      case ATOMIC_ACQ_REL:
+      case ATOMIC_SEQ_CST:
+        sync = tsan_sync_get(addr, size, true);
+        tsan_acquire(&sync->lock, TSAN_LOCK);
+        tsan_release(&sync->lock, TSAN_LOCK);
+        break;
+    }
+    POP_INTERRUPTS_NO_TSAN();
+  }
+
+  bool result =
+      tsan_check_internal(pc, addr, size, type | TSAN_ACCESS_IS_ATOMIC);
+
+  return result;
 }
 
 bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
@@ -384,6 +438,6 @@ void tsan_mark_stack(addr_t start, size_t len, bool is_stack) {
   KASSERT(start + len - TSAN_MAPPED_LEN_ADDR < TSAN_MAPPED_START_ADDR);
 
   for (addr_t addr = start; addr < start + len; addr += PAGE_SIZE) {
-    get_page_md(addr)->is_stack = is_stack;
+    tsan_get_page_md(addr)->is_stack = is_stack;
   }
 }

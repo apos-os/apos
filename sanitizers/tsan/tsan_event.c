@@ -33,7 +33,8 @@ void tsan_log_access(tsan_event_log_t* log, addr_t pc, addr_t addr, int size,
                      tsan_access_type_t type) {
   tsan_event_t event;
   event.type = TSAN_EVENT_ACCESS;
-  event.is_read = (type == TSAN_ACCESS_READ);
+  event.is_read = tsan_is_read(type);
+  event.is_atomic = tsan_is_atomic(type);
   event.addr = addr;
   event.pc = pc;
 
@@ -118,8 +119,10 @@ int tsan_find_access(const tsan_event_log_t* log, addr_t addr, int size,
       i++;  // Skip the next entry (the extended one).
     }
 
-    bool is_read = (type == TSAN_ACCESS_READ);
+    bool is_read = tsan_is_read(type);
     if (log->events[idx].is_read != is_read) continue;
+    bool is_atomic = tsan_is_atomic(type);
+    if (log->events[idx].is_atomic != is_atomic) continue;
 
     // The shadow access will always be the same size or smaller than event
     // size, and start at the same address or higher.

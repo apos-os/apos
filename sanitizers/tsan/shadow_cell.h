@@ -18,6 +18,8 @@
 #include <stdint.h>
 
 #include "common/attributes.h"
+#include "common/types.h"
+#include "sanitizers/tsan/tsan_layout.h"
 #include "sanitizers/tsan/tsan_params.h"
 
 // Contents of a single shadow cell, representing a recent access to the
@@ -29,8 +31,9 @@ typedef struct {
   uint32_t epoch;
   uint8_t sid;
   uint8_t mask;  // Which bytes were accessed (gets offset and size).
-  uint8_t is_write:1;
-  uint16_t _unused2:15;
+  uint8_t is_read:1;
+  uint8_t is_atomic:1;
+  uint16_t _unused2:14;
 } tsan_shadow_t;
 
 _Static_assert(sizeof(tsan_shadow_t) == TSAN_SHADOW_CELL_SIZE,
@@ -48,9 +51,18 @@ static ALWAYS_INLINE uint64_t shadow2raw(tsan_shadow_t s) {
 // Metadata about an entire page of memory.
 typedef struct {
   uint32_t is_stack : 1;
+  uint32_t _unused : 15;
+  uint16_t num_sync_objs;
 } tsan_page_metadata_t;
 
 _Static_assert(sizeof(tsan_page_metadata_t) == sizeof(uint32_t),
                "Bad tsan_page_metadata_t");
+
+static ALWAYS_INLINE tsan_page_metadata_t* tsan_get_page_md(addr_t addr) {
+  addr_t heap_page = (addr - TSAN_MAPPED_START_ADDR) / PAGE_SIZE;
+  addr_t md_addr =
+      TSAN_PAGE_METADATA_START + (heap_page * sizeof(tsan_page_metadata_t));
+  return (tsan_page_metadata_t*)md_addr;
+}
 
 #endif

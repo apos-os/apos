@@ -15,6 +15,8 @@
 
 #include <stdint.h>
 
+#include "common/atomic.h"
+#include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/kstring-tsan.h"
 
@@ -113,4 +115,54 @@ void tsan_implicit_memcpy(tsan_test_struct_t* x) {
   tsan_test_struct_t b;
   kmemset_no_tsan(&b, 0x12, sizeof(b));
   *x = b;
+}
+
+uint32_t tsan_atomic_read(atomic32_t* x, int memorder) {
+  switch (memorder) {
+    case ATOMIC_RELAXED:
+      return atomic_load_relaxed(x);
+
+    case ATOMIC_ACQUIRE:
+      return atomic_load_acquire(x);
+
+    case ATOMIC_ACQ_REL:
+      return atomic_add_acq_rel(x, 0);
+
+    case ATOMIC_SEQ_CST:
+      return atomic_load_seq_cst(x);
+  }
+  die("Bad memory order");
+}
+
+void tsan_atomic_write(atomic32_t* x, uint32_t val, int memorder) {
+  switch (memorder) {
+    case ATOMIC_RELAXED:
+      atomic_store_relaxed(x, val);
+      return;
+
+    case ATOMIC_RELEASE:
+      atomic_store_release(x, val);
+      return;
+
+    case ATOMIC_ACQ_REL:
+      // Not really atomic...
+      atomic_add_acq_rel(x, val - atomic_load_relaxed(x));
+      return;
+
+    case ATOMIC_SEQ_CST:
+      atomic_store_seq_cst(x, val);
+      return;
+  }
+  die("Bad memory order");
+}
+
+uint32_t tsan_atomic_rmw(atomic32_t* x, uint32_t val, int memorder) {
+  switch (memorder) {
+    case ATOMIC_RELAXED:
+      return atomic_add_relaxed(x, val);
+
+    case ATOMIC_ACQ_REL:
+      return atomic_add_acq_rel(x, val);
+  }
+  die("Bad memory order");
 }
