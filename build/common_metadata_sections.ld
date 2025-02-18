@@ -29,6 +29,7 @@
 .note.GNU-stack : AT(ADDR(.note.GNU-stack)) { *(.note.GNU-stack) }
 .rel.text       : AT(ADDR(.rel.text))       { *(.rel.text) }
 .rela.text      : AT(ADDR(.rela.text))      { *(.rela.text) }
+.rela.ltext     : AT(ADDR(.rela.ltext))     { *(.rela.ltext) }
 
 /* Discard sections created automatically by TSAN. */
 /DISCARD/ :

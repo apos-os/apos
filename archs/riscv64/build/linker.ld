@@ -39,6 +39,7 @@ SECTIONS
     {
         */libkernel_phys.a:loader.PHYS.o(.text)
         */libkernel_phys.a:(.text)
+        */libkernel_phys.a:(.ltext)
     }
 
     .init-rodata ALIGN(0x1000) :
@@ -63,6 +64,7 @@ SECTIONS
     .text ALIGN (0x1000) : AT(ADDR(.text) - _OFFSET)
     {
         *(.text)
+        *(.ltext)
     }
 
     .rodata ALIGN (0x1000) : AT(ADDR(.rodata) - _OFFSET)
