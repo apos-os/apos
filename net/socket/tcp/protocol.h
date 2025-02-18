@@ -85,11 +85,12 @@ int tcp_send_rst(socket_tcp_t* socket);
 
 // Creates a SYN or SYN/ACK segment for the socket.
 void tcp_syn_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out,
-                     bool ack);
+                     bool ack) REQUIRES(socket->spin_mu);
 
 // Calculates the next segment to send on the socket --- includes data and
 // possibly a FIN.
-void tcp_next_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out);
+void tcp_next_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out)
+    REQUIRES(socket->spin_mu);
 
 // Build a packet from the segment spec, copying data from the socket's send
 // buffer as needed.  Returns the length of the TCP header or -error.  Does not
@@ -97,7 +98,8 @@ void tcp_next_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out);
 //
 // Requires the socket be spinlocked.
 int tcp_build_segment(const socket_tcp_t* socket, const tcp_segment_t* seg,
-                      pbuf_t** pb_out, tcpip_pseudo_hdr_t* pseudo_ip);
+                      pbuf_t** pb_out, tcpip_pseudo_hdr_t* pseudo_ip)
+    REQUIRES(socket->spin_mu);
 
 typedef struct {
   struct sockaddr_storage src;

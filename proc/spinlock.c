@@ -109,3 +109,11 @@ NO_TSAN bool kspin_is_held(const kspinlock_t* l) {
 NO_TSAN bool kspin_is_held_int(const kspinlock_intsafe_t* l) {
   return (l->_lock.holder == kthread_current_thread()->id);
 }
+
+void kspin_assert_is_held(const kspinlock_t* l) {
+  KASSERT(kspin_is_held(l));
+}
+
+void kspin_assert_is_held_int(const kspinlock_intsafe_t* l) {
+  KASSERT(kspin_is_held_int(l));
+}

@@ -16,6 +16,7 @@
 #define APOO_PROC_SPINLOCK_H
 
 #include "arch/dev/interrupts.h"
+#include "common/attributes.h"
 #include "common/config.h"
 #include "common/types.h"
 #include "proc/defint.h"
@@ -88,5 +89,15 @@ void kspin_unlock_int(kspinlock_intsafe_t* l) RELEASE(l);
 // TODO(aoates): convert these to assertions.
 bool kspin_is_held(const kspinlock_t* l);
 bool kspin_is_held_int(const kspinlock_intsafe_t* l);
+void kspin_assert_is_held(const kspinlock_t* l) ASSERT_CAPABILITY(l);
+void kspin_assert_is_held_int(const kspinlock_intsafe_t* l) ASSERT_CAPABILITY(l);
+
+// Claim the given spinlock is locked for the purposes of construction or
+// destruction of the protected data (and spinlock).  Behaves the same as
+// kspin_assert_is_held() except doesn't actually take the lock or assert.
+static inline ALWAYS_INLINE
+void kspin_constructor(const kspinlock_t* l) ASSERT_CAPABILITY(l) {}
+static inline ALWAYS_INLINE
+void kspin_destructor(const kspinlock_t* l) ASSERT_CAPABILITY(l) {}
 
 #endif
