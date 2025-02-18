@@ -39,9 +39,10 @@ typedef struct {
 } poll_ref_t;
 
 // TODO(aoates): move to more fine-grained locking.
-static kspinlock_t g_poll_lock = KSPINLOCK_NORMAL_INIT_STATIC;
+kspinlock_t g_poll_lock = KSPINLOCK_NORMAL_INIT_STATIC;
 
 void poll_init_event(pollable_t* event) {
+  kspin_constructor(&g_poll_lock);
   event->refs = LIST_INIT;
 }
 
@@ -161,12 +162,17 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
   return 0;
 }
 
+static void init_poll_state(poll_state_t* poll) {
+  kspin_constructor(&g_poll_lock);
+  kthread_queue_init(&poll->q);
+  poll->triggered = false;
+  poll->refs = LIST_INIT;
+}
+
 int vfs_poll(struct apos_pollfd fds[], apos_nfds_t nfds, int timeout_ms) {
   int result = 0;
   poll_state_t poll;
-  kthread_queue_init(&poll.q);
-  poll.triggered = false;
-  poll.refs = LIST_INIT;
+  init_poll_state(&poll);
 
   // TODO(aoates): test nfds against OPEN_MAX.
   for (size_t i = 0; i < nfds; ++i) fds[i].revents = 0;
