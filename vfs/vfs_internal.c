@@ -155,7 +155,7 @@ int lookup(vnode_t** parent, const char* name, vnode_t** child_out) {
 
 int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
   KASSERT_DBG(inode >= 0);
-  KMUTEX_AUTO_LOCK(parent_lock, &parent->mutex);
+  kmutex_lock(&parent->mutex);
   const int kBufSize = 512;
   char dirent_buf[kBufSize];
 
@@ -165,6 +165,7 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
     const int len = parent->fs->getdents(parent, offset, dirent_buf, kBufSize);
     if (len == 0) {
       // Didn't find any matching nodes :(
+      kmutex_unlock(&parent->mutex);
       return -ENOENT;
     }
 
@@ -181,10 +182,12 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
   // Found a match, copy its name.
   const int name_len = kstrlen(ent->d_name);
   if (len < name_len + 1) {
+    kmutex_unlock(&parent->mutex);
     return -ERANGE;
   }
 
   kstrcpy(name_out, ent->d_name);
+  kmutex_unlock(&parent->mutex);
   return name_len;
 }
 

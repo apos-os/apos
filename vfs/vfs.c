@@ -333,6 +333,7 @@ static int vfs_vnode_finish_init(vnode_t** n_ptr) {
   } else {
     KLOG(FATAL, "unexpected vnode state %d on inode %d\n", vnode->state,
          vnode->num);
+    kmutex_unlock(&vnode->state_mu);
     return -EINVAL;  // Unreachable.
   }
 }
@@ -688,6 +689,7 @@ int vfs_open(const char* path, int flags, ...) {
 
   int created = 0;
   if (child == NULL) {
+    kmutex_assert_is_held(&parent->mutex);
     if (!(flags & VFS_O_CREAT)) {
       kmutex_unlock(&parent->mutex);
       VFS_PUT_AND_CLEAR(parent);
@@ -1373,7 +1375,7 @@ ssize_t vfs_read(int fd, void* buf, size_t count) {
     result = special_device_read(file->vnode->type, file->vnode->dev, file->pos,
                                  buf, count, file->flags);
   } else {
-    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    kmutex_lock(&file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
       result = file->vnode->fs->read(file->vnode, file->pos, buf, count);
     } else {
@@ -1383,6 +1385,7 @@ ssize_t vfs_read(int fd, void* buf, size_t count) {
     if (result >= 0) {
       file->pos += result;
     }
+    kmutex_unlock(&file->vnode->mutex);
   }
 
   file_unref(file);
@@ -1421,7 +1424,7 @@ ssize_t vfs_write(int fd, const void* buf, size_t count) {
     result = special_device_write(file->vnode->type, file->vnode->dev,
                                   file->pos, buf, count, file->flags);
   } else {
-    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    kmutex_lock(&file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
       if (file->flags & VFS_O_APPEND) file->pos = file->vnode->len;
       const apos_rlim_t limit =
@@ -1430,6 +1433,7 @@ ssize_t vfs_write(int fd, const void* buf, size_t count) {
         koff_t new_len = max(file->vnode->len, file->pos + (koff_t)count);
         if (new_len > file->vnode->len && (apos_rlim_t)new_len > limit) {
           if ((apos_rlim_t)file->pos >= limit) {
+            kmutex_unlock(&file->vnode->mutex);
             file_unref(file);
             proc_force_signal(proc_current(), SIGXFSZ);
             return -EFBIG;
@@ -1446,6 +1450,7 @@ ssize_t vfs_write(int fd, const void* buf, size_t count) {
     if (result >= 0) {
       file->pos += result;
     }
+    kmutex_unlock(&file->vnode->mutex);
   }
 
   file_unref(file);
@@ -1523,7 +1528,7 @@ int vfs_getdents(int fd, kdirent_t* buf, int count) {
   }
 
   {
-    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    kmutex_lock(&file->vnode->mutex);
     result = file->vnode->fs->getdents(file->vnode, file->pos, buf, count);
     if (result > 0) {
       // Find the last returned dirent_t, and use it's offset.
@@ -1536,6 +1541,7 @@ int vfs_getdents(int fd, kdirent_t* buf, int count) {
       }
       file->pos = ent->d_offset;
     }
+    kmutex_unlock(&file->vnode->mutex);
   }
 
   file_unref(file);
@@ -1692,8 +1698,9 @@ int vfs_fstat(int fd, apos_stat_t* stat) {
   if (result) return result;
 
   {
-    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    kmutex_lock(&file->vnode->mutex);
     result = vfs_stat_internal(file->vnode, stat);
+    kmutex_unlock(&file->vnode->mutex);
   }
 
   file_unref(file);
@@ -1746,8 +1753,9 @@ int vfs_fchown(int fd, kuid_t owner, kgid_t group) {
   if (result) return result;
 
   {
-    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    kmutex_lock(&file->vnode->mutex);
     result = vfs_chown_internal(file->vnode, owner, group);
+    kmutex_unlock(&file->vnode->mutex);
   }
 
   file_unref(file);
@@ -1782,8 +1790,9 @@ int vfs_fchmod(int fd, kmode_t mode) {
   if (result) return result;
 
   {
-    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    kmutex_lock(&file->vnode->mutex);
     result = vfs_chmod_internal(file->vnode, mode);
+    kmutex_unlock(&file->vnode->mutex);
   }
 
   file_unref(file);
@@ -1931,8 +1940,9 @@ int vfs_ftruncate(int fd, koff_t length) {
     return -EFBIG;
   }
 
-  KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+  kmutex_lock(&file->vnode->mutex);
   result = file->vnode->fs->truncate(file->vnode, length);
+  kmutex_unlock(&file->vnode->mutex);
   file_unref(file);
   return result;
 }
@@ -1968,8 +1978,9 @@ int vfs_truncate(const char* path, koff_t length) {
   }
 
   {
-    KMUTEX_AUTO_LOCK(node_lock, &vnode->mutex);
+    kmutex_lock(&vnode->mutex);
     result = vnode->fs->truncate(vnode, length);
+    kmutex_unlock(&vnode->mutex);
   }
 
   VFS_PUT_AND_CLEAR(vnode);
