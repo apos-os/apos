@@ -59,6 +59,7 @@ static void find_free_name(nic_t* nic, const char* name_prefix) {
 
 void nic_init(nic_t* nic) {
   nic->lock = KSPINLOCK_NORMAL_INIT;
+  kspin_constructor(&nic->lock);
   nic->ref = REFCOUNT_INIT;
   nic->link = LIST_LINK_INIT;
   kmemset(&nic->name, 0, NIC_MAX_NAME_LEN);
@@ -90,6 +91,7 @@ void nic_create(nic_t* nic, const char* name_prefix) {
 
 void nic_delete(nic_t* nic) {
   KASSERT(!nic->deleted);
+  kspin_destructor(&nic->lock);
 
   kspin_lock(&g_nics_lock);
   nic->deleted = true;

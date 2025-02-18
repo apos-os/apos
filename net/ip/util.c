@@ -22,7 +22,8 @@
 #include "proc/spinlock.h"
 #include "test/test_point.h"
 
-int ip6_pick_nic_src_locked(const netaddr_t* dst, nic_t* nic, netaddr_t* src_out) {
+int ip6_pick_nic_src_locked(const netaddr_t* dst, nic_t* nic,
+                            netaddr_t* src_out) REQUIRES(nic->lock) {
   int best = -1;
   for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
     if (nic->addrs[i].a.addr.family != AF_INET6 ||

@@ -81,7 +81,7 @@ bool test_ttap_mc_subscribed_str(const test_ttap_t* t, const char* mac_str) {
 
 static nic_addr_t* alloc_addr(nic_t* nic, int prefix_len,
                               nic_addr_state_t state) {
-  KASSERT(kspin_is_held(&nic->lock));
+  kspin_assert_is_held(&nic->lock);
   for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
     if (nic->addrs[i].state == NIC_ADDR_NONE) {
       nic->addrs[i].a.prefix_len = prefix_len;
@@ -94,7 +94,7 @@ static nic_addr_t* alloc_addr(nic_t* nic, int prefix_len,
 
 nic_addr_t* nic_add_addr(nic_t* nic, const char* ipv4, int prefix_len,
                          nic_addr_state_t state) {
-  KASSERT(kspin_is_held(&nic->lock));
+  kspin_assert_is_held(&nic->lock);
   // Sanity check to make sure IPv6 addresses aren't passed.
   KASSERT(kstrchr(ipv4, ':') == 0);
   KASSERT(prefix_len >= 0);
@@ -107,7 +107,7 @@ nic_addr_t* nic_add_addr(nic_t* nic, const char* ipv4, int prefix_len,
 
 nic_addr_t* nic_add_addr_v6(nic_t* nic, const char* ipv6, int prefix_len,
                             nic_addr_state_t state) {
-  KASSERT(kspin_is_held(&nic->lock));
+  kspin_assert_is_held(&nic->lock);
   // Sanity check to make sure IPv4 addresses aren't passed.
   KASSERT(kstrchr(ipv6, '.') == 0);
   KASSERT(prefix_len >= 0);

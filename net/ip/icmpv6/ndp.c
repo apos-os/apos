@@ -322,11 +322,13 @@ static bool handle_prefix(nic_t* nic, const ndp_option_prefix_t* prefix) {
          inet62str(&prefix->prefix, pretty), prefix->prefix_len);
     return false;
   }
+  kspin_lock(&nic->lock);
   if (prefix->prefix_len != 128 - nic->ipv6.iface_id_len) {
     KLOG(DEBUG,
          "ICMPv6: ignoring advertised router prefix %s/%d (incompatible prefix "
          "len)\n",
          inet62str(&prefix->prefix, pretty), prefix->prefix_len);
+    kspin_unlock(&nic->lock);
     return false;
   }
 
@@ -344,6 +346,7 @@ static bool handle_prefix(nic_t* nic, const ndp_option_prefix_t* prefix) {
   KLOG(INFO, "ipv6: found advertised prefix %s/%d; configuring address %s\n",
        inet62str(&prefix->prefix, pretty), prefix->prefix_len,
        inet62str(&addr.addr.a.ip6, pretty2));
+  kspin_unlock(&nic->lock);
 
   int result = ipv6_configure_addr(nic, &addr);
   if (result != 0 && result != -EEXIST) {

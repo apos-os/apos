@@ -594,8 +594,10 @@ static void route_default_route_v6_nic_gateway_test(test_fixture_t* t) {
   KEXPECT_FALSE(ip_route(dst, &result));
 
 
+  kspin_lock(&t->nic3.n->lock);
   t->nic3.n->ipv6.gateway.valid = true;
   KEXPECT_EQ(0, str2inet6("fe80::2", &t->nic3.n->ipv6.gateway.addr));
+  kspin_unlock(&t->nic3.n->lock);
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_TRUE(ip_route(dst, &result));
   KEXPECT_EQ(t->nic3.n, result.nic);
@@ -627,7 +629,9 @@ static void route_default_route_v6_nic_gateway_test(test_fixture_t* t) {
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_FALSE(ip_route(dst, &result));
 
+  kspin_lock(&t->nic3.n->lock);
   t->nic3.n->ipv6.gateway.valid = true;
+  kspin_unlock(&t->nic3.n->lock);
   restore_nic_gateways(&saved_gws);
   ip_set_default_route(ADDR_INET6, orig_default_nexthop, orig_default_nic);
 }

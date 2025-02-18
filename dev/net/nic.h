@@ -103,9 +103,9 @@ struct nic {
 
   // Fields maintained by the network subsystem.
   refcount_t ref;  // External refcount (will be zero usually).
-  nic_addr_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
-  nbr_cache_t nbr_cache;
-  nic_ipv6_t ipv6;
+  nic_addr_t addrs[NIC_MAX_ADDRS] GUARDED_BY(&lock);  // Configured network addresses
+  nbr_cache_t nbr_cache GUARDED_BY(&lock);
+  nic_ipv6_t ipv6 GUARDED_BY(&lock);
   list_link_t link;  // Protected by global mutex, not |lock|.
   bool deleted;      // Protected by global mutex, not |lock|.
 };
