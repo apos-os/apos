@@ -21,7 +21,7 @@
 // Initer data.  Each initer_t is initialized exactly once, atomically.
 typedef struct {
   kspinlock_t mu;
-  bool initialized;
+  bool initialized GUARDED_BY(&mu);
 } initer_t;
 
 #define INITER {KSPINLOCK_NORMAL_INIT_STATIC, false}
