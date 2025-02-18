@@ -1665,7 +1665,7 @@ static void refcount_test(void) {
   for (int i = 0; i < kNumThreads; ++i) {
     kthread_join(threads[i]);
   }
-  KEXPECT_EQ(0, args.ref.ref);
+  KEXPECT_EQ(0, atomic_load_relaxed(&args.ref.ref));
   KEXPECT_EQ(1, args.deletes);
 }
 

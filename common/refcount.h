@@ -15,17 +15,14 @@
 #ifndef APOO_COMMON_REFCOUNT_H
 #define APOO_COMMON_REFCOUNT_H
 
-#include "common/attributes.h"
-#include "proc/spinlock.h"
+#include "common/atomic.h"
 
 // Simple interrupt-safe atomic refcount.
-// TODO(aoates): replace with a native atomic.
 typedef struct {
-  int ref;
-  kspinlock_intsafe_t spin;
+  atomic32_t ref;
 } refcount_t;
 
-#define REFCOUNT_INIT ((refcount_t){1, KSPINLOCK_NORMAL_INIT_STATIC})
+#define REFCOUNT_INIT ((refcount_t){ATOMIC32_INIT(1)})
 
 // Increment the refcount.
 void refcount_inc(refcount_t* ref);

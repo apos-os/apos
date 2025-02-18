@@ -51,6 +51,8 @@ typedef struct atomic32 atomic32_t;
   __atomic_store_n(&(x)->_val, val, ATOMIC_RELEASE)
 #define atomic_add_acq_rel(x, val) \
   __atomic_add_fetch(&(x)->_val, val, ATOMIC_ACQ_REL)
+#define atomic_sub_acq_rel(x, val) \
+  __atomic_sub_fetch(&(x)->_val, val, ATOMIC_ACQ_REL)
 
 // Sequential consistency atomic operations
 #define atomic_load_seq_cst(x) \

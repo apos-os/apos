@@ -17,25 +17,15 @@
 #include "proc/spinlock.h"
 
 void refcount_inc(refcount_t* ref) {
-  kspin_lock_int(&ref->spin);
-  KASSERT_DBG(ref->ref >= 1);
-  ref->ref++;
-  kspin_unlock_int(&ref->spin);
+  atomic_add_relaxed(&ref->ref, 1);
 }
 
 int refcount_dec(refcount_t* ref) {
-  kspin_lock_int(&ref->spin);
-  KASSERT_DBG(ref->ref >= 1);
-  int result = --ref->ref;
-  kspin_unlock_int(&ref->spin);
+  int result = (int)atomic_sub_acq_rel(&ref->ref, 1);
+  KASSERT_DBG(result >= 0);
   return result;
 }
 
 int refcount_get(const refcount_t* ref) {
-  kspinlock_intsafe_t* spin = (kspinlock_intsafe_t*)&ref->spin;
-  kspin_lock_int(spin);
-  KASSERT_DBG(ref->ref >= 1);
-  int result = ref->ref;
-  kspin_unlock_int(spin);
-  return result;
+  return (int)atomic_load_relaxed(&ref->ref);
 }

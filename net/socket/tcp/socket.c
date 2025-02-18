@@ -272,7 +272,7 @@ static void set_state(socket_tcp_t* sock, socktcp_state_t new_state,
 }
 
 static void delete_socket(socket_tcp_t* socket) {
-  KASSERT_DBG(socket->ref.ref == 0);
+  KASSERT_DBG(refcount_get(&socket->ref) == 0);
   KASSERT_DBG(socket->parent == NULL);
   KASSERT_DBG(socket->state == TCP_CLOSED_DONE);
   KASSERT_DBG(socket->timer == TIMER_HANDLE_NONE);
