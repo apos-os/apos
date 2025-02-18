@@ -1027,7 +1027,21 @@ static void tcp_process_action(socket_tcp_t* socket, const pbuf_t* pb,
 
     case TCP_ACTION_NOT_SET:
     case TCP_ACTION_NONE:
-      if (tcp_state_type(socket->state) == TCPSTATE_ESTABLISHED) {
+      // Racily read the current state.  The race is OK --- tcp_send_datafin()
+      // will check the state again.
+      //
+      // This _should_ be redundant with the check in tcp_send_datafin(), except
+      // that if we call tcp_send_datafin() while we're in SYN_RCVD, and this is
+      // an incoming ACK, then we'll crash.  Check here first to avoid that.  We
+      // won't ever go from TCP_ESTABLISHED to TCP_SYN_RCVD, so a race after we
+      // check the state here cannot cause the problem.
+      // TODO(aoates): this is inelegant --- fix the underlying bug here and
+      // remove this check, calling tcp_send_datafin() unconditionally.  See
+      // open_accept_established_test().
+      kspin_lock(&socket->spin_mu);
+      socktcp_state_t state = socket->state;
+      kspin_unlock(&socket->spin_mu);
+      if (tcp_state_type(state) == TCPSTATE_ESTABLISHED) {
         result = tcp_send_datafin(socket, false, false);
         if (result == 0) {
           action->send_ack = false;  // We sent data, that includes an ack
