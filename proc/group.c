@@ -26,17 +26,20 @@ kpid_t getpgid(kpid_t pid) {
   if (pid < 0 || pid >= PROC_MAX_PROCS) {
     return -EINVAL;
   }
-  process_t* proc = (pid == 0) ? proc_current() : proc_get(pid);
+  process_t* proc = (pid == 0) ? proc_current() : proc_get_ref(pid);
   if (!proc) {
     return -ESRCH;
   }
 
   if (proc_group_get(proc->pgroup)->session !=
       proc_group_get(proc_current()->pgroup)->session) {
+    if (pid != 0) proc_put(proc);
     return -EPERM;
   }
 
-  return proc->pgroup;
+  kpid_t result = proc->pgroup;
+  if (pid != 0) proc_put(proc);
+  return result;
 }
 
 int setpgid(kpid_t pid, kpid_t pgid) {
@@ -47,28 +50,33 @@ int setpgid(kpid_t pid, kpid_t pgid) {
   if (pid == 0) pid = proc_current()->id;
   if (pgid == 0) pgid = pid;
 
-  process_t* proc = proc_get(pid);
+  process_t* proc = proc_get_ref(pid);
   if (!proc || (proc != proc_current() && proc->parent != proc_current())) {
+    if (proc) proc_put(proc);
     return -ESRCH;
   }
 
   proc_group_t* cur_pgroup = proc_group_get(proc->pgroup);
   if (cur_pgroup->session == proc->id) {  // Is session leader?
+    proc_put(proc);
     return -EPERM;
   }
 
   proc_group_t* my_pgroup = proc_group_get(proc_current()->pgroup);
   if (cur_pgroup->session != my_pgroup->session) {
+    proc_put(proc);
     return -EPERM;  // Child, but in a different session.
   }
 
   proc_group_t* pgroup = proc_group_get(pgid);
   if (pgid != pid &&
       (list_empty(&pgroup->procs) || pgroup->session != my_pgroup->session)) {
+    proc_put(proc);
     return -EPERM;
   }
 
   if (proc->parent == proc_current() && proc->execed) {
+    proc_put(proc);
     return -EACCES;
   }
 
@@ -84,6 +92,7 @@ int setpgid(kpid_t pid, kpid_t pgid) {
   list_push(&pgroup->procs, &proc->pgroup_link);
   proc->pgroup = pgid;
 
+  proc_put(proc);
   return 0;
 }
 

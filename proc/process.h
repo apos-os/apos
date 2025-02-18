@@ -48,7 +48,6 @@ static inline const char* proc_state_to_string(proc_state_t state);
 // handled in fork(), execve(), and exit().
 // TODO(aoates): update all fields here to be properly prempt-safe.
 struct process {
-  pmutex_t mu;
   uint32_t guid;
   kpid_t id;  // Index into global process table.
   proc_state_t state;
@@ -116,6 +115,9 @@ struct process {
 
   // Resource limits.
   struct apos_rlimit limits[APOS_RLIMIT_NUM_RESOURCES];
+
+  pmutex_t mu;
+  refcount_t refcount;
 };
 
 // Initialize the process table, and create the first process (process 0) from
@@ -136,11 +138,19 @@ void proc_init_stage1(void);
 // REQUIRES: kthread_init() and scheduler_init().
 void proc_init_stage2(void);
 
-// Return the current process descriptor.
+// Return the current process descriptor.  Does NOT increment the refcount.
 process_t* proc_current(void);
 
-// Return the process_t with the given ID, or NULL if there is none.
+// Return the process_t with the given ID, or NULL if there is none.  Does not
+// increment the refcount, and should only be used by code that knows the
+// process will continue to live (such a single-threaded test code).
 process_t* proc_get(kpid_t id);
+
+// As above, but adds a refcount to the process --- the caller must call
+// proc_put() on it later.
+process_t* proc_get_ref(kpid_t id);
+
+void proc_put(process_t* proc);
 
 // Spawn a new thread associated with the current process.  The new thread
 // _must_ either return from the called function, or call proc_thread_exit(),

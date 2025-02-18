@@ -18,6 +18,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/math.h"
+#include "common/refcount.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/vm.h"
@@ -55,6 +56,7 @@ static uint32_t g_next_guid = 1;
 
 static void proc_init_process(process_t* p) {
   pmutex_init(&p->mu);
+  p->refcount = REFCOUNT_INIT;
   p->guid = 0;
   p->id = -1;
   p->state = PROC_INVALID;
@@ -115,6 +117,7 @@ process_t* proc_alloc(void) {
 }
 
 void proc_destroy(process_t* process) {
+  KASSERT(refcount_get(&process->refcount) == 0);
   KASSERT(process->state == PROC_INVALID);
   KASSERT(list_empty(&process->threads));
   KASSERT(process->page_directory == 0x0);
@@ -203,6 +206,20 @@ process_t* proc_get(kpid_t id) {
     return NULL;
   else
     return g_proc_table[id];
+}
+
+process_t* proc_get_ref(kpid_t id) {
+  process_t* p = proc_get(id);
+  if (p) {
+    refcount_inc(&p->refcount);
+  }
+  return p;
+}
+
+void proc_put(process_t* proc) {
+  if (refcount_dec(&proc->refcount) == 0) {
+    proc_destroy(proc);
+  }
 }
 
 void proc_set_current(process_t* process) {

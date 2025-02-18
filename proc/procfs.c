@@ -95,7 +95,7 @@ static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
 
   const kpid_t pid = proc_vnode_to_pid(vnode);
   if (pid < 0 || pid >= PROC_MAX_PROCS) return -EINVAL;
-  const process_t* const proc = proc_get(pid);
+  process_t* const proc = proc_get_ref(pid);
   if (!proc) return -EINVAL;
 
   char* tbuf = kmalloc(1024);
@@ -111,6 +111,7 @@ static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
     link = link->next;
   }
 
+  proc_put(proc);
   kfree(tbuf);
   return kstrlen(buf);
 }
@@ -122,7 +123,7 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
 
   const kpid_t pid = proc_vnode_to_pid(vnode);
   if (pid < 0 || pid >= PROC_MAX_PROCS) return -EINVAL;
-  const process_t* const proc = proc_get(pid);
+  process_t* const proc = proc_get_ref(pid);
   if (!proc) return -EINVAL;
 
   char* cwd = kmalloc(VFS_MAX_PATH_LENGTH);
@@ -164,6 +165,7 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   kstrncpy(buf, tbuf, buflen);
   ((char*)buf)[buflen - 1] = '\0';
 
+  proc_put(proc);
   kfree(tbuf);
   kfree(cwd);
   return kstrlen(buf);
@@ -173,13 +175,14 @@ static int cwd_readlink(fs_t* fs, void* arg, int vnode, void* buf, int buflen) {
   const kpid_t pid = proc_vnode_to_pid(vnode);
   if (pid < 0 || pid >= PROC_MAX_PROCS) return -EINVAL;
 
-  const process_t* const proc = proc_get(pid);
+  process_t* const proc = proc_get_ref(pid);
   if (!proc) return -EINVAL;
 
   char* cwd = kmalloc(VFS_MAX_PATH_LENGTH);
   int result = vfs_get_vnode_dir_path(proc->cwd, cwd, VFS_MAX_PATH_LENGTH);
   if (result >= 0) kstrncpy(buf, cwd, result);
 
+  proc_put(proc);
   kfree(cwd);
   return result;
 }
@@ -236,16 +239,22 @@ static int proc_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
                          list_t* list_out, void* buf, int buflen) {
   int process_idx = -1;
   for (kpid_t pid = 0; pid < PROC_MAX_PROCS; ++pid) {
-    process_t* proc = proc_get(pid);
+    process_t* proc = proc_get_ref(pid);
     if (!proc) continue;
     process_idx++;
 
-    if (process_idx < offset) continue;
+    if (process_idx < offset) {
+      proc_put(proc);
+      continue;
+    }
 
     char name[30];
     ksprintf(name, "%d", pid);
     const int entry_size = cbfs_entry_size(name);
-    if (entry_size > buflen) break;
+    if (entry_size > buflen) {
+      proc_put(proc);
+      break;
+    }
 
     cbfs_entry_t* entry = (cbfs_entry_t*)buf;
     cbfs_create_entry(entry, name, proc_dir_vnode(pid));
@@ -253,6 +262,7 @@ static int proc_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
 
     buf += entry_size;
     buflen -= entry_size;
+    proc_put(proc);
   }
   return 0;
 }

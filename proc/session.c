@@ -45,10 +45,12 @@ kpid_t proc_setsid(void) {
 kpid_t proc_getsid(kpid_t pid) {
   if (pid == 0) pid = proc_current()->id;
 
-  process_t* proc = proc_get(pid);
+  process_t* proc = proc_get_ref(pid);
   if (!proc) return -ESRCH;
 
   proc_group_t* pgroup = proc_group_get(proc->pgroup);
+  proc_put(proc);
+
   proc_group_t* cur_pgroup = proc_group_get(proc_current()->pgroup);
   if (pgroup->session != cur_pgroup->session) return -EPERM;
 

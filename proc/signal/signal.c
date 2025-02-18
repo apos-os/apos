@@ -222,7 +222,11 @@ int proc_kill(kpid_t pid, int sig) {
 
   if (pid == -1) {
     for (kpid_t pid = 2; pid < PROC_MAX_PROCS; pid++) {
-      proc_kill_one(proc_get(pid), sig);
+      process_t* proc = proc_get_ref(pid);
+      if (proc) {
+        proc_kill_one(proc, sig);
+        proc_put(proc);
+      }
     }
     return 0;
   } else if (pid <= 0) {
@@ -243,8 +247,12 @@ int proc_kill(kpid_t pid, int sig) {
     }
     return (num_signalled > 0) ? 0 : -EPERM;
   } else {
-    process_t* proc = proc_get(pid);
-    return proc_kill_one(proc, sig);
+    process_t* proc = proc_get_ref(pid);
+    int result = proc_kill_one(proc, sig);
+    if (proc) {
+      proc_put(proc);
+    }
+    return result;
   }
 }
 

@@ -131,7 +131,7 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
     *exit_status = zombie->exit_status;
   }
   kpid_t zombie_pid = zombie->id;
-  proc_destroy(zombie);
+  proc_put(zombie);  // Will destroy if no other references.
   return zombie_pid;
 }
 
