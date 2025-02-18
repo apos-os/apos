@@ -24,15 +24,18 @@ void ntfn_init(notification_t* n) {
 }
 
 void ntfn_notify(notification_t* n) {
-  KMUTEX_AUTO_LOCK(nlock, &n->mu);
+  kmutex_lock(&n->mu);
   KASSERT_MSG(!n->status, "notification already notified");
   n->status = true;
   scheduler_wake_all(&n->queue);
+  kmutex_unlock(&n->mu);
 }
 
 bool ntfn_has_been_notified(notification_t* n) {
-  KMUTEX_AUTO_LOCK(nlock, &n->mu);
-  return n->status;
+  kmutex_lock(&n->mu);
+  int result = n->status;
+  kmutex_unlock(&n->mu);
+  return result;
 }
 
 void ntfn_await(notification_t* n) {
@@ -41,11 +44,15 @@ void ntfn_await(notification_t* n) {
 }
 
 bool ntfn_await_with_timeout(notification_t* n, int timeout_ms) {
-  KMUTEX_AUTO_LOCK(nlock, &n->mu);
+  kmutex_lock(&n->mu);
   while (!n->status) {
     int result = scheduler_wait_on_locked(&n->queue, timeout_ms, &n->mu);
     KASSERT(result != SWAIT_INTERRUPTED);
-    if (result == SWAIT_TIMEOUT) return false;
+    if (result == SWAIT_TIMEOUT) {
+      kmutex_unlock(&n->mu);
+      return false;
+    }
   }
+  kmutex_unlock(&n->mu);
   return true;
 }
