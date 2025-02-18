@@ -1918,6 +1918,7 @@ static void sock_tcp_fd_cleanup(socket_t* socket_base) {
     KLOG(DFATAL, "TCP: socket %p unable to shutdown() on close(): %s\n",
          socket_base, errorname(-result));
   }
+  kmutex_unlock(&socket->mu);
   TCP_DEC_REFCOUNT(socket);
 }
 
@@ -2062,9 +2063,11 @@ static int sock_tcp_bind(socket_t* socket_base, const struct sockaddr* address,
   }
 
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
-  KMUTEX_AUTO_LOCK(lock, &socket->mu);
-  return sock_tcp_bind_locked(socket, address, address_len,
-                              /* allow_rebind = */ false);
+  kmutex_lock(&socket->mu);
+  int result = sock_tcp_bind_locked(socket, address, address_len,
+                                    /* allow_rebind = */ false);
+  kmutex_unlock(&socket->mu);
+  return result;
 }
 
 static int sock_tcp_listen(socket_t* socket_base, int backlog) {
@@ -2577,7 +2580,7 @@ static int sock_tcp_getsockname(socket_t* socket_base,
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
-  KMUTEX_AUTO_LOCK(lock, &socket->mu);
+  kmutex_lock(&socket->mu);
   kspin_lock(&socket->spin_mu);
   int result = sizeof_sockaddr(socket_base->s_domain);
   if (socket->bind_addr.sa_family != AF_UNSPEC) {
@@ -2592,6 +2595,7 @@ static int sock_tcp_getsockname(socket_t* socket_base,
     result = -EINVAL;
   }
   kspin_unlock(&socket->spin_mu);
+  kmutex_unlock(&socket->mu);
   return result;
 }
 
@@ -2601,7 +2605,7 @@ static int sock_tcp_getpeername(socket_t* socket_base,
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
-  KMUTEX_AUTO_LOCK(lock, &socket->mu);
+  kmutex_lock(&socket->mu);
   kspin_lock(&socket->spin_mu);
   int result = sizeof_sockaddr(socket_base->s_domain);
   if (tcp_state_type(socket->state) == TCPSTATE_PRE_ESTABLISHED) {
@@ -2618,6 +2622,7 @@ static int sock_tcp_getpeername(socket_t* socket_base,
     result = -ENOTCONN;
   }
   kspin_unlock(&socket->spin_mu);
+  kmutex_unlock(&socket->mu);
   return result;
 }
 
@@ -2788,15 +2793,9 @@ static int tcp_setsockopt_flag(socket_tcp_t* socket, int flag,
   return 0;
 }
 
-static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
-                                void* restrict val,
-                                socklen_t* restrict val_len) {
-  KASSERT_DBG(socket_base->s_type == SOCK_STREAM);
-  KASSERT_DBG(socket_base->s_protocol == IPPROTO_TCP);
-
-  socket_tcp_t* socket = (socket_tcp_t*)socket_base;
-  KMUTEX_AUTO_LOCK(lock, &socket->mu);
-
+static int sock_tcp_getsockopt_locked(socket_tcp_t* socket, int level,
+                                      int option, void* restrict val,
+                                      socklen_t* restrict val_len) {
   if (level == SOL_SOCKET && (option == SO_RCVBUF || option == SO_SNDBUF)) {
     return getsockopt_bufsize(socket, option, val, val_len);
   } else if (level == SOL_SOCKET && option == SO_RCVTIMEO) {
@@ -2841,14 +2840,22 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
   return -ENOPROTOOPT;
 }
 
-static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
-                               const void* val, socklen_t val_len) {
+static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
+                                void* restrict val,
+                                socklen_t* restrict val_len) {
   KASSERT_DBG(socket_base->s_type == SOCK_STREAM);
   KASSERT_DBG(socket_base->s_protocol == IPPROTO_TCP);
 
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
-  KMUTEX_AUTO_LOCK(lock, &socket->mu);
+  kmutex_lock(&socket->mu);
+  int result = sock_tcp_getsockopt_locked(socket, level, option, val, val_len);
+  kmutex_unlock(&socket->mu);
+  return result;
+}
 
+static int sock_tcp_setsockopt_locked(socket_tcp_t* socket, int level,
+                                      int option, const void* val,
+                                      socklen_t val_len) {
   if (level == SOL_SOCKET && (option == SO_RCVBUF || option == SO_SNDBUF)) {
     return setsockopt_bufsize(socket, option, val, val_len);
   } else if (level == SOL_SOCKET && option == SO_RCVTIMEO) {
@@ -2888,6 +2895,18 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
   }
 
   return -ENOPROTOOPT;
+}
+
+static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
+                               const void* val, socklen_t val_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_STREAM);
+  KASSERT_DBG(socket_base->s_protocol == IPPROTO_TCP);
+
+  socket_tcp_t* socket = (socket_tcp_t*)socket_base;
+  kmutex_lock(&socket->mu);
+  int result = sock_tcp_setsockopt_locked(socket, level, option, val, val_len);
+  kmutex_unlock(&socket->mu);
+  return result;
 }
 
 static short tcp_poll_events(const socket_tcp_t* socket) {
