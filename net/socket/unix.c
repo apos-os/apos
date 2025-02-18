@@ -104,8 +104,10 @@ static int sock_unix_create_locked(int type, int protocol, socket_t** out) {
 }
 
 int sock_unix_create(int type, int protocol, socket_t** out) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
-  return sock_unix_create_locked(type, protocol, out);
+  kmutex_lock(&g_unix_mu);
+  int result = sock_unix_create_locked(type, protocol, out);
+  kmutex_unlock(&g_unix_mu);
+  return result;
 }
 
 static void sock_unix_cleanup_locked(socket_t* socket_base) {
@@ -158,25 +160,29 @@ static void sock_unix_cleanup_locked(socket_t* socket_base) {
 }
 
 static void sock_unix_cleanup(socket_t* socket_base) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
+  kmutex_lock(&g_unix_mu);
   sock_unix_cleanup_locked(socket_base);
+  kmutex_unlock(&g_unix_mu);
 }
 
 static int sock_unix_shutdown(socket_t* socket_base, int how) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
+  kmutex_lock(&g_unix_mu);
   if (how != SHUT_RD && how != SHUT_WR && how != SHUT_RDWR) {
+    kmutex_unlock(&g_unix_mu);
     return -EINVAL;
   }
 
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
   if (socket->state != SUN_CONNECTED) {
+    kmutex_unlock(&g_unix_mu);
     return -ENOTCONN;
   }
 
   if (how == SHUT_RD || how == SHUT_RDWR) {
     // read_fin is set if the peer is shutdown _or_ closed.
     if (socket->read_fin) {
+      kmutex_unlock(&g_unix_mu);
       return -ENOTCONN;
     }
     // Throw away any pending data.
@@ -190,6 +196,7 @@ static int sock_unix_shutdown(socket_t* socket_base, int how) {
   }
   if (how == SHUT_WR || how == SHUT_RDWR) {
     if (!socket->peer || socket->peer->read_fin) {
+      kmutex_unlock(&g_unix_mu);
       return -ENOTCONN;
     }
     socket->peer->read_fin = true;
@@ -199,50 +206,63 @@ static int sock_unix_shutdown(socket_t* socket_base, int how) {
     poll_trigger_event(&socket->peer->poll_event,
                        sun_poll_events(socket->peer));
   }
+  kmutex_unlock(&g_unix_mu);
   return 0;
 }
 
 static int sock_unix_bind(socket_t* socket_base, const struct sockaddr* address,
                           socklen_t address_len) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
+  kmutex_lock(&g_unix_mu);
   if (address_len < (socklen_t)sizeof(struct sockaddr_un)) {
+    kmutex_unlock(&g_unix_mu);
     return -EINVAL;
   }
 
   if (address->sa_family != AF_UNIX) {
+    kmutex_unlock(&g_unix_mu);
     return -EAFNOSUPPORT;
   }
 
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
   if (socket->bind_point != NULL) {
+    kmutex_unlock(&g_unix_mu);
     return -EINVAL;
   }
 
   const struct sockaddr_un* addr_un = (const struct sockaddr_un*)address;
   if (kstrnlen(addr_un->sun_path,
                sizeof(struct sockaddr_un) - sizeof(sa_family_t)) < 0) {
+    kmutex_unlock(&g_unix_mu);
     return -ENAMETOOLONG;
   }
 
   int result = vfs_mksocket(
       addr_un->sun_path, VFS_S_IFSOCK | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO,
       &socket->bind_point);
-  if (result == -EEXIST) return -EADDRINUSE;
-  else if (result) return result;
+  if (result == -EEXIST) {
+    kmutex_unlock(&g_unix_mu);
+    return -EADDRINUSE;
+  } else if (result) {
+    kmutex_unlock(&g_unix_mu);
+    return result;
+  }
 
   socket->bind_point->bound_socket = socket_base;
   kmemcpy(&socket->bind_address, address, address_len);
+  kmutex_unlock(&g_unix_mu);
   return 0;
 }
 
 static int sock_unix_listen(socket_t* socket_base, int backlog) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
+  kmutex_lock(&g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
   if (socket->bind_point == NULL) {
+    kmutex_unlock(&g_unix_mu);
     return -EDESTADDRREQ;
   } else if (socket->state != SUN_UNCONNECTED) {
+    kmutex_unlock(&g_unix_mu);
     return -EINVAL;
   }
 
@@ -255,26 +275,30 @@ static int sock_unix_listen(socket_t* socket_base, int backlog) {
   socket->state = SUN_LISTENING;
   socket->listen_backlog = backlog;
 
+  kmutex_unlock(&g_unix_mu);
   return 0;
 }
 
 static int sock_unix_accept(socket_t* socket_base, int fflags,
                             struct sockaddr* address, socklen_t* address_len,
                             socket_t** socket_out) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
+  kmutex_lock(&g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
   if (socket->state != SUN_LISTENING) {
+    kmutex_unlock(&g_unix_mu);
     return -EINVAL;
   }
   while (list_empty(&socket->incoming_conns)) {
     if (fflags & VFS_O_NONBLOCK) {
+      kmutex_unlock(&g_unix_mu);
       return -EAGAIN;
     }
     int result =
         scheduler_wait_on_locked(&socket->accept_wait_queue, -1, &g_unix_mu);
     if (result == SWAIT_INTERRUPTED) {
+      kmutex_unlock(&g_unix_mu);
       return -EINTR;
     }
   }
@@ -309,14 +333,16 @@ static int sock_unix_accept(socket_t* socket_base, int fflags,
   }
   socket->listen_backlog++;
 
+  kmutex_unlock(&g_unix_mu);
   return 0;
 }
 
 static int sock_unix_connect(socket_t* socket_base, int fflags,
                              const struct sockaddr* address,
                              socklen_t address_len) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
+  kmutex_lock(&g_unix_mu);
   if (address->sa_family != AF_UNIX) {
+    kmutex_unlock(&g_unix_mu);
     return -EAFNOSUPPORT;
   }
 
@@ -326,14 +352,17 @@ static int sock_unix_connect(socket_t* socket_base, int fflags,
     case SUN_UNCONNECTED:
       break;
     case SUN_LISTENING:
+      kmutex_unlock(&g_unix_mu);
       return -EOPNOTSUPP;
     case SUN_CONNECTED:
+      kmutex_unlock(&g_unix_mu);
       return -EISCONN;
   }
 
   const struct sockaddr_un* addr_un = (const struct sockaddr_un*)address;
   if (kstrnlen(addr_un->sun_path,
                sizeof(struct sockaddr_un) - sizeof(sa_family_t)) < 0) {
+    kmutex_unlock(&g_unix_mu);
     return -ENAMETOOLONG;
   }
 
@@ -341,17 +370,20 @@ static int sock_unix_connect(socket_t* socket_base, int fflags,
   int result =
       lookup_existing_path(addr_un->sun_path, lookup_opt(true), &target);
   if (result) {
+    kmutex_unlock(&g_unix_mu);
     return result;
   }
 
   if (target->type != VNODE_SOCKET) {
     VFS_PUT_AND_CLEAR(target);
+    kmutex_unlock(&g_unix_mu);
     return -ENOTSOCK;
   }
 
   KASSERT_DBG(target->socket == NULL);
   if (target->bound_socket == NULL) {
     VFS_PUT_AND_CLEAR(target);
+    kmutex_unlock(&g_unix_mu);
     return -ECONNREFUSED;
   }
 
@@ -359,11 +391,13 @@ static int sock_unix_connect(socket_t* socket_base, int fflags,
   socket_unix_t* target_sock = (socket_unix_t*)target->bound_socket;
   VFS_PUT_AND_CLEAR(target);
   if (target_sock->state != SUN_LISTENING) {
+    kmutex_unlock(&g_unix_mu);
     return -ECONNREFUSED;
   }
 
   KASSERT_DBG(target_sock->listen_backlog >= 0);
   if (target_sock->listen_backlog == 0) {
+    kmutex_unlock(&g_unix_mu);
     return -ECONNREFUSED;
   }
 
@@ -372,6 +406,7 @@ static int sock_unix_connect(socket_t* socket_base, int fflags,
   result = sock_unix_create_locked(socket_base->s_type, socket_base->s_protocol,
                                    &new_socket_base);
   if (result) {
+    kmutex_unlock(&g_unix_mu);
     return result;
   }
 
@@ -393,20 +428,22 @@ static int sock_unix_connect(socket_t* socket_base, int fflags,
   scheduler_wake_all(&target_sock->accept_wait_queue);
   poll_trigger_event(&target_sock->poll_event, sun_poll_events(target_sock));
 
+  kmutex_unlock(&g_unix_mu);
   return 0;
 }
 
 static int sock_unix_accept_queue_length(const socket_t* socket_base) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
+  kmutex_lock(&g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
-  return list_size(&socket->incoming_conns);
+  int result = list_size(&socket->incoming_conns);
+  kmutex_unlock(&g_unix_mu);
+  return result;
 }
 
 ssize_t sock_unix_recvfrom(socket_t* socket_base, int fflags, void* buffer,
                            size_t length, int sflags, struct sockaddr* address,
                            socklen_t* address_len) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
@@ -414,18 +451,22 @@ ssize_t sock_unix_recvfrom(socket_t* socket_base, int fflags, void* buffer,
     return -EINVAL;
   }
 
+  kmutex_lock(&g_unix_mu);
   if (socket->state != SUN_CONNECTED) {
+    kmutex_unlock(&g_unix_mu);
     return -ENOTCONN;
   }
   KASSERT_DBG(socket->readbuf_raw != 0x0);
 
   while (socket->readbuf.len == 0 && !socket->read_fin) {
     if (fflags & VFS_O_NONBLOCK) {
+      kmutex_unlock(&g_unix_mu);
       return -EAGAIN;
     }
     int result =
         scheduler_wait_on_locked(&socket->read_wait_queue, -1, &g_unix_mu);
     if (result == SWAIT_INTERRUPTED) {
+      kmutex_unlock(&g_unix_mu);
       return -EINTR;
     }
   }
@@ -442,21 +483,24 @@ ssize_t sock_unix_recvfrom(socket_t* socket_base, int fflags, void* buffer,
     *address_len = 0;
   }
 
+  kmutex_unlock(&g_unix_mu);
   return result;
 }
 
 ssize_t sock_unix_sendto(socket_t* socket_base, int fflags, const void* buffer,
                          size_t length, int sflags,
                          const struct sockaddr* dest_addr, socklen_t dest_len) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
+  kmutex_lock(&g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
   if (!buffer || sflags != 0) {
+    kmutex_unlock(&g_unix_mu);
     return -EINVAL;
   }
 
   if (socket->state != SUN_CONNECTED) {
+    kmutex_unlock(&g_unix_mu);
     return -ENOTCONN;
   }
 
@@ -465,72 +509,80 @@ ssize_t sock_unix_sendto(socket_t* socket_base, int fflags, const void* buffer,
          socket->peer->readbuf.buflen - socket->peer->readbuf.len == 0 &&
          !socket->peer->read_fin) {
     if (fflags & VFS_O_NONBLOCK) {
+      kmutex_unlock(&g_unix_mu);
       return -EAGAIN;
     }
     int result =
         scheduler_wait_on_locked(&socket->write_wait_queue, -1, &g_unix_mu);
     if (result == SWAIT_INTERRUPTED) {
+      kmutex_unlock(&g_unix_mu);
       return -EINTR;
     }
   }
   if (socket->peer == 0x0 || socket->peer->read_fin) {
     proc_force_signal(proc_current(), SIGPIPE);
+    kmutex_unlock(&g_unix_mu);
     return -EPIPE;
   }
 
   int result = circbuf_write(&socket->peer->readbuf, buffer, length);
   scheduler_wake_all(&socket->peer->read_wait_queue);
   poll_trigger_event(&socket->peer->poll_event, sun_poll_events(socket->peer));
+  kmutex_unlock(&g_unix_mu);
   return result;
 }
 
 static int sock_unix_getsockname(socket_t* socket_base,
                                  struct sockaddr_storage* address) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
+  kmutex_lock(&g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
   kmemcpy(address, &socket->bind_address, sizeof(struct sockaddr_un));
+  kmutex_unlock(&g_unix_mu);
   return sizeof(struct sockaddr_un);
 }
 
 static int sock_unix_getpeername(socket_t* socket_base,
                                  struct sockaddr_storage* address) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
+  kmutex_lock(&g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
   if (!socket->peer) {
+    kmutex_unlock(&g_unix_mu);
     return -ENOTCONN;
   }
 
   kmemcpy(address, &socket->peer->bind_address, sizeof(struct sockaddr_un));
+  kmutex_unlock(&g_unix_mu);
   return sizeof(struct sockaddr_un);
 }
 
 static int sock_unix_poll(socket_t* socket_base, short event_mask,
                           poll_state_t* poll) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
+  kmutex_lock(&g_unix_mu);
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
   const short masked_events = sun_poll_events(socket) & event_mask;
-  if (masked_events || !poll)
+  if (masked_events || !poll) {
+    kmutex_unlock(&g_unix_mu);
     return masked_events;
+  }
 
-  return poll_add_event(poll, &socket->poll_event, event_mask);
+  int result = poll_add_event(poll, &socket->poll_event, event_mask);
+  kmutex_unlock(&g_unix_mu);
+  return result;
 }
 
 static int sock_unix_getsockopt(socket_t* socket_base, int level, int option,
                                 void* val, socklen_t* val_len) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
-  KASSERT_DBG(socket_base->s_domain == AF_UNIX);
   return -ENOPROTOOPT;
 }
 
 static int sock_unix_setsockopt(socket_t* socket_base, int level, int option,
                                 const void* val, socklen_t val_len) {
-  KMUTEX_AUTO_LOCK(lock, &g_unix_mu);
   KASSERT_DBG(socket_base->s_domain == AF_UNIX);
   return -ENOPROTOOPT;
 }
