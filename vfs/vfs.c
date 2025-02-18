@@ -997,6 +997,7 @@ int vfs_rmdir(const char* path) {
     return error;
   }
 
+  vfs_assert_locked(parent, child);
   if (base_name[0] == '\0') {
     vfs_unlock_vnodes(parent, child);
     VFS_PUT_AND_CLEAR(child);
@@ -1320,6 +1321,7 @@ int vfs_unlink(const char* path) {
     return error;
   }
 
+  vfs_assert_locked(parent, child);
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
   if (mode_check) {
     vfs_unlock_vnodes(parent, child);

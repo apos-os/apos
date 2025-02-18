@@ -246,7 +246,8 @@ static int shadow_write_page(memobj_t* obj, int offset, const void* buffer) {
 
 // Collapses entries in the shadow chain below the given object, and returns the
 // final length of that chain.
-static int collapse_and_count(memobj_t* parent) {
+// TODO(aoates): look for a way to express this locking (partially or fully)
+static int collapse_and_count(memobj_t* parent) NO_THREAD_SAFETY_ANALYSIS {
   KASSERT_DBG(parent->type == MEMOBJ_SHADOW);
   shadow_data_t* parent_data = (shadow_data_t*)parent->data;
   kmutex_lock(&parent_data->shadow_lock);

@@ -425,7 +425,7 @@ static int block_cache_get_existing(bc_entry_internal_t* entry) {
 // created and read from the object.
 static int block_cache_get_internal(memobj_t* obj, int offset,
                                     bc_entry_t** entry_out,
-                                    void* existing_block) {
+                                    void* existing_block) REQUIRES(g_mu) {
   kmutex_assert_is_held(&g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;

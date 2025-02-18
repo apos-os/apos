@@ -473,6 +473,13 @@ void kmutex_init(kmutex_t* m) {
 #endif
 }
 
+// No-op functions that allow us to avoid disabling thread safety analysis for
+// the entire function (so we can still get it on any spinlocks, etc).
+static inline ALWAYS_INLINE
+void _kmutex_acq(kmutex_t* m) ACQUIRE(m) NO_THREAD_SAFETY_ANALYSIS {}
+static inline ALWAYS_INLINE
+void _kmutex_rel(kmutex_t* m) RELEASE(m) NO_THREAD_SAFETY_ANALYSIS {}
+
 void kmutex_lock(kmutex_t* m) {
   PUSH_AND_DISABLE_INTERRUPTS();
   // We should never be blocking if we're holding a spinlock.
@@ -540,9 +547,10 @@ void kmutex_lock(kmutex_t* m) {
 
   list_push(&kthread_current_thread()->mutexes_held, &m->link);
 #endif
+  _kmutex_acq(m);
 }
 
-static void kmutex_unlock_internal(kmutex_t* m, bool yield) {
+static void kmutex_unlock_internal(kmutex_t* m, bool yield) RELEASE(m) {
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   list_remove(&kthread_current_thread()->mutexes_held, &m->link);
 #endif
@@ -571,6 +579,7 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) {
     m->holder = 0x0;
   }
   POP_INTERRUPTS();
+  _kmutex_rel(m);
 }
 
 void kmutex_unlock(kmutex_t* m) {

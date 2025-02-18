@@ -72,7 +72,7 @@ int ext2_flush_superblock(const ext2fs_t* fs);
 int ext2_flush_block_group(const ext2fs_t* fs, unsigned int bg);
 
 // Lock and unlock a const ext2fs_t* (which must not point to a const object).
-void ext2fs_lock(const ext2fs_t* fs);
-void ext2fs_unlock(const ext2fs_t* fs);
+void ext2fs_lock(const ext2fs_t* fs) ACQUIRE(fs->mu);
+void ext2fs_unlock(const ext2fs_t* fs) RELEASE(fs->mu);
 
 #endif
