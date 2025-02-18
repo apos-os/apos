@@ -162,7 +162,6 @@ void dma_init(void) {
 // clamping, and in particular the return value, is handled correctly).
 void dma_perform_op(ata_disk_op_t* op) {
   KASSERT(op);
-  KASSERT(op->drive->channel->pending_op == op);
 
   // Clamp to DMA buffer size.
   if (op->len > dma_buffer_size()) {
@@ -184,6 +183,7 @@ void dma_perform_op(ata_disk_op_t* op) {
   }
 
   kspin_lock(&op->drive->channel->mu);
+  KASSERT(op->drive->channel->pending_op == op);
 
   // Select the drive.
   drive_select(op->drive->channel, op->drive->drive_num);
@@ -226,7 +226,7 @@ void dma_finish_transfer(ata_channel_t* channel) {
   cmd &= ~BM_CMD_STARTSTOP;
   io_write8(channel->busmaster_io, BM_CMD, cmd);
 
-  KASSERT(kspin_is_held(&channel->mu));
+  kspin_assert_is_held(&channel->mu);
   if (channel->pending_op != NULL) {
     ata_disk_op_t* op = channel->pending_op;
     // TODO(aoates): test for op->len being rounded properly.

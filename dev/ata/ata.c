@@ -518,6 +518,7 @@ void ata_init(void) {
   ata.primary.ctrl_io.base = 0x03F0;
   ata.primary.busmaster_io.base = g_busmaster_prim_offset;
   ata.primary.irq = 14;
+  kspin_constructor(&ata.primary.mu);
   ata.primary.pending_op = 0x0;
   ata.primary.in_use = false;
   kthread_queue_init(&ata.primary.channel_waiters);
@@ -528,6 +529,7 @@ void ata_init(void) {
   ata.secondary.ctrl_io.base = 0x0370;
   ata.secondary.busmaster_io.base = g_busmaster_secd_offset;
   ata.secondary.irq = 15;
+  kspin_constructor(&ata.secondary.mu);
   ata.secondary.pending_op = 0x0;
   ata.secondary.in_use = false;
   kthread_queue_init(&ata.secondary.channel_waiters);

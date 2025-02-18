@@ -40,14 +40,14 @@ struct ata_channel {
 
   // Whether or not the channel is in-use.  May be true even if pending_op is
   // NULL (if e.g. the operation was interrupted).
-  bool in_use;
+  bool in_use GUARDED_BY(&mu);
 
   // The currently-pending operation on this channel (for the master or slave).
   // May be NULL even if the channel is in use.
-  struct ata_disk_op* pending_op;
+  struct ata_disk_op* pending_op GUARDED_BY(&mu) PT_GUARDED_BY(&mu);
 
   // Threads waiting for the channel to be free.
-  kthread_queue_t channel_waiters;
+  kthread_queue_t channel_waiters GUARDED_BY(&mu);
 
   tasklet_t tasklet;
 };
