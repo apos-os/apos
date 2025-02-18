@@ -27,6 +27,20 @@
 #include "common/list.h"
 #include "common/types.h"
 #include "dev/timer.h"
+#include "proc/thread_annotations.h"
+
+// TODO(aoates): enable this unconditionally.
+#ifdef ENABLE_KMUTEX_THREAD_SAFETY
+#define KM_CAPABILITY(x) CAPABILITY(x)
+#define KM_ACQUIRE(x) ACQUIRE(x)
+#define KM_RELEASE(x) RELEASE(x)
+#define KM_ASSERT_CAPABILITY(x) ASSERT_CAPABILITY(x)
+#else
+#define KM_CAPABILITY(x)
+#define KM_ACQUIRE(x)
+#define KM_RELEASE(x)
+#define KM_ASSERT_CAPABILITY(x)
+#endif
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_lock.h"
@@ -135,7 +149,7 @@ typedef struct {
   apos_ms_t lru;
 } kmutex_prior_t;
 
-struct kmutex {
+struct KM_CAPABILITY("mutex") kmutex {
   int locked;
   kthread_t holder; // For debugging.
   kthread_queue_t wait_queue;
@@ -160,14 +174,14 @@ typedef struct kmutex kmutex_t;
 void kmutex_init(kmutex_t* m);
 
 // Lock the given mutex, blocking until the lock is acquired.
-void kmutex_lock(kmutex_t* m);
+void kmutex_lock(kmutex_t* m) KM_ACQUIRE(m);
 
 // Unlock the mutex.
-void kmutex_unlock(kmutex_t* m);
+void kmutex_unlock(kmutex_t* m) KM_RELEASE(m);
 
 // As above, but will never yield.  Only used internally to kthread and the
 // scheduler.
-void kmutex_unlock_no_yield(kmutex_t* m);
+void kmutex_unlock_no_yield(kmutex_t* m) KM_RELEASE(m);
 
 // Returns non-zero if the mutex is currently locked.
 bool kmutex_is_locked(const kmutex_t* m);
@@ -175,7 +189,7 @@ bool kmutex_is_locked(const kmutex_t* m);
 // Asserts that the mutex is currently held by this thread.
 // Note: may have false negatives in non-debug builds, where we don't track
 // which thread is holding a mutex.
-void kmutex_assert_is_held(const kmutex_t* m);
+void kmutex_assert_is_held(const kmutex_t* m) KM_ASSERT_CAPABILITY(m);
 void kmutex_assert_is_not_held(const kmutex_t* m);
 
 // An auto-unlocking mutex lock.
@@ -187,11 +201,13 @@ void kmutex_assert_is_not_held(const kmutex_t* m);
 //    // x->lock is automatically unlocked here when my_x_lock goes out of
 //    // scope.
 //  }
-static inline kmutex_t* _kmutex_autolock_lock(kmutex_t* m) {
+static inline kmutex_t* _kmutex_autolock_lock(kmutex_t* m)
+    NO_THREAD_SAFETY_ANALYSIS {
   kmutex_lock(m);
   return m;
 }
-static inline void _kmutex_autolock_unlock(kmutex_t** m) {
+static inline void _kmutex_autolock_unlock(kmutex_t** m)
+    NO_THREAD_SAFETY_ANALYSIS {
   kmutex_unlock(*m);
 }
 #define KMUTEX_AUTO_LOCK(name, lock) \
