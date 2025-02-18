@@ -148,7 +148,9 @@ env = target_env.Clone()
 env.Append(CPPDEFINES = ['__APOS_BUILDING_KERNEL__=1'])
 
 env.Append(CFLAGS = Split("-nostdlib -ffreestanding"))
-if not env['CLANG']:
+if env['CLANG']:
+  env.Append(CFLAGS = Split("-Wthread-safety -Wthread-safety-beta"))
+else:
   env.Append(CFLAGS = Split("-nostartfiles -nodefaultlibs"))
   # TODO(aoates): get format-string checking to work with both GCC and clang.
   env.Append(CFLAGS = Split("-Wno-format"))
