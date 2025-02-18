@@ -328,6 +328,7 @@ void kmalloc_log_state(void) {
   KLOG(INFO, "kmalloc block list:\n");
   size_t total = 0;
   size_t free = 0;
+  KMALLOC_LOCK();
   block_t* cblock = g_block_list;
   while (cblock) {
     total += cblock->length + sizeof(block_t);
@@ -344,6 +345,7 @@ void kmalloc_log_state(void) {
 
     cblock = cblock->next;
   }
+  KMALLOC_UNLOCK();
   KLOG(INFO, "total memory: 0x%zx bytes (%zu MB)\n", total, total / 1024 / 1024);
   KLOG(INFO, "free memory: 0x%zx bytes (%zu MB)\n", free, free / 1024 / 1024);
 }
