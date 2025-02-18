@@ -605,8 +605,11 @@ static int blocking_memobj_write_page(memobj_t* obj, int page_offset,
                                        const void* buffer) {
   blocking_memobj_t* blocking_obj = (blocking_memobj_t*)obj->data;
 
-  KMUTEX_AUTO_LOCK(lock, &blocking_obj->mu);
-  if (!blocking_obj->block_writes) return blocking_obj->op_result;
+  kmutex_lock(&blocking_obj->mu);
+  if (!blocking_obj->block_writes) {
+    kmutex_unlock(&blocking_obj->mu);
+    return blocking_obj->op_result;
+  }
 
   const int orig_bli = blocking_obj->block_iteration;
   while (blocking_obj->block_iteration == orig_bli) {
@@ -616,8 +619,12 @@ static int blocking_memobj_write_page(memobj_t* obj, int page_offset,
                                           &blocking_obj->mu);
     KEXPECT_NE(result, SWAIT_TIMEOUT);
     blocking_obj->waiting_writers--;
-    if (result == SWAIT_INTERRUPTED) return -EINTR;
+    if (result == SWAIT_INTERRUPTED) {
+      kmutex_unlock(&blocking_obj->mu);
+      return -EINTR;
+    }
   }
+  kmutex_unlock(&blocking_obj->mu);
   return blocking_obj->op_result;
 }
 
@@ -625,8 +632,11 @@ static int blocking_memobj_read_page(memobj_t* obj, int page_offset,
                                      void* buffer) {
   blocking_memobj_t* blocking_obj = (blocking_memobj_t*)obj->data;
 
-  KMUTEX_AUTO_LOCK(lock, &blocking_obj->mu);
-  if (!blocking_obj->block_reads) return blocking_obj->op_result;
+  kmutex_lock(&blocking_obj->mu);
+  if (!blocking_obj->block_reads) {
+    kmutex_unlock(&blocking_obj->mu);
+    return blocking_obj->op_result;
+  }
 
   const int orig_bli = blocking_obj->block_iteration;
   while (blocking_obj->block_iteration == orig_bli) {
@@ -636,11 +646,15 @@ static int blocking_memobj_read_page(memobj_t* obj, int page_offset,
                                           &blocking_obj->mu);
     KEXPECT_NE(result, SWAIT_TIMEOUT);
     blocking_obj->waiting_readers--;
-    if (result == SWAIT_INTERRUPTED) return -EINTR;
+    if (result == SWAIT_INTERRUPTED) {
+      kmutex_unlock(&blocking_obj->mu);
+      return -EINTR;
+    }
   }
   if (blocking_obj->data) {
     kstrcpy(buffer, blocking_obj->data);
   }
+  kmutex_unlock(&blocking_obj->mu);
   return blocking_obj->op_result;
 }
 
@@ -672,28 +686,37 @@ static void create_blocking_memobj(blocking_memobj_t* obj) {
 }
 
 static int bmo_get_readers(blocking_memobj_t* obj) {
-  KMUTEX_AUTO_LOCK(mu, &obj->mu);
-  return obj->waiting_readers;
+  kmutex_lock(&obj->mu);
+  int result = obj->waiting_readers;
+  kmutex_unlock(&obj->mu);
+  return result;
 }
 
 static int bmo_get_writers(blocking_memobj_t* obj) {
-  KMUTEX_AUTO_LOCK(mu, &obj->mu);
-  return obj->waiting_writers;
+  kmutex_lock(&obj->mu);
+  int result = obj->waiting_writers;
+  kmutex_unlock(&obj->mu);
+  return result;
 }
 
 static bool bmo_await_writers(blocking_memobj_t* obj, int writers) {
-  KMUTEX_AUTO_LOCK(mu, &obj->mu);
+  kmutex_lock(&obj->mu);
   while (obj->waiting_writers < writers) {
     int result = scheduler_wait_on_locked(&obj->obj_queue, 1000, &obj->mu);
-    if (result == SWAIT_TIMEOUT) return false;
+    if (result == SWAIT_TIMEOUT) {
+      kmutex_unlock(&obj->mu);
+      return false;
+    }
   }
+  kmutex_unlock(&obj->mu);
   return true;
 }
 
 static void bmo_wake_all(blocking_memobj_t* obj) {
-  KMUTEX_AUTO_LOCK(mu, &obj->mu);
+  kmutex_lock(&obj->mu);
   obj->block_iteration++;
   scheduler_wake_all(&obj->obj_queue);
+  kmutex_unlock(&obj->mu);
 }
 
 static void* do_block_cache_get_thread(void* arg) {
