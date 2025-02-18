@@ -19,14 +19,11 @@
 #include "vfs/fs_types.h"
 #include "vfs/vfs_internal.h"
 
-int vfs_mount_fs(const char* path, fs_t* fs) {
+static int vfs_mount_fs_locked(const char* path, fs_t* fs) {
   if (!path || !fs) return -EINVAL;
 
   if (fs->id != VFS_FSID_NONE) return -EBUSY;
   KASSERT_DBG(fs->open_vnodes == 0);
-
-  // TODO(SMP): write a concurrent mount/unmount test.
-  KMUTEX_AUTO_LOCK(fs_table_lock, &g_fs_table_lock);
 
   // First open the vnode that will be the mount point.
   vnode_t* mount_point = 0x0;
@@ -52,14 +49,14 @@ int vfs_mount_fs(const char* path, fs_t* fs) {
 
   // TODO(SMP): write a concurrent mount/unmount/resolve test that catches this
   // racing with resolve_mounts().
-  KMUTEX_AUTO_LOCK(mount_point_lock, &mount_point->mutex);
+  kmutex_lock(&mount_point->mutex);
 
   // Lookup should have resolved all mounts.
   KASSERT(mount_point->mounted_fs == VFS_FSID_NONE);
   mount_point->mounted_fs = fs_idx;
   fs->id = fs_idx;
   g_fs_table[fs_idx].fs = fs;
-  g_fs_table[fs_idx].mount_point = VFS_MOVE_REF(mount_point);
+  g_fs_table[fs_idx].mount_point = VFS_COPY_REF(mount_point);
   g_fs_table[fs_idx].mounted_root = vfs_get(fs, fs->get_root(fs));
 
   // No need to lock the mounted_root, I think --- no one can get to it except
@@ -68,7 +65,17 @@ int vfs_mount_fs(const char* path, fs_t* fs) {
   g_fs_table[fs_idx].mounted_root->parent_mount_point =
       VFS_COPY_REF(g_fs_table[fs_idx].mount_point);
 
+  kmutex_unlock(&mount_point->mutex);
+  VFS_PUT_AND_CLEAR(mount_point);
   return 0;
+}
+
+int vfs_mount_fs(const char* path, fs_t* fs) {
+  // TODO(SMP): write a concurrent mount/unmount test.
+  kmutex_lock(&g_fs_table_lock);
+  int result = vfs_mount_fs_locked(path, fs);
+  kmutex_unlock(&g_fs_table_lock);
+  return result;
 }
 
 // Attempt to flush and put all open vnodes in the filesystem.  This is kludgy
@@ -130,10 +137,8 @@ static void try_free_all_open(mounted_fs_t* fs) {
   }
 }
 
-int vfs_unmount_fs(const char* path, fs_t** fs_out) {
+static int vfs_unmount_fs_locked(const char* path, fs_t** fs_out) {
   if (!path || !fs_out) return -EINVAL;
-
-  KMUTEX_AUTO_LOCK(fs_table_lock, &g_fs_table_lock);
 
   // First open the vnode that we're trying to unmount.
   vnode_t* mounted_root = 0x0;
@@ -206,6 +211,13 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
   return 0;
 }
 
+int vfs_unmount_fs(const char* path, fs_t** fs_out) {
+  kmutex_lock(&g_fs_table_lock);
+  int result = vfs_unmount_fs_locked(path, fs_out);
+  kmutex_unlock(&g_fs_table_lock);
+  return result;
+}
+
 int vfs_mount(const char* source, const char* mount_path, const char* type,
               unsigned long flags, const void* data, size_t data_len) {
   fs_t* fs = NULL;
@@ -235,10 +247,11 @@ int vfs_unmount(const char* mount_path, unsigned long flags) {
 }
 
 int vfs_mounted_fs_count(void) {
-  KMUTEX_AUTO_LOCK(fs_table_lock, &g_fs_table_lock);
+  kmutex_lock(&g_fs_table_lock);
   int count = 0;
   for (int fs_idx = 0; fs_idx < VFS_MAX_FILESYSTEMS; ++fs_idx) {
     if (g_fs_table[fs_idx].fs) count++;
   }
+  kmutex_unlock(&g_fs_table_lock);
   return count;
 }
