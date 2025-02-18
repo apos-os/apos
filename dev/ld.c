@@ -458,7 +458,9 @@ static int ld_char_dev_write(struct char_dev* dev, const void* buf,
 static int ld_char_dev_poll(struct char_dev* dev, short event_mask,
                             poll_state_t* poll) {
   ld_t* l = (ld_t*)dev->dev_data;
+  kspin_lock(&l->lock);
   int events = ld_get_poll_events(l) & event_mask;
+  kspin_unlock(&l->lock);
   if (events || !poll) return events;
 
   return poll_add_event(poll, &l->poll_event, event_mask);
@@ -532,8 +534,11 @@ int ld_flush(ld_t* l, int queue_selector) {
     if (result) return result;
   }
 
-  if (queue_selector == TCIFLUSH || queue_selector == TCIOFLUSH)
+  if (queue_selector == TCIFLUSH || queue_selector == TCIOFLUSH) {
+    kspin_lock(&l->lock);
     ld_flush_input(l);
+    kspin_unlock(&l->lock);
+  }
 
   return 0;
 }

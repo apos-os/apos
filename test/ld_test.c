@@ -22,10 +22,12 @@
 #include "dev/ld.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
+#include "proc/defint.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
+#include "proc/spinlock.h"
 #include "test/ktest.h"
 #include "user/include/apos/termios.h"
 #include "user/include/apos/vfs/vfs.h"
@@ -1290,9 +1292,121 @@ static void input_cr_test(void) {
   KEXPECT_STREQ("123\f\r\n", g_sink);
 }
 
-// TODO(aoates): more tests to write:
-//  1) interrupt-masking test (provide() from a timer interrupt and
-//  simultaneously read).
+typedef struct {
+  ld_t* ld;
+  const char* str;
+} defint_test_args_t;
+
+static void defint_test_provider(void* arg) {
+  defint_test_args_t* args = (defint_test_args_t*)arg;
+  ld_provide(args->ld, *args->str);
+  args->str++;
+  if (*args->str != '\0') {
+    defint_schedule(&defint_test_provider, arg);
+  }
+}
+
+static void ld_defint_sink(void* arg, char c) {
+  char* buf = (char*)arg;
+  size_t idx = kstrlen(buf);
+  buf[idx] = c;
+  buf[idx + 1] = '\0';
+  KASSERT(idx < 15);
+}
+
+static void defint_test(void) {
+  KTEST_BEGIN("ld: defint provider test");
+  defint_test_args_t args;
+
+  kspinlock_t mu = KSPINLOCK_NORMAL_INIT;
+  kspin_lock(&mu);
+  args.ld = ld_create(100);
+  args.str = "test\nstring\n";
+  char outbuf[25];
+  outbuf[0] = '\0';
+  ld_set_sink(args.ld, &ld_defint_sink, &outbuf);
+  kspin_unlock(&mu);
+
+  // Play around with termios for kicks.
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
+  ld_get_termios(args.ld, &t);
+
+  t.c_lflag &= ~ECHOE;
+  KEXPECT_EQ(0, ld_set_termios(args.ld, TCSANOW, &t));
+  t.c_lflag |= ECHOE;
+  KEXPECT_EQ(0, ld_set_termios(args.ld, TCSANOW, &t));
+
+  defint_schedule(&defint_test_provider, &args);
+  char buf[20];
+  // This is racey, technically...
+  KEXPECT_EQ(1, ld_read(args.ld, buf, 1, 0));
+  KEXPECT_EQ('t', buf[0]);
+  KEXPECT_EQ(1, ld_read(args.ld, buf, 1, 0));
+  KEXPECT_EQ('e', buf[0]);
+
+  kspin_lock(&mu);
+  while (*args.str != '\0') {
+    kspin_unlock(&mu);
+    ksleep(10);
+    kspin_lock(&mu);
+  }
+  kspin_unlock(&mu);
+  KEXPECT_EQ(10, ld_read(args.ld, buf, 15, 0));
+  buf[10] = '\0';
+  KEXPECT_STREQ("st\nstring\n", buf);
+  KEXPECT_STREQ("test\r\nstring\r\n", outbuf);
+
+
+  // Try again but do a flush.
+  KTEST_BEGIN("ld: defint provider test (ld_flush())");
+  kspin_lock(&mu);
+  args.str = "test\nstring\n";
+  outbuf[0] = '\0';
+  // Must be scheduled before we unlock.
+  defint_schedule(&defint_test_provider, &args);
+  kspin_unlock(&mu);
+
+  // Don't read before the flush (so we don't synchronize).
+  ld_flush(args.ld, TCIOFLUSH);
+
+  kspin_lock(&mu);
+  while (*args.str != '\0') {
+    kspin_unlock(&mu);
+    ksleep(10);
+    kspin_lock(&mu);
+  }
+  kspin_unlock(&mu);
+  KEXPECT_EQ(-EAGAIN, ld_read(args.ld, buf, 15, VFS_O_NONBLOCK));
+  KEXPECT_STREQ("test\r\nstring\r\n", outbuf);
+
+
+  // Do an "under the hood" poll test, which catches a bug in the poll
+  // implementation under TSAN that I couldn't get to manifest going through the
+  // VFS layer.
+  KTEST_BEGIN("ld: defint provider test (poll)");
+  char_dev_t cd;
+  ld_init_char_dev(args.ld, &cd);
+  kspin_lock(&mu);
+  args.str = "test\nstring\n";
+  outbuf[0] = '\0';
+  // Must be scheduled before we unlock.
+  defint_schedule(&defint_test_provider, &args);
+  kspin_unlock(&mu);
+
+  KEXPECT_EQ(KPOLLIN, cd.poll(&cd, KPOLLIN, NULL));
+
+  kspin_lock(&mu);
+  while (*args.str != '\0') {
+    kspin_unlock(&mu);
+    ksleep(10);
+    kspin_lock(&mu);
+  }
+  kspin_unlock(&mu);
+  KEXPECT_STREQ("test\r\nstring\r\n", outbuf);
+
+  ld_destroy(args.ld);
+}
 
 void ld_test(void) {
   KTEST_SUITE_BEGIN("line discipline");
@@ -1325,6 +1439,8 @@ void ld_test(void) {
   drain_and_flush_test();
   oflag_newline_test();
   input_cr_test();
+
+  defint_test();
 
   ld_destroy(g_ld);
   g_ld = NULL;

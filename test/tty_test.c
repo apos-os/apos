@@ -17,11 +17,13 @@
 #include "dev/ld.h"
 #include "dev/tty.h"
 #include "dev/termios.h"
+#include "dev/timer.h"
 #include "proc/fork.h"
 #include "proc/group.h"
 #include "proc/session.h"
 #include "proc/signal/signal.h"
 #include "proc/scheduler.h"
+#include "proc/sleep.h"
 #include "proc/tcgroup.h"
 #include "proc/wait.h"
 #include "test/kernel_tests.h"
@@ -836,6 +838,67 @@ static void tty_poll_test(void) {
   ld_destroy(args.ld);
 }
 
+static void* provide_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+
+  ld_t* ld = (ld_t*)arg;
+  ld_provide(ld, 'a');
+  ld_provide(ld, 'b');
+  ld_provide(ld, '\n');
+
+  ksleep(20);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* poll_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(20);  // Sleep a bit longer.
+
+  int fd = *(int*)arg;
+
+  struct apos_pollfd pfd;
+  pfd.fd = fd;
+  pfd.events = KPOLLIN;
+
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 1000));
+  KEXPECT_EQ(KPOLLIN, pfd.revents);
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(fd, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("ab\n", buf);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void tty_poll_mt_test(void) {
+  args_t args;
+  args.ld = ld_create(5);
+  args.tty = tty_create(args.ld);
+
+  int sink_counter = 0;
+  ld_set_sink(args.ld, &sink, &sink_counter);
+
+  KTEST_BEGIN("TTY: basic poll with second thread (writable but not readable)");
+  char tty_name[20];
+  ksprintf(tty_name, "/dev/tty%d", kminor(args.tty));
+  int fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_NOCTTY);
+  KEXPECT_GE(fd, 0);
+
+  kthread_t thread[2];
+  KEXPECT_EQ(0, proc_thread_create(&thread[0], &provide_thread, args.ld));
+  KEXPECT_EQ(0, proc_thread_create(&thread[1], &poll_thread, &fd));
+
+  KEXPECT_EQ(NULL, kthread_join(thread[0]));
+  KEXPECT_EQ(NULL, kthread_join(thread[1]));
+
+  vfs_close(fd);
+
+  tty_destroy(args.tty);
+  ld_destroy(args.ld);
+}
+
 void tty_test(void) {
   KTEST_SUITE_BEGIN("TTY tests");
 
@@ -847,4 +910,5 @@ void tty_test(void) {
 
   tty_nonblock_test();
   tty_poll_test();
+  tty_poll_mt_test();
 }
