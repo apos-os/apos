@@ -153,7 +153,8 @@ static void scheduler_timeout(void* arg) {
 
 static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
                                       long timeout_ms, kmutex_t* mu,
-                                      kspinlock_t* sp) {
+                                      kspinlock_t* sp)
+    NO_THREAD_SAFETY_ANALYSIS {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_t current = kthread_current_thread();
   // We should never be blocking if we're holding a spinlock (unless it's the

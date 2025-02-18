@@ -19,6 +19,7 @@
 #include "common/config.h"
 #include "common/types.h"
 #include "proc/defint.h"
+#include "proc/thread_annotations.h"
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_lock.h"
@@ -47,7 +48,7 @@ typedef struct {
 } kspinlock_impl_t;
 
 // A normal spinlock.
-typedef struct {
+typedef struct CAPABILITY("spinlock") {
   kspinlock_impl_t _lock;
 
   // Defint state when the spinlock was locked.
@@ -55,7 +56,7 @@ typedef struct {
 } kspinlock_t;
 
 // An interrupt-safe spinlock.
-typedef struct {
+typedef struct CAPABILITY("spinlock") {
   kspinlock_impl_t _lock;
 
   // Interrupt state when the spinlock was locked.
@@ -76,14 +77,15 @@ extern const kspinlock_intsafe_t KSPINLOCK_INTERRUPT_SAFE_INIT;
 // Lock the given spinlock.  In a non-SMP environment, simply disables
 // preemption, defints, and optionally interrupts (depending on the type).
 // Threads must not block while holding a spinlock.
-void kspin_lock(kspinlock_t* l);
-void kspin_lock_int(kspinlock_intsafe_t* l);
+void kspin_lock(kspinlock_t* l) ACQUIRE(l);
+void kspin_lock_int(kspinlock_intsafe_t* l) ACQUIRE(l);
 
 // Unlock the spinlock.
-void kspin_unlock(kspinlock_t* l);
-void kspin_unlock_int(kspinlock_intsafe_t* l);
+void kspin_unlock(kspinlock_t* l) RELEASE(l);
+void kspin_unlock_int(kspinlock_intsafe_t* l) RELEASE(l);
 
 // Returns true if the spinlock is held by the current thread.
+// TODO(aoates): convert these to assertions.
 bool kspin_is_held(const kspinlock_t* l);
 bool kspin_is_held_int(const kspinlock_intsafe_t* l);
 

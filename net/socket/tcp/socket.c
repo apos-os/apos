@@ -341,7 +341,9 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
                                 const tcpip_pseudo_hdr_t* pseudo_ip,
                                 tcp_segment_t* seg,
                                 pbuf_t* pb,
-                                bool allow_block) {
+                                bool allow_block)
+    REQUIRES(socket->spin_mu)
+    RELEASE(socket->spin_mu) {
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
   KASSERT_DBG(tcp_hdr->flags == seg->flags);
   seg->retransmits = 0;
@@ -354,7 +356,9 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
   return tcp_checksum_and_send(socket, pb, pseudo_ip, allow_block);
 }
 
-static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
+static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg)
+    REQUIRES(socket->spin_mu)
+    RELEASE(socket->spin_mu) {
   KASSERT(!list_empty(&socket->segments));
   KASSERT(socket->state != TCP_CLOSED_DONE);
   if (seg->retransmits == 0) {
@@ -388,7 +392,8 @@ static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
 }
 
 // Sends a SYN (and updates socket->send_next).
-static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
+static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block)
+    RELEASE(socket->spin_mu) {
   KASSERT_DBG(kspin_is_held(&socket->spin_mu));
 
   // This is an unusual circumstance --- for us to leave this state, either a
@@ -592,7 +597,8 @@ typedef struct {
 static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
                                   tcp_pkt_action_t* action);
 static void tcp_handle_in_listen(socket_tcp_t* socket, const pbuf_t* pb,
-                                 const tcp_packet_metadata_t* md);
+                                 const tcp_packet_metadata_t* md)
+  RELEASE(socket->spin_mu);
 
 // Special case for maybe handling a retransmitted FIN in TIME_WAIT.
 static void maybe_handle_time_wait_fin(socket_tcp_t* socket, const pbuf_t* pb,
@@ -617,7 +623,8 @@ static void finish_protocol_close(socket_tcp_t* socket, const char* reason);
 
 static void tcp_timer_cb(void* arg);
 static void tcp_timer_defint(void* arg);
-static void handle_retransmit_timer(socket_tcp_t* socket);
+static void handle_retransmit_timer(socket_tcp_t* socket)
+    RELEASE(socket->spin_mu);
 
 // Updates the current TCP timer.  If the timer is currently set, only updates
 // the timer if force == true.  If no timer is running, always creates.
@@ -1793,7 +1800,7 @@ static void reset_connection(socket_tcp_t* socket, const char* reason) {
   finish_protocol_close(socket, reason);
 }
 
-static void close_listening(socket_tcp_t* socket) {
+static void close_listening(socket_tcp_t* socket) REQUIRES(socket->spin_mu) {
   KASSERT_DBG(kspin_is_held(&socket->spin_mu));
   finish_protocol_close(socket, "FD closed");
 

@@ -337,7 +337,7 @@ static inline size_t readable_bytes(const ld_t* l) {
 }
 
 // Block until ld_read() should return, as determined by the ld's configuration.
-static int ld_read_block(ld_t* l) {
+static int ld_read_block(ld_t* l) REQUIRES(l->lock) {
   KASSERT_DBG(kspin_is_held(&l->lock));
   if (l->termios.c_lflag & ICANON) {
     // Note: this means that if multiple threads are blocking on an ld_read()
