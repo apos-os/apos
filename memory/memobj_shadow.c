@@ -171,29 +171,32 @@ static int shadow_get_page(memobj_t* obj, int page_offset, int writable,
                            bc_entry_t** entry_out) {
   KASSERT(obj->type == MEMOBJ_SHADOW);
   shadow_data_t* data = (shadow_data_t*)obj->data;
-  KMUTEX_AUTO_LOCK(lock, &data->shadow_lock);
+  kmutex_lock(&data->shadow_lock);
+  int result = 0;
   if (writable) {
     // Will either get an existing page, or copy a new page from the subobj (via
     // read_page) to write to.
-    int result = block_cache_get(obj, page_offset, entry_out);
-    if (result) return result;
+    result = block_cache_get(obj, page_offset, entry_out);
+    if (result) goto done;
 
     // If this is the first time we're seeing this entry, track it and add an
     // extra pin to ensure it's not deleted.
     // TODO(aoates): handle this differently when swap is added.
     maybe_add_to_entry_table(*entry_out);
-    return 0;
   } else {
     // First check if we have a copy of the page.
-    int result = block_cache_lookup(obj, page_offset, entry_out);
-    if (result) return result;
-    if (*entry_out != 0x0) return 0;
+    result = block_cache_lookup(obj, page_offset, entry_out);
+    if (result) goto done;
+    if (*entry_out != 0x0) goto done;
 
     // Didn't find it, get (a read-only copy of) it from the subobj.
     memobj_t* subobj = data->subobj;
     result = subobj->ops->get_page(subobj, page_offset, writable, entry_out);
-    return result;
   }
+
+done:
+  kmutex_unlock(&data->shadow_lock);
+  return result;
 }
 
 static int shadow_put_page(memobj_t* obj, bc_entry_t* entry,

@@ -210,9 +210,11 @@ static inline void _kmutex_autolock_unlock(kmutex_t** m)
     NO_THREAD_SAFETY_ANALYSIS {
   kmutex_unlock(*m);
 }
+#ifndef ENABLE_KMUTEX_THREAD_SAFETY
 #define KMUTEX_AUTO_LOCK(name, lock) \
   kmutex_t* name __attribute__((cleanup(_kmutex_autolock_unlock))) = \
     _kmutex_autolock_lock(lock); \
-  (void)name; \
+  (void)name;
+#endif
 
 #endif

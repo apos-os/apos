@@ -82,8 +82,10 @@ static int vnode_read_page(memobj_t* obj, int offset, void* buffer) {
   KASSERT(obj->data != 0x0);
 
   vnode_t* vnode = (vnode_t*)obj->data;
-  KMUTEX_AUTO_LOCK(vnode_lock, &vnode->mutex);
-  return vnode->fs->read_page(vnode, offset, buffer);
+  kmutex_lock(&vnode->mutex);
+  int result = vnode->fs->read_page(vnode, offset, buffer);
+  kmutex_unlock(&vnode->mutex);
+  return result;
 }
 
 static int vnode_write_page(memobj_t* obj, int offset, const void* buffer) {
@@ -91,8 +93,10 @@ static int vnode_write_page(memobj_t* obj, int offset, const void* buffer) {
   KASSERT(obj->data != 0x0);
 
   vnode_t* vnode = (vnode_t*)obj->data;
-  KMUTEX_AUTO_LOCK(vnode_lock, &vnode->mutex);
-  return vnode->fs->write_page(vnode, offset, buffer);
+  kmutex_lock(&vnode->mutex);
+  int result = vnode->fs->write_page(vnode, offset, buffer);
+  kmutex_unlock(&vnode->mutex);
+  return result;
 }
 
 void memobj_init_vnode(vnode_t* vnode) {
