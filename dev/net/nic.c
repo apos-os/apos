@@ -26,8 +26,8 @@
 #include "net/neighbor_cache.h"
 #include "proc/spinlock.h"
 
-static list_t g_nics = LIST_INIT_STATIC;
 static kspinlock_t g_nics_lock = KSPINLOCK_NORMAL_INIT_STATIC;
+static list_t g_nics GUARDED_BY(g_nics_lock) = LIST_INIT_STATIC;
 
 static void find_free_name(nic_t* nic, const char* name_prefix) {
   // Allow up to 999 NICs of each type.
@@ -59,6 +59,7 @@ static void find_free_name(nic_t* nic, const char* name_prefix) {
 
 void nic_init(nic_t* nic) {
   nic->lock = KSPINLOCK_NORMAL_INIT;
+  kspin_constructor(&nic->lock);
   nic->ref = REFCOUNT_INIT;
   nic->link = LIST_LINK_INIT;
   kmemset(&nic->name, 0, NIC_MAX_NAME_LEN);
@@ -67,6 +68,7 @@ void nic_init(nic_t* nic) {
 
   for (size_t i = 0; i < NIC_MAX_ADDRS; ++i) {
     kmemset(&nic->addrs[i], 0, sizeof(nic_addr_t));
+    kspin_int_constructor(&nic->addrs[i].timer_lock);
     nic->addrs[i].a.addr.family = AF_UNSPEC;
     nic->addrs[i].state = NIC_ADDR_NONE;
     nic->addrs[i].timer = TIMER_HANDLE_NONE;
@@ -90,6 +92,7 @@ void nic_create(nic_t* nic, const char* name_prefix) {
 
 void nic_delete(nic_t* nic) {
   KASSERT(!nic->deleted);
+  kspin_destructor(&nic->lock);
 
   kspin_lock(&g_nics_lock);
   nic->deleted = true;

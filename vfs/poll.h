@@ -31,7 +31,12 @@
 
 #include "common/list.h"
 #include "proc/kthread.h"
+#include "proc/spinlock.h"
+#include "proc/thread_annotations.h"
 #include "user/include/apos/vfs/poll.h"
+
+// For thread-safety annotations only.
+extern kspinlock_t g_poll_lock;
 
 // The state of a single poll() call.
 typedef struct {
@@ -42,13 +47,13 @@ typedef struct {
   bool triggered;
 
   // The current set of poll_ref_t's.
-  list_t refs;
+  list_t refs GUARDED_BY(g_poll_lock);
 } poll_state_t;
 
 // An object that can be polled.  Generally corresponds (and is embedded in) a
 // file, FIFO, etc.
 typedef struct {
-  list_t refs;
+  list_t refs GUARDED_BY(g_poll_lock);
 } pollable_t;
 
 void poll_init_event(pollable_t* event);

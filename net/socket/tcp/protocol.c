@@ -72,7 +72,7 @@ int tcp_checksum_and_send(const socket_tcp_t* socket, pbuf_t* pb,
 static int tcp_build_packet(const socket_tcp_t* socket, int tcp_flags,
                             uint32_t seq, size_t data_len, pbuf_t** pb_out,
                             tcpip_pseudo_hdr_t* pseudo_ip) {
-  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  kspin_assert_is_held(&socket->spin_mu);
 
   // In some race conditions we can attempt to send a packet an a connection
   // that was JUST closed.  Catch that case.
@@ -188,7 +188,7 @@ void tcp_syn_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out,
 }
 
 void tcp_next_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out) {
-  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  kspin_assert_is_held(&socket->spin_mu);
 
   // Figure out how much data to send.
   uint32_t unacked_data = socket->send_next - socket->send_unack;

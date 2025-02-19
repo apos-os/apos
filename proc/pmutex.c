@@ -21,12 +21,12 @@ void pmutex_init(pmutex_t* m) {
   kmutex_init(&m->_mu);
 }
 
-void pmutex_lock(pmutex_t* mu) {
+void pmutex_lock(pmutex_t* mu) NO_THREAD_SAFETY_ANALYSIS {
   sched_disable_preemption();
   kmutex_lock(&mu->_mu);
 }
 
-void pmutex_unlock(pmutex_t* mu) {
+void pmutex_unlock(pmutex_t* mu) NO_THREAD_SAFETY_ANALYSIS {
   kmutex_unlock_no_yield(&mu->_mu);
   sched_restore_preemption();
 }

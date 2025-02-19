@@ -92,8 +92,10 @@ fs_t* anonfs_create(vnode_type_t type) {
 
 kino_t anonfs_create_vnode(fs_t* fs) {
   anonfs_t* afs = (anonfs_t*)fs;
-  KMUTEX_AUTO_LOCK(lock, &afs->mu);
-  return afs->next_inode++;
+  kmutex_lock(&afs->mu);
+  int result = afs->next_inode++;
+  kmutex_unlock(&afs->mu);
+  return result;
 }
 
 static vnode_t* anonfs_alloc_vnode(struct fs* fs) {

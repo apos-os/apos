@@ -914,28 +914,6 @@ static void kmutex_zero_init_test(void) {
   KEXPECT_EQ(NULL, kthread_join(thread));
 }
 
-static void kmutex_auto_lock_test(void) {
-  KTEST_BEGIN("kmutex auto lock test");
-  kmutex_t m;
-  kmutex_init(&m);
-
-  KEXPECT_EQ(0, kmutex_is_locked(&m));
-  {
-    KEXPECT_EQ(0, kmutex_is_locked(&m));
-    KMUTEX_AUTO_LOCK(my_lock, &m);
-    KEXPECT_NE(0, kmutex_is_locked(&m));
-  }
-  KEXPECT_EQ(0, kmutex_is_locked(&m));
-
-  // Verify that it doesn't evaluate side effects more than once.
-  KTEST_BEGIN("kmutex auto lock single evaluation");
-  {
-    int i = 0;
-    KMUTEX_AUTO_LOCK(my_lock, &m + i++);
-    KEXPECT_EQ(1, i);
-  }
-}
-
 static void* sleep_func(void* arg) {
   ksleep(1);
   return 0x0;
@@ -1769,7 +1747,6 @@ void kthread_test(void) {
   }
   kmutex_test();
   kmutex_zero_init_test();
-  kmutex_auto_lock_test();
   preemption_test();
   wait_on_locked_test();
   wait_on_spin_locked_test();

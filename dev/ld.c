@@ -45,24 +45,24 @@ struct ld {
   // and the end of the raw region respectively.
   //  start_idx <= cooked_idx <= raw_idx
   // (subject to circular index rollover).
-  char* read_buf;
-  int buf_len;
-  size_t start_idx;
-  size_t cooked_idx;
-  size_t raw_idx;
+  char* read_buf GUARDED_BY(&lock);
+  int buf_len GUARDED_BY(&lock);
+  size_t start_idx GUARDED_BY(&lock);
+  size_t cooked_idx GUARDED_BY(&lock);
+  size_t raw_idx GUARDED_BY(&lock);
 
   // The character sink for echoing and writing.
   char_sink_t sink;
   void* sink_arg;
 
   // Threads that are waiting for cooked data to be available in the buffer.
-  kthread_queue_t wait_queue;
+  kthread_queue_t wait_queue GUARDED_BY(&lock);
 
   // TODO(SMP): synchronize access to the TTY (if necessary).
   apos_dev_t tty;
-  struct ktermios termios;
+  struct ktermios termios GUARDED_BY(&lock);
 
-  pollable_t poll_event;
+  pollable_t poll_event GUARDED_BY(&lock);
 };
 
 // Note: keep this in sync with the version in getty.c.
@@ -86,12 +86,13 @@ static void set_default_termios(struct ktermios* t) {
   t->c_cc[VTIME] = 0;
 }
 
-static void ld_flush_input(ld_t* l) {
+static void ld_flush_input(ld_t* l) REQUIRES(l->lock) {
   l->start_idx = l->cooked_idx = l->raw_idx;
 }
 
 ld_t* ld_create(int buf_size) {
   ld_t* l = (ld_t*)kmalloc(sizeof(ld_t));
+  kspin_constructor(&l->lock);
   l->lock = KSPINLOCK_NORMAL_INIT;
   l->read_buf = (char*)kmalloc(buf_size);
   l->buf_len = buf_size;
@@ -106,28 +107,29 @@ ld_t* ld_create(int buf_size) {
 }
 
 void ld_destroy(ld_t* l) {
+  kspin_destructor(&l->lock);
   if (l->read_buf) {
     kfree(l->read_buf);
   }
   kfree(l);
 }
 
-static inline size_t circ_inc(ld_t* l, size_t x) {
+static inline size_t circ_inc(ld_t* l, size_t x) REQUIRES(l->lock) {
   return (x + 1) % l->buf_len;
 }
 
-static inline size_t circ_dec(ld_t* l, size_t x) {
+static inline size_t circ_dec(ld_t* l, size_t x) REQUIRES(l->lock) {
   if (x == 0) return l->buf_len - 1;
   else return x - 1;
 }
 
-static int ld_get_poll_events(const ld_t* l) {
+static int ld_get_poll_events(const ld_t* l) REQUIRES(l->lock) {
   int events = KPOLLOUT;  // Always writable.
   if (l->start_idx != l->cooked_idx) events |= KPOLLIN | KPOLLRDNORM;
   return events;
 }
 
-static void cook_buffer(ld_t* l) {
+static void cook_buffer(ld_t* l) REQUIRES(l->lock) {
   l->cooked_idx = l->raw_idx;
 
   // Wake up all the waiting threads.
@@ -138,6 +140,7 @@ static void cook_buffer(ld_t* l) {
 
 void log_state(ld_t* l) {
   klogf("ld state:\n");
+  kspin_lock(&l->lock);
   char buf[l->buf_len+2];
   for (int i = 0; i < l->buf_len; i++) {
     buf[i] = l->read_buf[i];
@@ -159,6 +162,7 @@ void log_state(ld_t* l) {
 
   kmemset(buf, ' ', l->buf_len);
   buf[l->raw_idx] = 'r';
+  kspin_unlock(&l->lock);
   klog(buf);
 }
 
@@ -179,7 +183,8 @@ static inline int char_term_len(char c) {
 // Send a character to terminal, translating it if necessary.  erased_char is
 // the character erased from the buffer, if any.
 static void ld_term_putc(const ld_t* l, ktcflag_t lflag, ktcflag_t oflag,
-                         char c, char erased_char, bool is_echo) {
+                         char c, char erased_char, bool is_echo)
+    EXCLUDES(l->lock) {
   KASSERT(!kspin_is_held(&l->lock));
   // TODO(aoates): use ECHOCTL.
   if (is_echo && c == '\x7f' && (lflag & ICANON) && (lflag & ECHOE)) {
@@ -319,7 +324,7 @@ apos_dev_t ld_get_tty(const ld_t* l) {
   return l->tty;
 }
 
-static int ld_do_read(ld_t* l, char* buf, int n) {
+static int ld_do_read(ld_t* l, char* buf, int n) REQUIRES(l->lock) {
   KASSERT_DBG(kspin_is_held(&l->lock));
   int copied = 0;
   int buf_idx = 0;
@@ -332,12 +337,12 @@ static int ld_do_read(ld_t* l, char* buf, int n) {
   return copied;
 }
 
-static inline size_t readable_bytes(const ld_t* l) {
+static inline size_t readable_bytes(const ld_t* l) REQUIRES(l->lock) {
   return (l->cooked_idx + l->buf_len - l->start_idx) % l->buf_len;
 }
 
 // Block until ld_read() should return, as determined by the ld's configuration.
-static int ld_read_block(ld_t* l) {
+static int ld_read_block(ld_t* l) REQUIRES(l->lock) {
   KASSERT_DBG(kspin_is_held(&l->lock));
   if (l->termios.c_lflag & ICANON) {
     // Note: this means that if multiple threads are blocking on an ld_read()
@@ -458,7 +463,9 @@ static int ld_char_dev_write(struct char_dev* dev, const void* buf,
 static int ld_char_dev_poll(struct char_dev* dev, short event_mask,
                             poll_state_t* poll) {
   ld_t* l = (ld_t*)dev->dev_data;
+  kspin_lock(&l->lock);
   int events = ld_get_poll_events(l) & event_mask;
+  kspin_unlock(&l->lock);
   if (events || !poll) return events;
 
   return poll_add_event(poll, &l->poll_event, event_mask);
@@ -532,8 +539,11 @@ int ld_flush(ld_t* l, int queue_selector) {
     if (result) return result;
   }
 
-  if (queue_selector == TCIFLUSH || queue_selector == TCIOFLUSH)
+  if (queue_selector == TCIFLUSH || queue_selector == TCIOFLUSH) {
+    kspin_lock(&l->lock);
     ld_flush_input(l);
+    kspin_unlock(&l->lock);
+  }
 
   return 0;
 }

@@ -19,6 +19,7 @@
 #include "proc/exit.h"
 #include "proc/group.h"
 #include "proc/kthread.h"
+#include "proc/pmutex.h"
 #include "proc/process-internal.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
@@ -68,6 +69,10 @@ void proc_finish_exit(void) {
   KASSERT(p->id != 0);
 
   // Close all open fds.
+  // TODO(aoates): will need to rewrite this function to make locking work more
+  // broadly.  It is _not_ correct to assume this is locked for the whole
+  // function (though it is for file descriptors).
+  pmutex_destructor(&p->mu);
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
     if (p->fds[i].file >= 0) {
       int result = vfs_close(i);

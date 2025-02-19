@@ -49,7 +49,7 @@ typedef struct {
 
   // Timer handle for duplicate detection timer.
   kspinlock_intsafe_t timer_lock;
-  timer_handle_t timer;  // GUARDED_BY(timer_lock)
+  timer_handle_t timer GUARDED_BY(&timer_lock);
   // TODO(aoates): figure out how to get rid of this pointer.
   nic_t* nic;
 } nic_addr_t;
@@ -103,9 +103,9 @@ struct nic {
 
   // Fields maintained by the network subsystem.
   refcount_t ref;  // External refcount (will be zero usually).
-  nic_addr_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
-  nbr_cache_t nbr_cache;
-  nic_ipv6_t ipv6;
+  nic_addr_t addrs[NIC_MAX_ADDRS] GUARDED_BY(&lock);  // Configured network addresses
+  nbr_cache_t nbr_cache GUARDED_BY(&lock);
+  nic_ipv6_t ipv6 GUARDED_BY(&lock);
   list_link_t link;  // Protected by global mutex, not |lock|.
   bool deleted;      // Protected by global mutex, not |lock|.
 };

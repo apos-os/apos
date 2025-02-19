@@ -5245,7 +5245,9 @@ static void router_advert_gateway_test(void) {
   opts.autoconfigure = false;
   ipv6_enable(nic.n, &opts);
 
+  kspin_lock(&nic.n->lock);
   KEXPECT_FALSE(nic.n->ipv6.gateway.valid);
+  kspin_unlock(&nic.n->lock);
 
   pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
                            sizeof(ndp_option_prefix_t));
@@ -5287,8 +5289,10 @@ static void router_advert_gateway_test(void) {
   kspin_unlock(&nic.n->lock);
 
   // We should have configured the NIC's gateway.
+  kspin_lock(&nic.n->lock);
   KEXPECT_TRUE(nic.n->ipv6.gateway.valid);
   KEXPECT_STREQ("fe80::2", inet62str(&nic.n->ipv6.gateway.addr, pretty));
+  kspin_unlock(&nic.n->lock);
 
   test_ttap_destroy(&nic);
 }

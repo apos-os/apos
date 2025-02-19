@@ -17,6 +17,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "proc/kthread.h"
 #include "proc/pmutex.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/vfs/dirent.h"
@@ -28,7 +29,7 @@
 mounted_fs_t g_fs_table[VFS_MAX_FILESYSTEMS];
 // Protects g_fs_table, serializing mount operations.
 kmutex_t g_fs_table_lock;
-htbl_t g_vnode_cache;
+htbl_t g_vnode_cache GUARDED_BY(g_vnode_cache_lock);
 kspinlock_t g_vnode_cache_lock = KSPINLOCK_NORMAL_INIT_STATIC;
 file_t* g_file_table[VFS_MAX_FILES];
 pmutex_t g_file_table_mu;
@@ -155,7 +156,7 @@ int lookup(vnode_t** parent, const char* name, vnode_t** child_out) {
 
 int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
   KASSERT_DBG(inode >= 0);
-  KMUTEX_AUTO_LOCK(parent_lock, &parent->mutex);
+  kmutex_lock(&parent->mutex);
   const int kBufSize = 512;
   char dirent_buf[kBufSize];
 
@@ -165,6 +166,7 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
     const int len = parent->fs->getdents(parent, offset, dirent_buf, kBufSize);
     if (len == 0) {
       // Didn't find any matching nodes :(
+      kmutex_unlock(&parent->mutex);
       return -ENOENT;
     }
 
@@ -181,17 +183,20 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
   // Found a match, copy its name.
   const int name_len = kstrlen(ent->d_name);
   if (len < name_len + 1) {
+    kmutex_unlock(&parent->mutex);
     return -ERANGE;
   }
 
   kstrcpy(name_out, ent->d_name);
+  kmutex_unlock(&parent->mutex);
   return name_len;
 }
 
+// TODO(aoates): look for a way to express this locking (partially or fully)
 static int lookup_path_internal(vnode_t* root, const char* path,
                                 lookup_options_t opt, vnode_t** parent_out,
                                 vnode_t** child_out, char* base_name_out,
-                                int max_recursion) {
+                                int max_recursion) NO_THREAD_SAFETY_ANALYSIS {
   if (!*path) {
     return -ENOENT;
   }
@@ -338,10 +343,11 @@ int lookup_existing_path(const char* path, lookup_options_t opt,
   return result;
 }
 
-int lookup_existing_path_and_lock(vnode_t* root, const char* path,
-                                  lookup_options_t options,
-                                  vnode_t** parent_out, vnode_t** child_out,
-                                  char* base_name_out) {
+// TODO(aoates): look for a way to express this locking (partially or fully)
+int lookup_existing_path_and_lock(
+    vnode_t* root, const char* path, lookup_options_t options,
+    vnode_t** parent_out, vnode_t** child_out,
+    char* base_name_out) NO_THREAD_SAFETY_ANALYSIS {
   const int kMaxRetries = 10;
   KASSERT_DBG(parent_out != NULL);
   KASSERT_DBG(child_out != NULL);
@@ -460,7 +466,7 @@ vnode_t* get_root_for_path_with_parent(const char* path,
   }
 }
 
-void vfs_lock_vnodes(vnode_t* A, vnode_t* B) {
+void vfs_lock_vnodes(vnode_t* A, vnode_t* B) NO_THREAD_SAFETY_ANALYSIS {
   if (A && B) {
     KASSERT_DBG(A->fs == B->fs);
   }
@@ -475,7 +481,7 @@ void vfs_lock_vnodes(vnode_t* A, vnode_t* B) {
   }
 }
 
-void vfs_unlock_vnodes(vnode_t* A, vnode_t* B) {
+void vfs_unlock_vnodes(vnode_t* A, vnode_t* B) NO_THREAD_SAFETY_ANALYSIS {
   if (A == B) {
     kmutex_unlock(&A->mutex);
   } else if (A < B) {
@@ -503,7 +509,8 @@ static void sort_vnode_ptrs(vnode_t** nodes, size_t n) {
   }
 }
 
-void vfs_lock_vnodes2(vnode_t** nodes, size_t n) {
+// TODO(aoates): look for a way to express this locking (partially or fully)
+void vfs_lock_vnodes2(vnode_t** nodes, size_t n) NO_THREAD_SAFETY_ANALYSIS {
   sort_vnode_ptrs(nodes, n);
 
   fs_t* fs = NULL;
@@ -523,7 +530,8 @@ void vfs_lock_vnodes2(vnode_t** nodes, size_t n) {
   }
 }
 
-void vfs_unlock_vnodes2(vnode_t** nodes, size_t n) {
+// TODO(aoates): look for a way to express this locking (partially or fully)
+void vfs_unlock_vnodes2(vnode_t** nodes, size_t n) NO_THREAD_SAFETY_ANALYSIS {
   // We have to sort because there may be duplicates and we don't want to
   // double-unlock.
   sort_vnode_ptrs(nodes, n);
@@ -537,4 +545,9 @@ void vfs_unlock_vnodes2(vnode_t** nodes, size_t n) {
       kmutex_unlock(&nodes[i]->mutex);
     }
   }
+}
+
+void vfs_assert_locked(vnode_t* A, vnode_t* B) {
+  kmutex_assert_is_held(&A->mutex);
+  kmutex_assert_is_held(&B->mutex);
 }

@@ -71,7 +71,7 @@ int scheduler_wait_on_locked(kthread_queue_t* queue, long timeout_ms,
 
 // As above, but with a spinlock rather than a mutex.
 int scheduler_wait_on_splocked(kthread_queue_t* queue, long timeout_ms,
-                               kspinlock_t* sp);
+                               kspinlock_t* sp) REQUIRES(sp);
 
 // As above, but not interruptable.  Will be replaced post-cleanup.
 // TODO(aoates): make all callers of this able to handle and propagate signals.

@@ -44,18 +44,19 @@
 
 static bool g_initialized = false;
 
+static kspinlock_intsafe_t g_kmalloc_mu =
+    KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC;
+
 // Global block list.
-static block_t* g_block_list = 0;
+static block_t* g_block_list GUARDED_BY(g_kmalloc_mu) = 0;
 
 // Root process vm_area_t for the heap.
 static vm_area_t g_root_heap_vm_area;
 
-static kspinlock_intsafe_t g_kmalloc_mu =
-    KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC;
-
 static int g_test_mode = 0;
 
-static inline ALWAYS_INLINE interrupt_state_t _kmalloc_lock(void) {
+static inline ALWAYS_INLINE interrupt_state_t _kmalloc_lock(void)
+    ACQUIRE(g_kmalloc_mu) NO_THREAD_SAFETY_ANALYSIS {
   if (kthread_current_thread()) {
     kspin_lock_int(&g_kmalloc_mu);
     return 0;
@@ -64,7 +65,8 @@ static inline ALWAYS_INLINE interrupt_state_t _kmalloc_lock(void) {
   }
 }
 
-static inline ALWAYS_INLINE void _kmalloc_unlock(interrupt_state_t s) {
+static inline ALWAYS_INLINE void _kmalloc_unlock(interrupt_state_t s)
+    RELEASE(g_kmalloc_mu) NO_THREAD_SAFETY_ANALYSIS {
   if (kthread_current_thread()) {
     kspin_unlock_int(&g_kmalloc_mu);
   } else {
@@ -106,7 +108,9 @@ void kmalloc_init(void) {
   block_t* head = (block_t*)meminfo->heap.base;
   init_block(head);
   head->length = meminfo->heap_size_max - sizeof(block_t);
+  KMALLOC_LOCK();
   g_block_list = head;
+  KMALLOC_UNLOCK();
   g_initialized = 1;
 }
 
@@ -328,6 +332,7 @@ void kmalloc_log_state(void) {
   KLOG(INFO, "kmalloc block list:\n");
   size_t total = 0;
   size_t free = 0;
+  KMALLOC_LOCK();
   block_t* cblock = g_block_list;
   while (cblock) {
     total += cblock->length + sizeof(block_t);
@@ -344,6 +349,7 @@ void kmalloc_log_state(void) {
 
     cblock = cblock->next;
   }
+  KMALLOC_UNLOCK();
   KLOG(INFO, "total memory: 0x%zx bytes (%zu MB)\n", total, total / 1024 / 1024);
   KLOG(INFO, "free memory: 0x%zx bytes (%zu MB)\n", free, free / 1024 / 1024);
 }
@@ -394,7 +400,7 @@ void kmalloc_enable_test_mode(void) {
   g_test_mode = 1;
 }
 
-block_t* kmalloc_internal_get_block_list(void) {
+block_t* kmalloc_internal_get_block_list(void) NO_THREAD_SAFETY_ANALYSIS {
   return g_block_list;
 }
 

@@ -197,8 +197,13 @@ int vfs_open_vnode(vnode_t* vnode, int flags, bool block);
 int vfs_mksocket(const char* path, kmode_t mode, vnode_t** vnode_out);
 
 // Lock or unlock the two vnodes in a deadlock-free way.
-void vfs_lock_vnodes(vnode_t* A, vnode_t* B);
-void vfs_unlock_vnodes(vnode_t* A, vnode_t* B);
+void vfs_lock_vnodes(vnode_t* A, vnode_t* B)
+    ACQUIRE(A->mutex) ACQUIRE(B->mutex);
+void vfs_unlock_vnodes(vnode_t* A, vnode_t* B)
+    RELEASE(A->mutex) RELEASE(B->mutex);
+
+void vfs_assert_locked(vnode_t* A, vnode_t* B)
+    ASSERT_CAPABILITY(A->mutex) ASSERT_CAPABILITY(B->mutex);
 
 // Lock an array of vnodes.  The order of the array may be mutated.
 void vfs_lock_vnodes2(vnode_t** nodes, size_t n);

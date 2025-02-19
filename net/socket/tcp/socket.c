@@ -94,7 +94,8 @@ static uint32_t gen_seq_num(const socket_tcp_t* sock) {
   return fnv_hash_concat(get_time_ms(), fnv_hash_addr((addr_t)sock));
 }
 
-static void set_iss(socket_tcp_t* socket, uint32_t iss) {
+static void set_iss(socket_tcp_t* socket, uint32_t iss)
+    REQUIRES(socket->spin_mu) {
   KASSERT_DBG(socket->state == TCP_CLOSED);
   socket->initial_seq = iss;
   socket->send_next = socket->initial_seq;
@@ -158,6 +159,8 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->base.s_protocol = IPPROTO_TCP;
   sock->base.s_ops = &g_tcp_socket_ops;
 
+  sock->spin_mu = KSPINLOCK_NORMAL_INIT;
+  kspin_constructor(&sock->spin_mu);
   sock->state = TCP_CLOSED;
   sock->error = 0;
   sock->ref = REFCOUNT_INIT;
@@ -192,7 +195,6 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->syn_acked = false;
   kthread_queue_init(&sock->q);
   kmutex_init(&sock->mu);
-  sock->spin_mu = KSPINLOCK_NORMAL_INIT;
   poll_init_event(&sock->poll_event);
   sock->timer = TIMER_HANDLE_NONE;
 
@@ -258,7 +260,7 @@ static void tcp_wake(socket_tcp_t* sock) {
 
 static void set_state(socket_tcp_t* sock, socktcp_state_t new_state,
                       const char* debug_msg) {
-  KASSERT(kspin_is_held(&sock->spin_mu));
+  kspin_assert_is_held(&sock->spin_mu);
   KLOG(DEBUG2, "TCP: socket %p state %s -> %s (%s)\n", sock,
        tcp_state2str(sock->state), tcp_state2str(new_state), debug_msg);
   sock->state = new_state;
@@ -272,6 +274,7 @@ static void set_state(socket_tcp_t* sock, socktcp_state_t new_state,
 }
 
 static void delete_socket(socket_tcp_t* socket) {
+  kspin_destructor(&socket->spin_mu);
   KASSERT_DBG(refcount_get(&socket->ref) == 0);
   KASSERT_DBG(socket->parent == NULL);
   KASSERT_DBG(socket->state == TCP_CLOSED_DONE);
@@ -341,7 +344,9 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
                                 const tcpip_pseudo_hdr_t* pseudo_ip,
                                 tcp_segment_t* seg,
                                 pbuf_t* pb,
-                                bool allow_block) {
+                                bool allow_block)
+    REQUIRES(socket->spin_mu)
+    RELEASE(socket->spin_mu) {
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
   KASSERT_DBG(tcp_hdr->flags == seg->flags);
   seg->retransmits = 0;
@@ -354,7 +359,9 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
   return tcp_checksum_and_send(socket, pb, pseudo_ip, allow_block);
 }
 
-static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
+static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg)
+    REQUIRES(socket->spin_mu)
+    RELEASE(socket->spin_mu) {
   KASSERT(!list_empty(&socket->segments));
   KASSERT(socket->state != TCP_CLOSED_DONE);
   if (seg->retransmits == 0) {
@@ -388,8 +395,9 @@ static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
 }
 
 // Sends a SYN (and updates socket->send_next).
-static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
-  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block)
+    RELEASE(socket->spin_mu) {
+  kspin_assert_is_held(&socket->spin_mu);
 
   // This is an unusual circumstance --- for us to leave this state, either a
   // packet must have come in that matched our ACK state (despite not sending a
@@ -427,7 +435,7 @@ static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
 // Sends data and/or a FIN if available.  If no data is ready to be sent,
 // returns -EAGAIN (and doesn't send any packets).
 static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block,
-                            bool is_zwp) {
+                            bool is_zwp) EXCLUDES(socket->spin_mu) {
   test_point_run("tcp:send_datafin");
 
   // Figure out how much data to send.
@@ -592,7 +600,8 @@ typedef struct {
 static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
                                   tcp_pkt_action_t* action);
 static void tcp_handle_in_listen(socket_tcp_t* socket, const pbuf_t* pb,
-                                 const tcp_packet_metadata_t* md);
+                                 const tcp_packet_metadata_t* md)
+  RELEASE(socket->spin_mu);
 
 // Special case for maybe handling a retransmitted FIN in TIME_WAIT.
 static void maybe_handle_time_wait_fin(socket_tcp_t* socket, const pbuf_t* pb,
@@ -600,30 +609,31 @@ static void maybe_handle_time_wait_fin(socket_tcp_t* socket, const pbuf_t* pb,
                                        uint32_t seq);
 
 static void tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb,
-                           tcp_pkt_action_t* action);
+                           tcp_pkt_action_t* action) REQUIRES(socket->spin_mu);
 static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
                            const tcp_packet_metadata_t* md,
-                           tcp_pkt_action_t* action);
+                           tcp_pkt_action_t* action) REQUIRES(socket->spin_mu);
 static void tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
                            const tcp_packet_metadata_t* md,
-                           tcp_pkt_action_t* action);
+                           tcp_pkt_action_t* action) REQUIRES(socket->spin_mu);
 static void tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb,
-                           tcp_pkt_action_t* action);
+                           tcp_pkt_action_t* action) REQUIRES(socket->spin_mu);
 static void tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
                             const tcp_packet_metadata_t* md,
-                            tcp_pkt_action_t* action);
+                            tcp_pkt_action_t* action) REQUIRES(socket->spin_mu);
 
 static void finish_protocol_close(socket_tcp_t* socket, const char* reason);
 
 static void tcp_timer_cb(void* arg);
 static void tcp_timer_defint(void* arg);
-static void handle_retransmit_timer(socket_tcp_t* socket);
+static void handle_retransmit_timer(socket_tcp_t* socket)
+    RELEASE(socket->spin_mu);
 
 // Updates the current TCP timer.  If the timer is currently set, only updates
 // the timer if force == true.  If no timer is running, always creates.
 static void tcp_set_timer(socket_tcp_t* socket, int duration_ms, bool force) {
   apos_ms_t deadline = get_time_ms() + duration_ms;
-  KASSERT(kspin_is_held(&socket->spin_mu));
+  kspin_assert_is_held(&socket->spin_mu);
   PUSH_AND_DISABLE_INTERRUPTS();
   if (socket->timer != TIMER_HANDLE_NONE && force) {
     cancel_event_timer(socket->timer);
@@ -638,7 +648,7 @@ static void tcp_set_timer(socket_tcp_t* socket, int duration_ms, bool force) {
 
 // Cancels the current TCP timer, if any.
 static void tcp_cancel_timer(socket_tcp_t* socket) {
-  KASSERT(kspin_is_held(&socket->spin_mu));
+  kspin_assert_is_held(&socket->spin_mu);
   PUSH_AND_DISABLE_INTERRUPTS();
   if (socket->timer != TIMER_HANDLE_NONE) {
     cancel_event_timer(socket->timer);
@@ -775,7 +785,8 @@ static void tcp_dispatch_to_sock_one(socket_tcp_t* socket, const pbuf_t* pb,
 
 static void tcp_process_action(socket_tcp_t* socket, const pbuf_t* pb,
                                const tcp_packet_metadata_t* md,
-                               tcp_pkt_action_t* action);
+                               tcp_pkt_action_t* action)
+    EXCLUDES(socket->spin_mu);
 
 static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
                                  const tcp_packet_metadata_t* md) {
@@ -915,7 +926,7 @@ static void tcp_dispatch_to_sock_one(socket_tcp_t* socket, const pbuf_t* pb,
                                      const tcp_packet_metadata_t* md,
                                      const tcp_hdr_t* tcp_hdr,
                                      tcp_pkt_action_t* action) {
-  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  kspin_assert_is_held(&socket->spin_mu);
   KASSERT_DBG(seq_le(btoh32(tcp_hdr->seq), socket->recv_next));
   if (tcp_hdr->flags & TCP_FLAG_RST) {
     tcp_coverage_log("recv:RST", socket);
@@ -1020,7 +1031,21 @@ static void tcp_process_action(socket_tcp_t* socket, const pbuf_t* pb,
 
     case TCP_ACTION_NOT_SET:
     case TCP_ACTION_NONE:
-      if (tcp_state_type(socket->state) == TCPSTATE_ESTABLISHED) {
+      // Racily read the current state.  The race is OK --- tcp_send_datafin()
+      // will check the state again.
+      //
+      // This _should_ be redundant with the check in tcp_send_datafin(), except
+      // that if we call tcp_send_datafin() while we're in SYN_RCVD, and this is
+      // an incoming ACK, then we'll crash.  Check here first to avoid that.  We
+      // won't ever go from TCP_ESTABLISHED to TCP_SYN_RCVD, so a race after we
+      // check the state here cannot cause the problem.
+      // TODO(aoates): this is inelegant --- fix the underlying bug here and
+      // remove this check, calling tcp_send_datafin() unconditionally.  See
+      // open_accept_established_test().
+      kspin_lock(&socket->spin_mu);
+      socktcp_state_t state = socket->state;
+      kspin_unlock(&socket->spin_mu);
+      if (tcp_state_type(state) == TCPSTATE_ESTABLISHED) {
         result = tcp_send_datafin(socket, false, false);
         if (result == 0) {
           action->send_ack = false;  // We sent data, that includes an ack
@@ -1276,7 +1301,7 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
 static void tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
                            const tcp_packet_metadata_t* md,
                            tcp_pkt_action_t* action) {
-  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  kspin_assert_is_held(&socket->spin_mu);
 
   // Check if the FIN is in the socket's receive window.
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
@@ -1346,7 +1371,7 @@ static void tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
 static void tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb,
                            tcp_pkt_action_t* action) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
-  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  kspin_assert_is_held(&socket->spin_mu);
   KLOG(DEBUG, "TCP: socket %p received RST\n", socket);
 
   // This is required for packets that otherwise are valid (e.g. have data that
@@ -1459,7 +1484,7 @@ static void tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
 static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
                                   tcp_pkt_action_t* action) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
-  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  kspin_assert_is_held(&socket->spin_mu);
 
   if (tcp_hdr->flags & TCP_FLAG_ACK) {
     uint32_t seg_ack = btoh32(tcp_hdr->ack);
@@ -1540,7 +1565,7 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
 static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
                                  const tcp_packet_metadata_t* md) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
-  KASSERT_DBG(kspin_is_held(&parent->spin_mu));
+  kspin_assert_is_held(&parent->spin_mu);
 
   if (tcp_hdr->flags & TCP_FLAG_RST) {
     KLOG(DEBUG, "TCP: socket %p ignoring RST in LISTEN\n", parent);
@@ -1669,7 +1694,7 @@ static void maybe_handle_time_wait_fin(socket_tcp_t* socket, const pbuf_t* pb,
                                        const tcp_packet_metadata_t* md,
                                        uint32_t seq) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
-  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  kspin_assert_is_held(&socket->spin_mu);
   KASSERT_DBG(socket->state == TCP_TIME_WAIT);
 
   if (!(tcp_hdr->flags & TCP_FLAG_FIN) ||
@@ -1689,7 +1714,7 @@ static void maybe_handle_time_wait_fin(socket_tcp_t* socket, const pbuf_t* pb,
 // Closes the socket on the protocol side when all protocol ops are complete.
 // Could be called from a user context or a defint.
 static void finish_protocol_close(socket_tcp_t* socket, const char* reason) {
-  KASSERT(kspin_is_held(&socket->spin_mu));
+  kspin_assert_is_held(&socket->spin_mu);
 
   // Cancel any pending timers.  A timer may be about to run (if it holds a
   // reference) once we unlock --- it will find the socket closed.
@@ -1756,7 +1781,7 @@ static void finish_protocol_close(socket_tcp_t* socket, const char* reason) {
 }
 
 static void reset_connection(socket_tcp_t* socket, const char* reason) {
-  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  kspin_assert_is_held(&socket->spin_mu);
   if (socket->state == TCP_CLOSED_DONE) {
     KLOG(DEBUG3,
          "TCP: socket %p ignoring reset_connection() because socket already "
@@ -1793,8 +1818,8 @@ static void reset_connection(socket_tcp_t* socket, const char* reason) {
   finish_protocol_close(socket, reason);
 }
 
-static void close_listening(socket_tcp_t* socket) {
-  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+static void close_listening(socket_tcp_t* socket) REQUIRES(socket->spin_mu) {
+  kspin_assert_is_held(&socket->spin_mu);
   finish_protocol_close(socket, "FD closed");
 
   KASSERT_DBG(socket->bind_addr.sa_family == AF_UNSPEC);
@@ -1893,6 +1918,7 @@ static void sock_tcp_fd_cleanup(socket_t* socket_base) {
     KLOG(DFATAL, "TCP: socket %p unable to shutdown() on close(): %s\n",
          socket_base, errorname(-result));
   }
+  kmutex_unlock(&socket->mu);
   TCP_DEC_REFCOUNT(socket);
 }
 
@@ -2037,9 +2063,11 @@ static int sock_tcp_bind(socket_t* socket_base, const struct sockaddr* address,
   }
 
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
-  KMUTEX_AUTO_LOCK(lock, &socket->mu);
-  return sock_tcp_bind_locked(socket, address, address_len,
-                              /* allow_rebind = */ false);
+  kmutex_lock(&socket->mu);
+  int result = sock_tcp_bind_locked(socket, address, address_len,
+                                    /* allow_rebind = */ false);
+  kmutex_unlock(&socket->mu);
+  return result;
 }
 
 static int sock_tcp_listen(socket_t* socket_base, int backlog) {
@@ -2292,7 +2320,8 @@ typedef enum {
   RECV_EOF,             // We are at EOF.
 } recv_state_t;
 
-static recv_state_t recv_state(const socket_tcp_t* socket) {
+static recv_state_t recv_state(const socket_tcp_t* socket)
+    REQUIRES(socket->spin_mu) {
   if (socket->error != 0) {
     return RECV_ERROR;
   } else if (socket->recv_buf.len > 0) {
@@ -2424,7 +2453,8 @@ typedef enum {
   SEND_IS_SHUTDOWN,    // We are at EOF.
 } send_state_t;
 
-static send_state_t send_state(const socket_tcp_t* socket) {
+static send_state_t send_state(const socket_tcp_t* socket)
+    REQUIRES(socket->spin_mu) {
   if (socket->error != 0) {
     return SEND_ERROR;
   } else if (socket->send_shutdown) {
@@ -2550,7 +2580,7 @@ static int sock_tcp_getsockname(socket_t* socket_base,
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
-  KMUTEX_AUTO_LOCK(lock, &socket->mu);
+  kmutex_lock(&socket->mu);
   kspin_lock(&socket->spin_mu);
   int result = sizeof_sockaddr(socket_base->s_domain);
   if (socket->bind_addr.sa_family != AF_UNSPEC) {
@@ -2565,6 +2595,7 @@ static int sock_tcp_getsockname(socket_t* socket_base,
     result = -EINVAL;
   }
   kspin_unlock(&socket->spin_mu);
+  kmutex_unlock(&socket->mu);
   return result;
 }
 
@@ -2574,7 +2605,7 @@ static int sock_tcp_getpeername(socket_t* socket_base,
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
-  KMUTEX_AUTO_LOCK(lock, &socket->mu);
+  kmutex_lock(&socket->mu);
   kspin_lock(&socket->spin_mu);
   int result = sizeof_sockaddr(socket_base->s_domain);
   if (tcp_state_type(socket->state) == TCPSTATE_PRE_ESTABLISHED) {
@@ -2591,6 +2622,7 @@ static int sock_tcp_getpeername(socket_t* socket_base,
     result = -ENOTCONN;
   }
   kspin_unlock(&socket->spin_mu);
+  kmutex_unlock(&socket->mu);
   return result;
 }
 
@@ -2761,15 +2793,9 @@ static int tcp_setsockopt_flag(socket_tcp_t* socket, int flag,
   return 0;
 }
 
-static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
-                                void* restrict val,
-                                socklen_t* restrict val_len) {
-  KASSERT_DBG(socket_base->s_type == SOCK_STREAM);
-  KASSERT_DBG(socket_base->s_protocol == IPPROTO_TCP);
-
-  socket_tcp_t* socket = (socket_tcp_t*)socket_base;
-  KMUTEX_AUTO_LOCK(lock, &socket->mu);
-
+static int sock_tcp_getsockopt_locked(socket_tcp_t* socket, int level,
+                                      int option, void* restrict val,
+                                      socklen_t* restrict val_len) {
   if (level == SOL_SOCKET && (option == SO_RCVBUF || option == SO_SNDBUF)) {
     return getsockopt_bufsize(socket, option, val, val_len);
   } else if (level == SOL_SOCKET && option == SO_RCVTIMEO) {
@@ -2814,14 +2840,22 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
   return -ENOPROTOOPT;
 }
 
-static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
-                               const void* val, socklen_t val_len) {
+static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
+                                void* restrict val,
+                                socklen_t* restrict val_len) {
   KASSERT_DBG(socket_base->s_type == SOCK_STREAM);
   KASSERT_DBG(socket_base->s_protocol == IPPROTO_TCP);
 
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
-  KMUTEX_AUTO_LOCK(lock, &socket->mu);
+  kmutex_lock(&socket->mu);
+  int result = sock_tcp_getsockopt_locked(socket, level, option, val, val_len);
+  kmutex_unlock(&socket->mu);
+  return result;
+}
 
+static int sock_tcp_setsockopt_locked(socket_tcp_t* socket, int level,
+                                      int option, const void* val,
+                                      socklen_t val_len) {
   if (level == SOL_SOCKET && (option == SO_RCVBUF || option == SO_SNDBUF)) {
     return setsockopt_bufsize(socket, option, val, val_len);
   } else if (level == SOL_SOCKET && option == SO_RCVTIMEO) {
@@ -2863,8 +2897,20 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
   return -ENOPROTOOPT;
 }
 
+static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
+                               const void* val, socklen_t val_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_STREAM);
+  KASSERT_DBG(socket_base->s_protocol == IPPROTO_TCP);
+
+  socket_tcp_t* socket = (socket_tcp_t*)socket_base;
+  kmutex_lock(&socket->mu);
+  int result = sock_tcp_setsockopt_locked(socket, level, option, val, val_len);
+  kmutex_unlock(&socket->mu);
+  return result;
+}
+
 static short tcp_poll_events(const socket_tcp_t* socket) {
-  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  kspin_assert_is_held(&socket->spin_mu);
   short events = 0;
   if (socket->error) {
     events |= KPOLLERR;

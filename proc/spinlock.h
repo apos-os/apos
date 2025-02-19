@@ -16,9 +16,11 @@
 #define APOO_PROC_SPINLOCK_H
 
 #include "arch/dev/interrupts.h"
+#include "common/attributes.h"
 #include "common/config.h"
 #include "common/types.h"
 #include "proc/defint.h"
+#include "proc/thread_annotations.h"
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_lock.h"
@@ -47,7 +49,7 @@ typedef struct {
 } kspinlock_impl_t;
 
 // A normal spinlock.
-typedef struct {
+typedef struct CAPABILITY("spinlock") {
   kspinlock_impl_t _lock;
 
   // Defint state when the spinlock was locked.
@@ -55,7 +57,7 @@ typedef struct {
 } kspinlock_t;
 
 // An interrupt-safe spinlock.
-typedef struct {
+typedef struct CAPABILITY("spinlock") {
   kspinlock_impl_t _lock;
 
   // Interrupt state when the spinlock was locked.
@@ -76,15 +78,30 @@ extern const kspinlock_intsafe_t KSPINLOCK_INTERRUPT_SAFE_INIT;
 // Lock the given spinlock.  In a non-SMP environment, simply disables
 // preemption, defints, and optionally interrupts (depending on the type).
 // Threads must not block while holding a spinlock.
-void kspin_lock(kspinlock_t* l);
-void kspin_lock_int(kspinlock_intsafe_t* l);
+void kspin_lock(kspinlock_t* l) ACQUIRE(l);
+void kspin_lock_int(kspinlock_intsafe_t* l) ACQUIRE(l);
 
 // Unlock the spinlock.
-void kspin_unlock(kspinlock_t* l);
-void kspin_unlock_int(kspinlock_intsafe_t* l);
+void kspin_unlock(kspinlock_t* l) RELEASE(l);
+void kspin_unlock_int(kspinlock_intsafe_t* l) RELEASE(l);
 
 // Returns true if the spinlock is held by the current thread.
+// TODO(aoates): convert these to assertions.
 bool kspin_is_held(const kspinlock_t* l);
 bool kspin_is_held_int(const kspinlock_intsafe_t* l);
+void kspin_assert_is_held(const kspinlock_t* l) ASSERT_CAPABILITY(l);
+void kspin_assert_is_held_int(const kspinlock_intsafe_t* l) ASSERT_CAPABILITY(l);
+
+// Claim the given spinlock is locked for the purposes of construction or
+// destruction of the protected data (and spinlock).  Behaves the same as
+// kspin_assert_is_held() except doesn't actually take the lock or assert.
+static inline ALWAYS_INLINE
+void kspin_constructor(const kspinlock_t* l) ASSERT_CAPABILITY(l) {}
+static inline ALWAYS_INLINE
+void kspin_destructor(const kspinlock_t* l) ASSERT_CAPABILITY(l) {}
+static inline ALWAYS_INLINE
+void kspin_int_constructor(const kspinlock_intsafe_t* l) ASSERT_CAPABILITY(l) {}
+static inline ALWAYS_INLINE
+void kspin_int_destructor(const kspinlock_intsafe_t* l) ASSERT_CAPABILITY(l) {}
 
 #endif

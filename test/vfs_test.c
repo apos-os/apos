@@ -3567,7 +3567,7 @@ static void dup_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("dup_test"));
 }
 
-static void dup2_test(void) {
+static void dup2_test(void) NO_THREAD_SAFETY_ANALYSIS {
   KTEST_BEGIN("vfs_dup2(): basic test");
   KEXPECT_EQ(0, vfs_mkdir("dup2_test", 0));
   create_file_with_data("dup2_test/file", "abcd");
@@ -4727,7 +4727,7 @@ static void o_cloexec_test_proc(void* arg) {
   KEXPECT_EQ(1, 2);  // Should never get here.
 }
 
-static void o_cloexec_test(void) {
+static void o_cloexec_test(void) NO_THREAD_SAFETY_ANALYSIS {
   KTEST_BEGIN("vfs_open(): O_CLOEXEC on regular file");
   create_file_with_data("_o_cloexec_file", "");
 

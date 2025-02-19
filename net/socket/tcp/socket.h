@@ -45,8 +45,12 @@ const char* tcp_state2str(socktcp_state_t state);
 typedef struct socket_tcp {
   socket_t base;
 
+  // Protects data structures touched by defints and protocol-driven state
+  // transitions.
+  kspinlock_t spin_mu;
+
   // Current state of the socket.
-  socktcp_state_t state;
+  socktcp_state_t state GUARDED_BY(&spin_mu);
 
   // Current error on the socket, or zero.
   int error;
@@ -118,10 +122,6 @@ typedef struct socket_tcp {
 
   // Guards complex compound user-driven socket operations.
   kmutex_t mu;
-
-  // Protects data structures touched by defints and protocol-driven state
-  // transitions.
-  kspinlock_t spin_mu;
 
   timer_handle_t timer;
   apos_ms_t timer_deadline;

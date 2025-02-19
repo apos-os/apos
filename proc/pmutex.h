@@ -26,9 +26,10 @@
 #ifndef APOO_PROC_PMUTEX_H
 #define APOO_PROC_PMUTEX_H
 
+#include "proc/thread_annotations.h"
 #include "proc/kthread.h"
 
-typedef struct {
+typedef struct CAPABILITY("mutex") {
   kmutex_t _mu;
 } pmutex_t;
 
@@ -37,10 +38,10 @@ void pmutex_init(pmutex_t* m);
 
 // Lock the pmutex_t.  So long as no one blocks while holding the pmutex, this
 // is guaranteed to not block.
-void pmutex_lock(pmutex_t* mu);
+void pmutex_lock(pmutex_t* mu) ACQUIRE(mu);
 
 // Unlock the pmutex_t.  Guaranteed to not block.
-void pmutex_unlock(pmutex_t* mu);
+void pmutex_unlock(pmutex_t* mu) RELEASE(mu);
 
 // Returns true if the mutex is currently locked.
 bool pmutex_is_locked(const pmutex_t* m);
@@ -48,7 +49,12 @@ bool pmutex_is_locked(const pmutex_t* m);
 // Asserts that the mutex is currently held by this thread.
 // Note: may have false negatives in non-debug builds, where we don't track
 // which thread is holding a mutex.
-void pmutex_assert_is_held(const pmutex_t* m);
+void pmutex_assert_is_held(const pmutex_t* m) ASSERT_CAPABILITY(m);
 void pmutex_assert_is_not_held(const pmutex_t* m);
+
+static inline ALWAYS_INLINE
+void pmutex_constructor(const pmutex_t* m) ASSERT_CAPABILITY(m) {}
+static inline ALWAYS_INLINE
+void pmutex_destructor(const pmutex_t* m) ASSERT_CAPABILITY(m) {}
 
 #endif

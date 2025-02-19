@@ -40,17 +40,17 @@
 
 #define KLOG(...) klogfm(KL_BLOCK_CACHE, __VA_ARGS__)
 
-static int g_size = 0;
-static int g_max_size = DEFAULT_CACHE_SIZE;
+static kmutex_t g_mu;  // Protects all global state.
+
+static int g_size GUARDED_BY(g_mu) = 0;
+static int g_max_size GUARDED_BY(g_mu) = DEFAULT_CACHE_SIZE;
 // TODO(aoates): make this an atomic.
-static int g_flush_queue_period_ms = 5000;
+static int g_flush_queue_period_ms GUARDED_BY(g_mu) = 5000;
 // A dummy thread queue that the flush thread waits on, allowing it to be woken
 // up (e.g. by tests changing the flush interval).
 static kthread_queue_t g_flush_queue_wakeup_queue;
 
-static htbl_t g_table;
-
-static kmutex_t g_mu;  // Protects all global state.
+static htbl_t g_table GUARDED_BY(g_mu);
 
 // A cache entry.
 typedef struct bc_entry_internal {
@@ -383,6 +383,7 @@ static void maybe_free_cache_space(int max_entries) {
 
 void block_cache_init(void) {
   kmutex_init(&g_mu);
+  kmutex_constructor(&g_mu);
   htbl_init(&g_table, g_max_size * 2);
   kthread_queue_init(&g_flush_queue_wakeup_queue);
   KASSERT(kthread_create(&g_flush_queue_thread, &flush_queue_thread, 0x0) == 0);
@@ -425,7 +426,7 @@ static int block_cache_get_existing(bc_entry_internal_t* entry) {
 // created and read from the object.
 static int block_cache_get_internal(memobj_t* obj, int offset,
                                     bc_entry_t** entry_out,
-                                    void* existing_block) {
+                                    void* existing_block) REQUIRES(g_mu) {
   kmutex_assert_is_held(&g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
@@ -527,7 +528,7 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
 }
 
 int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
-  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  kmutex_lock(&g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
   if (htbl_get(&g_table, h, &tbl_value) != 0) {
@@ -536,16 +537,18 @@ int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
     bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
     int result = block_cache_get_existing(entry);
     if (result) {
+      kmutex_unlock(&g_mu);
       *entry_out = NULL;
       return result;
     }
     *entry_out = &entry->pub;
   }
+  kmutex_unlock(&g_mu);
   return 0;
 }
 
 int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
-  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  kmutex_lock(&g_mu);
   bc_entry_internal_t* entry = container_of(entry_pub, bc_entry_internal_t, pub);
   KASSERT(entry->pin_count > 0);
   KASSERT_DBG(entry->initialized);
@@ -556,7 +559,10 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
     entry->flushed = 0;
     if (flush_mode == BC_FLUSH_SYNC) {
       int result = flush_or_wait(entry);
-      if (result) return result;
+      if (result) {
+        kmutex_unlock(&g_mu);
+        return result;
+      }
     } else if (flush_mode == BC_FLUSH_ASYNC) {
       // Only schedule a flush if we're not currently flushing, and don't
       // already have one scheduled.
@@ -572,6 +578,7 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
   KASSERT(!list_link_on_list(&g_lru_queue, &entry->lruq));
   unpin_entry(&entry);
 
+  kmutex_unlock(&g_mu);
   return 0;
 }
 
@@ -579,13 +586,14 @@ int block_cache_migrate(bc_entry_t* entry_pub, struct memobj* target,
                         bc_entry_t** target_entry_out) {
   KASSERT(entry_pub->obj != target);
 
-  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  kmutex_lock(&g_mu);
   bc_entry_internal_t* entry = container_of(entry_pub, bc_entry_internal_t, pub);
   KASSERT(entry->pin_count > 0);
   KASSERT_DBG(entry->initialized);
   KASSERT_DBG(entry->error == 0);
 
   if (entry->pin_count > 1) {
+    kmutex_unlock(&g_mu);
     return -EBUSY;
   }
 
@@ -593,6 +601,7 @@ int block_cache_migrate(bc_entry_t* entry_pub, struct memobj* target,
   if (entry->flushing || !entry->flushed) {
     result = flush_or_wait(entry);
     if (result) {
+      kmutex_unlock(&g_mu);
       return result;
     }
   }
@@ -602,6 +611,7 @@ int block_cache_migrate(bc_entry_t* entry_pub, struct memobj* target,
   result = block_cache_get_internal(target, entry_pub->offset, target_entry_out,
                                     /* existing_block= */ entry_pub->block);
   if (result) {
+    kmutex_unlock(&g_mu);
     return result;
   }
   // These should only trigger if another thread grabbed the entry, violating
@@ -622,6 +632,7 @@ int block_cache_migrate(bc_entry_t* entry_pub, struct memobj* target,
   entry->pin_count--;
   cleanup_cache_entry(entry);
 
+  kmutex_unlock(&g_mu);
   return 0;
 }
 
@@ -629,27 +640,32 @@ void block_cache_add_pin(bc_entry_t* entry_pub) {
   // TODO(aoates): use an atomic for pin_count and make this non-blocking.
   bc_entry_internal_t* entry =
       container_of(entry_pub, bc_entry_internal_t, pub);
-  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  kmutex_lock(&g_mu);
   KASSERT_DBG(entry->pin_count > 0);
   entry->pin_count++;
+  kmutex_unlock(&g_mu);
 }
 
 int block_cache_free_all(struct memobj* obj) {
   // TODO(aoates): there is a decent amount of shared logic between this,
   // block_cache_clear_unpinned(), put(), and maybe_free_cache_space().  Maybe
   // combine into a helper?
-  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  kmutex_lock(&g_mu);
   while (!list_empty(&obj->bc_entries)) {
     bc_entry_internal_t* entry =
         container_of(obj->bc_entries.head, bc_entry_internal_t, memobj_link);
     if (entry->pin_count) {
+      kmutex_unlock(&g_mu);
       return -EBUSY;
     }
     // This block may already be on the cleanup list.
     if (entry->pub.block) {
       if (!entry->flushed || entry->flushing) {
         int result = flush_or_wait(entry);  // May block and change entry.
-        if (result) return result;
+        if (result) {
+          kmutex_unlock(&g_mu);
+          return result;
+        }
         // We don't know what happened --- `entry` may point to invalid memory
         // now!  Or be pinned, flushing, or dirty.  Just retry from the start.
         continue;
@@ -674,28 +690,35 @@ int block_cache_free_all(struct memobj* obj) {
     // TODO(aoates): figure out how to call free_dead_entries() once at the end.
     free_dead_entries();  // May block.
   }
+  kmutex_unlock(&g_mu);
   return 0;
 }
 
 int block_cache_get_pin_count(memobj_t* obj, int offset) {
-  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  kmutex_lock(&g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
   if (htbl_get(&g_table, h, &tbl_value) != 0) {
+    kmutex_unlock(&g_mu);
     return 0;
   }
 
-  return ((bc_entry_internal_t*)tbl_value)->pin_count;
+  int result = ((bc_entry_internal_t*)tbl_value)->pin_count;
+  kmutex_unlock(&g_mu);
+  return result;
 }
 
 void block_cache_set_size(int blocks) {
-  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  kmutex_lock(&g_mu);
   g_max_size = blocks;
+  kmutex_unlock(&g_mu);
 }
 
 int block_cache_get_size(void) {
-  KMUTEX_AUTO_LOCK(lock, &g_mu);
-  return g_max_size;
+  kmutex_lock(&g_mu);
+  int result = g_max_size;
+  kmutex_unlock(&g_mu);
+  return result;
 }
 
 int block_cache_get_num_entries(void) {
@@ -709,7 +732,7 @@ void block_cache_clear_unpinned(void) {
   // Since freeing entries from the LRU queue may cause dirtying of additional
   // entries (e.g. this happens with ext2), keep trying until the flush queue is
   // empty.
-  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  kmutex_lock(&g_mu);
   do {
     // Flush everything on the flush queue.
     bc_entry_internal_t* entry = cache_entry_pop(&g_flush_queue, flushq);
@@ -746,6 +769,7 @@ void block_cache_clear_unpinned(void) {
     }
     free_dead_entries();  // May block.
   } while (!list_empty(&g_flush_queue) || !list_empty(&g_lru_queue));
+  kmutex_unlock(&g_mu);
 }
 
 typedef struct {
@@ -776,7 +800,7 @@ static void stats_counter_func(void* arg, htbl_key_t key, void* value) {
   }
 }
 void block_cache_log_stats(void) {
-  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  kmutex_lock(&g_mu);
   stats_t stats;
   kmemset(&stats, 0, sizeof(stats_t));
   htbl_iterate(&g_table, &stats_counter_func, &stats);
@@ -788,11 +812,14 @@ void block_cache_log_stats(void) {
   KLOG(INFO, "         on lru: %d\n", stats.lru);
   KLOG(INFO, "        flushed: %d\n", stats.flushed);
   KLOG(INFO, "       flushing: %d\n", stats.flushing);
+  kmutex_unlock(&g_mu);
 }
 
 int block_cache_set_bg_flush_period(int period_ms) {
+  kmutex_lock(&g_mu);
   int old = g_flush_queue_period_ms;
   g_flush_queue_period_ms = period_ms;
+  kmutex_unlock(&g_mu);
   block_cache_wakeup_flush_thread();
   return old;
 }

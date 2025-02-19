@@ -23,6 +23,6 @@
 void arp_rx(nic_t* nic, pbuf_t* pb);
 
 // Send a request for the given address on the nic.  Requires the nic be locked.
-void arp_send_request(nic_t* nic, in_addr_t addr);
+void arp_send_request(nic_t* nic, in_addr_t addr) REQUIRES(nic->lock);
 
 #endif

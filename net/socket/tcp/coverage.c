@@ -89,7 +89,7 @@ static void tcp_coverage_init(void) {
 }
 
 void tcp_coverage_log_do(const char* event, const socket_tcp_t* socket) {
-  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  kspin_assert_is_held(&socket->spin_mu);
   if (!g_tcp_coverage_init) {
     tcp_coverage_init();
   }

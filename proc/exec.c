@@ -25,6 +25,7 @@
 #include "memory/mmap.h"
 #include "proc/exec.h"
 #include "proc/load/load.h"
+#include "proc/pmutex.h"
 #include "proc/signal/signal.h"
 #include "vfs/vfs.h"
 
@@ -110,15 +111,20 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
     return result;
   }
 
-  for (int fd = 0; fd < PROC_MAX_FDS; ++fd) {
-    if (proc_current()->fds[fd].flags & VFS_O_CLOEXEC) {
-      if (vfs_close(fd) != 0) {
-        KLOG(WARNING, "exec error: unable to close O_CLOEXEC fd %d\n", fd);
+  // TODO(aoates): similar to exit(), figure out how to deal with locking these.
+  // No threads can be concurrently modifying the process FD table.
+  {
+    pmutex_destructor(&p->mu);
+    for (int fd = 0; fd < PROC_MAX_FDS; ++fd) {
+      if (p->fds[fd].flags & VFS_O_CLOEXEC) {
+        if (vfs_close(fd) != 0) {
+          KLOG(WARNING, "exec error: unable to close O_CLOEXEC fd %d\n", fd);
+        }
       }
     }
   }
 
-  proc_current()->user_arch = binary->arch;
+  p->user_arch = binary->arch;
   if (cleanup) {
     (*cleanup)(path, argv, envp, cleanup_arg);
   }

@@ -50,13 +50,14 @@ static inline const char* proc_state_to_string(proc_state_t state);
 struct process {
   uint32_t guid;
   kpid_t id;  // Index into global process table.
+  pmutex_t mu;
   proc_state_t state;
   list_t threads;  // All process threads.
   int exit_status;  // Exit status if PROC_ZOMBIE, or PROC_STOPPED.
   bool exiting;  // Whether the process is exiting.
 
   // File descriptors.  Indexes into the global file table.
-  fd_t fds[PROC_MAX_FDS];  // GUARDED_BY(mu)
+  fd_t fds[PROC_MAX_FDS] GUARDED_BY(&mu);
 
   // The current working directory of the process.
   struct vnode* cwd;
@@ -116,7 +117,6 @@ struct process {
   // Resource limits.
   struct apos_rlimit limits[APOS_RLIMIT_NUM_RESOURCES];
 
-  pmutex_t mu;
   refcount_t refcount;
 };
 

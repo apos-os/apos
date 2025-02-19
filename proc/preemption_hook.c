@@ -34,8 +34,8 @@ _Static_assert(PREEMPTION_INDUCE_LEVEL_CIRCBUF >= 0 &&
                "PREEMPTION_INDUCE_LEVEL_CIRCBUF out of range");
 
 void sched_preempt_me(int level) {
-  static uint32_t rng = 12345;
   static kspinlock_t rng_lock = KSPINLOCK_NORMAL_INIT_STATIC;
+  static uint32_t rng GUARDED_BY(rng_lock) = 12345;
 
   // If interrupts are enabled, then we know we're not currently processing an
   // interrupt.

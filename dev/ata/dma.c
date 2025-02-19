@@ -53,9 +53,9 @@ static phys_addr_t g_prd_phys = 0;
 // operation has had a chance to copy it out.
 // TODO(aoates): we should have several DMA buffers and rotate between them to
 // reduce contention.
-static int g_dma_buf_free = 1;
-static kthread_queue_t g_dma_buf_q;
 static kspinlock_t g_dma_buf_lock = KSPINLOCK_NORMAL_INIT_STATIC;
+static int g_dma_buf_free GUARDED_BY(g_dma_buf_lock) = 1;
+static kthread_queue_t g_dma_buf_q;
 
 // Returns the DMA buffer that should be written to/read from.
 static void* dma_get_buffer(void) {
@@ -162,7 +162,6 @@ void dma_init(void) {
 // clamping, and in particular the return value, is handled correctly).
 void dma_perform_op(ata_disk_op_t* op) {
   KASSERT(op);
-  KASSERT(op->drive->channel->pending_op == op);
 
   // Clamp to DMA buffer size.
   if (op->len > dma_buffer_size()) {
@@ -184,6 +183,7 @@ void dma_perform_op(ata_disk_op_t* op) {
   }
 
   kspin_lock(&op->drive->channel->mu);
+  KASSERT(op->drive->channel->pending_op == op);
 
   // Select the drive.
   drive_select(op->drive->channel, op->drive->drive_num);
@@ -226,7 +226,7 @@ void dma_finish_transfer(ata_channel_t* channel) {
   cmd &= ~BM_CMD_STARTSTOP;
   io_write8(channel->busmaster_io, BM_CMD, cmd);
 
-  KASSERT(kspin_is_held(&channel->mu));
+  kspin_assert_is_held(&channel->mu);
   if (channel->pending_op != NULL) {
     ata_disk_op_t* op = channel->pending_op;
     // TODO(aoates): test for op->len being rounded properly.

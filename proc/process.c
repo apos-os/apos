@@ -56,6 +56,7 @@ static uint32_t g_next_guid = 1;
 
 static void proc_init_process(process_t* p) {
   pmutex_init(&p->mu);
+  pmutex_constructor(&p->mu);
   p->refcount = REFCOUNT_INIT;
   p->guid = 0;
   p->id = -1;
