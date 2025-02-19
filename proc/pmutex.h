@@ -52,4 +52,9 @@ bool pmutex_is_locked(const pmutex_t* m);
 void pmutex_assert_is_held(const pmutex_t* m) ASSERT_CAPABILITY(m);
 void pmutex_assert_is_not_held(const pmutex_t* m);
 
+static inline ALWAYS_INLINE
+void pmutex_constructor(const pmutex_t* m) ASSERT_CAPABILITY(m) {}
+static inline ALWAYS_INLINE
+void pmutex_destructor(const pmutex_t* m) ASSERT_CAPABILITY(m) {}
+
 #endif
