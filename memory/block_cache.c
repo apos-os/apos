@@ -40,17 +40,17 @@
 
 #define KLOG(...) klogfm(KL_BLOCK_CACHE, __VA_ARGS__)
 
-static int g_size = 0;
-static int g_max_size = DEFAULT_CACHE_SIZE;
+static kmutex_t g_mu;  // Protects all global state.
+
+static int g_size GUARDED_BY(g_mu) = 0;
+static int g_max_size GUARDED_BY(g_mu) = DEFAULT_CACHE_SIZE;
 // TODO(aoates): make this an atomic.
-static int g_flush_queue_period_ms = 5000;
+static int g_flush_queue_period_ms GUARDED_BY(g_mu) = 5000;
 // A dummy thread queue that the flush thread waits on, allowing it to be woken
 // up (e.g. by tests changing the flush interval).
 static kthread_queue_t g_flush_queue_wakeup_queue;
 
-static htbl_t g_table;
-
-static kmutex_t g_mu;  // Protects all global state.
+static htbl_t g_table GUARDED_BY(g_mu);
 
 // A cache entry.
 typedef struct bc_entry_internal {
@@ -383,6 +383,7 @@ static void maybe_free_cache_space(int max_entries) {
 
 void block_cache_init(void) {
   kmutex_init(&g_mu);
+  kmutex_constructor(&g_mu);
   htbl_init(&g_table, g_max_size * 2);
   kthread_queue_init(&g_flush_queue_wakeup_queue);
   KASSERT(kthread_create(&g_flush_queue_thread, &flush_queue_thread, 0x0) == 0);
@@ -815,8 +816,10 @@ void block_cache_log_stats(void) {
 }
 
 int block_cache_set_bg_flush_period(int period_ms) {
+  kmutex_lock(&g_mu);
   int old = g_flush_queue_period_ms;
   g_flush_queue_period_ms = period_ms;
+  kmutex_unlock(&g_mu);
   block_cache_wakeup_flush_thread();
   return old;
 }

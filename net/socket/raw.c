@@ -47,9 +47,9 @@ typedef struct {
 static const socket_ops_t g_raw_socket_ops;
 
 // Table of lists of raw sockets, indexed by (ethertype, protocol) pair.
-static htbl_t g_raw_sockets;
-static bool g_raw_sockets_init = false;
 static kspinlock_t g_raw_sockets_mu = KSPINLOCK_NORMAL_INIT_STATIC;
+static htbl_t g_raw_sockets GUARDED_BY(g_raw_sockets_mu);
+static bool g_raw_sockets_init GUARDED_BY(g_raw_sockets_mu) = false;
 
 static void init_raw_sockets(void) {
   kspin_lock(&g_raw_sockets_mu);
@@ -61,6 +61,7 @@ static void init_raw_sockets(void) {
 }
 
 static list_t* get_socket_list(ethertype_t ethertype, int protocol) {
+  kspin_assert_is_held(&g_raw_sockets_mu);
   KASSERT(g_raw_sockets_init);
 
   const uint32_t key = ((uint16_t)ethertype << 16) | (uint16_t)protocol;
@@ -87,6 +88,7 @@ static short raw_poll_events(const socket_raw_t* socket) {
 static void sock_raw_dispatch_one(socket_raw_t* sock, pbuf_t* pb,
                                   const struct sockaddr* addr,
                                   socklen_t addrlen) {
+  kspin_assert_is_held(&g_raw_sockets_mu);
   KASSERT(g_raw_sockets_init);
 
   queued_pkt_t* qpkt = (queued_pkt_t*)kmalloc(sizeof(queued_pkt_t));

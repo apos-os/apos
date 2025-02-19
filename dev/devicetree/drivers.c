@@ -62,8 +62,8 @@ static dt_driver_t DTREE_DRIVERS[] = {
 };
 
 // Global driver table.
-static htbl_t g_node_drivers;
 static kmutex_t g_dt_lock;
+static htbl_t g_node_drivers GUARDED_BY(g_dt_lock);
 static bool g_init = false;
 
 typedef uint32_t node_key_t;
@@ -170,11 +170,12 @@ static void init_drivers(const dt_tree_t* tree, const dt_node_t* node,
 void dtree_load_drivers(const dt_tree_t* tree) {
   KASSERT(!g_init);
   kmutex_init(&g_dt_lock);
+
+  kmutex_lock(&g_dt_lock);
   htbl_init(&g_node_drivers, 10);
   g_init = true;
 
   // For each node in the tree, try and find an appropriate driver.
-  kmutex_lock(&g_dt_lock);
   char path[DT_NODE_PATH_LEN];
   init_drivers(tree, tree->root, path);
   kmutex_unlock(&g_dt_lock);

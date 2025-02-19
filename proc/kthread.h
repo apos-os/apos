@@ -23,6 +23,7 @@
 
 #include <stdbool.h>
 
+#include "common/attributes.h"
 #include "common/config.h"
 #include "common/list.h"
 #include "common/types.h"
@@ -178,5 +179,12 @@ bool kmutex_is_locked(const kmutex_t* m);
 // which thread is holding a mutex.
 void kmutex_assert_is_held(const kmutex_t* m) ASSERT_CAPABILITY(m);
 void kmutex_assert_is_not_held(const kmutex_t* m);
+
+// Claim the given mutex is locked for the purposes of construction or
+// destruction of the protected data (and lock).
+static inline ALWAYS_INLINE
+void kmutex_constructor(const kmutex_t* l) ASSERT_CAPABILITY(l) {}
+static inline ALWAYS_INLINE
+void kmutex_destructor(const kmutex_t* l) ASSERT_CAPABILITY(l) {}
 
 #endif

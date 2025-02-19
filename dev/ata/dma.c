@@ -53,9 +53,9 @@ static phys_addr_t g_prd_phys = 0;
 // operation has had a chance to copy it out.
 // TODO(aoates): we should have several DMA buffers and rotate between them to
 // reduce contention.
-static int g_dma_buf_free = 1;
-static kthread_queue_t g_dma_buf_q;
 static kspinlock_t g_dma_buf_lock = KSPINLOCK_NORMAL_INIT_STATIC;
+static int g_dma_buf_free GUARDED_BY(g_dma_buf_lock) = 1;
+static kthread_queue_t g_dma_buf_q;
 
 // Returns the DMA buffer that should be written to/read from.
 static void* dma_get_buffer(void) {

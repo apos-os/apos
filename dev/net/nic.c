@@ -26,8 +26,8 @@
 #include "net/neighbor_cache.h"
 #include "proc/spinlock.h"
 
-static list_t g_nics = LIST_INIT_STATIC;
 static kspinlock_t g_nics_lock = KSPINLOCK_NORMAL_INIT_STATIC;
+static list_t g_nics GUARDED_BY(g_nics_lock) = LIST_INIT_STATIC;
 
 static void find_free_name(nic_t* nic, const char* name_prefix) {
   // Allow up to 999 NICs of each type.

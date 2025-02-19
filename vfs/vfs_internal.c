@@ -29,7 +29,7 @@
 mounted_fs_t g_fs_table[VFS_MAX_FILESYSTEMS];
 // Protects g_fs_table, serializing mount operations.
 kmutex_t g_fs_table_lock;
-htbl_t g_vnode_cache;
+htbl_t g_vnode_cache GUARDED_BY(g_vnode_cache_lock);
 kspinlock_t g_vnode_cache_lock = KSPINLOCK_NORMAL_INIT_STATIC;
 file_t* g_file_table[VFS_MAX_FILES];
 pmutex_t g_file_table_mu;

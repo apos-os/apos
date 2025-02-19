@@ -31,7 +31,7 @@ typedef struct {
 
 // Global spinlock for hashtable and entry refcounts.
 static kspinlock_t gtp_lock = KSPINLOCK_NORMAL_INIT_STATIC;
-static kthread_queue_t gtp_queue;
+static kthread_queue_t gtp_queue GUARDED_BY(gtp_lock);
 
 // All entries.
 static htbl_t gtp_entries;
