@@ -29,6 +29,11 @@
 // Whether to print all test names (including passing tests)
 #define KTEST_PRINT_ALL_TESTS 0
 
+#if ENABLE_TSAN
+#undef KTEST_PRINT_ALL_TESTS
+#define KTEST_PRINT_ALL_TESTS 1
+#endif
+
 // Whether to print all test conditions (including passing ones).
 // Implies KTEST_PRINT_ALL_TESTS.
 #define KTEST_PRINT_ALL_CONDITIONS 0
