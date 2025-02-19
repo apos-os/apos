@@ -201,10 +201,10 @@ int ipv6_configure_addr(nic_t* nic, const network_t* addr) {
   nic->addrs[open].a = *addr;
 
   // Set a timer for confirmation.
-  KASSERT_DBG(nic->addrs[open].timer == TIMER_HANDLE_NONE);
   refcount_inc(&nic->ref);
 
   kspin_lock_int(&nic->addrs[open].timer_lock);
+  KASSERT_DBG(nic->addrs[open].timer == TIMER_HANDLE_NONE);
   apos_ms_t end = get_time_ms() +
       nic->ipv6.opts.dup_detection_timeout_ms;
   if (register_event_timer(end, &addr_dup_timeout, &nic->addrs[open],

@@ -99,5 +99,9 @@ static inline ALWAYS_INLINE
 void kspin_constructor(const kspinlock_t* l) ASSERT_CAPABILITY(l) {}
 static inline ALWAYS_INLINE
 void kspin_destructor(const kspinlock_t* l) ASSERT_CAPABILITY(l) {}
+static inline ALWAYS_INLINE
+void kspin_int_constructor(const kspinlock_intsafe_t* l) ASSERT_CAPABILITY(l) {}
+static inline ALWAYS_INLINE
+void kspin_int_destructor(const kspinlock_intsafe_t* l) ASSERT_CAPABILITY(l) {}
 
 #endif

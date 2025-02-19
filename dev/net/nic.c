@@ -68,6 +68,7 @@ void nic_init(nic_t* nic) {
 
   for (size_t i = 0; i < NIC_MAX_ADDRS; ++i) {
     kmemset(&nic->addrs[i], 0, sizeof(nic_addr_t));
+    kspin_int_constructor(&nic->addrs[i].timer_lock);
     nic->addrs[i].a.addr.family = AF_UNSPEC;
     nic->addrs[i].state = NIC_ADDR_NONE;
     nic->addrs[i].timer = TIMER_HANDLE_NONE;
