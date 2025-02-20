@@ -171,6 +171,7 @@ void nic_put(nic_t* nic) {
 
   if (cleanup) {
     klogf("net: deleting NIC %s\n", nic->name);
+    kspin_destructor(&nic->lock);
     ipv6_cleanup(nic);
     nbr_cache_cleanup(&nic->nbr_cache);
     nic->ops->nic_cleanup(nic);

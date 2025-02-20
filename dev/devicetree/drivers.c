@@ -140,7 +140,7 @@ static dt_driver_info_t* find_driver(const dt_tree_t* tree,
 
 // Recursively find and initialize drivers for this node and its children.
 static void init_drivers(const dt_tree_t* tree, const dt_node_t* node,
-                         char* node_path_buf) {
+                         char* node_path_buf) REQUIRES(g_dt_lock) {
   if (dt_print_path(node, node_path_buf, DT_NODE_PATH_LEN) > DT_NODE_PATH_LEN) {
     KLOG(WARNING, "devicetree node path truncated (node=%p, path=%s)\n", node,
          node_path_buf);

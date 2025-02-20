@@ -62,7 +62,7 @@ struct ld {
   apos_dev_t tty;
   struct ktermios termios GUARDED_BY(&lock);
 
-  pollable_t poll_event GUARDED_BY(&lock);
+  pollable_t poll_event;
 };
 
 // Note: keep this in sync with the version in getty.c.
