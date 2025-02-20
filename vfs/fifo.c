@@ -52,7 +52,7 @@ void fifo_cleanup(apos_fifo_t* fifo) {
   // when num_readers goes to zero.  But generating a KPOLLNVAL here is correct,
   // if redundant.
   poll_trigger_event(&fifo->poll_event, KPOLLNVAL);
-  KASSERT(list_empty(&fifo->poll_event.refs));
+  poll_assert_empty_event(&fifo->poll_event);
 }
 
 int fifo_open(apos_fifo_t* fifo, fifo_mode_t mode, bool block, bool force) {

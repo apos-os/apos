@@ -179,7 +179,7 @@ int tuntap_destroy(apos_dev_t id) {
     return result;
   }
   poll_trigger_event(&tt->poll_event, KPOLLNVAL);
-  KASSERT(list_empty(&tt->poll_event.refs));
+  poll_assert_empty_event(&tt->poll_event);
 
   // TODO(aoates): redo NIC refcounting and deletion system, this is strange and
   // brittle.

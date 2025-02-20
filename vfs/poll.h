@@ -72,4 +72,7 @@ void poll_trigger_event(pollable_t* event, short events);
 // Perform a poll, as per the poll() syscall.
 int vfs_poll(struct apos_pollfd fds[], apos_nfds_t nfds, int timeout);
 
+// Asserts that there are no waiters on the given poll event.
+void poll_assert_empty_event(const pollable_t* poll_event);
+
 #endif
