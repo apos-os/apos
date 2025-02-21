@@ -136,14 +136,14 @@ static void parse_and_dispatch(kshell_t* shell, char* cmd);
 #if ENABLE_TESTS
 
 static void test_cmd(kshell_t* shell, int argc, char* argv[]) {
-  if (argc != 2) {
-    ksh_printf("invalid # of args for test: expected 1, got %d\n",
+  if (argc < 2) {
+    ksh_printf("invalid # of args for test: expected >= 1, got %d\n",
                argc - 1);
     return;
   }
 
   perftrace_enable();
-  kernel_run_ktest(argv[1]);
+  kernel_run_ktests((const char**)(argv + 1), argc - 1);
   perftrace_disable();
 }
 

@@ -16,8 +16,10 @@
 
 #include "common/arch-config.h"
 #include "common/config.h"
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kprintf.h"
+#include "common/kstring.h"
 #include "proc/fork.h"
 #include "proc/signal/signal.h"
 #include "proc/user.h"
@@ -147,7 +149,9 @@ static void do_run_user_tests(void) {
 }
 
 typedef struct {
-  const test_entry_t* entry;
+  int num_entries;
+  // Array of test entries to run.
+  const test_entry_t** entry;
 } test_cmd_args_t;
 
 // We run the actual test in another process, since some tests (the VFS tests in
@@ -182,7 +186,9 @@ static void do_test_cmd(void* arg) {
   }
 
   ktest_begin_all();
-  args->entry->func();
+  for (int i = 0; i < args->num_entries; ++i) {
+    args->entry[i]->func();
+  }
   ktest_finish_all();
   vfs_close(g_stdin_saved);
   vfs_close(g_stdout_saved);
@@ -192,7 +198,28 @@ static void do_test_cmd(void* arg) {
   g_stderr_saved = -1;
 }
 
-int kernel_run_ktest(const char* name) {
+// Convert each test name into the corresponding test entry, or return an error.
+static int find_tests(const char** names, int len, const test_entry_t** tests) {
+  for (int i= 0; i < len; ++i) {
+    const test_entry_t* e = &TESTS[0];
+    while (e->name != 0x0) {
+      if (kstrcmp(names[i], e->name) == 0) {
+        klogf("running test '%s'...\n", names[i]);
+        tests[i] = e;
+        break;
+      }
+      e++;
+    }
+    if (e->name == NULL) {
+      klogf("error: unknown test '%s'\n", names[i]);
+      return -EINVAL;
+    }
+  }
+
+  return 0;
+}
+
+int kernel_run_ktests(const char** names, int len) {
   if (!proc_is_superuser(proc_current())) {
     klogf("Cannot run kernel tests as non-superuser\n");
     return -EPERM;
@@ -208,27 +235,28 @@ int kernel_run_ktest(const char* name) {
     return -1;
   }
 
-  const test_entry_t* e = &TESTS[0];
-  int result = -EINVAL;
-  while (e->name != 0x0) {
-    if (kstrcmp(name, e->name) == 0) {
-      klogf("running test '%s'...\n", name);
-      test_cmd_args_t args = {e};
-      proc_fork(&do_test_cmd, &args);
-      proc_wait(0);
-      result = 0;
-      break;
-    }
-    e++;
+  const test_entry_t** tests = kmalloc(sizeof(test_entry_t*) * len);
+  int result = find_tests(names, len, tests);
+  if (result) {
+    klogf("Cannot run tests: %s\n", errorname(-result));
+    return result;
   }
+
+  test_cmd_args_t args;
+  args.num_entries = len;
+  args.entry = tests;
+  kpid_t child = proc_fork(&do_test_cmd, &args);
+  KASSERT(child == proc_waitpid(child, NULL, 0));
+  kfree(tests);
 
   if (proc_sigaction(SIGUSR1, &old_sigaction, NULL)) {
     klogf("Unable to restore SIGUSR1 action\n");
     return -1;
   }
 
-  if (result) {
-    klogf("error: unknown test '%s'\n", name);
-  }
-  return result;
+  return 0;
+}
+
+int kernel_run_ktest(const char* name) {
+  return kernel_run_ktests(&name, 1);
 }

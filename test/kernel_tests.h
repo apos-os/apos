@@ -90,6 +90,10 @@ void rsv64_user_test(void);
 void tsan_test(void);
 #endif
 
-int kernel_run_ktest(const char* name);
+// Takes a list of test names to run.
+int kernel_run_ktests(const char** names, int len);
+
+// Legacy interface for syscall.
+int kernel_run_ktest(const char* names);
 
 #endif
