@@ -17,6 +17,7 @@
 #define APOO_PROC_GROUP_H
 
 #include "common/list.h"
+#include "proc/process.h"
 #include "user/include/apos/posix_types.h"
 
 typedef struct {
@@ -36,6 +37,10 @@ kpid_t getpgid(kpid_t pid);
 //
 // Returns 0 on success, or -errno on error.
 int setpgid(kpid_t pid, kpid_t pgid);
+
+// Kernel-internal version of the above that mechanically sets the process group
+// unconditionally (bypassing all policy checks).
+void setpgid_force(process_t* proc, kpid_t pgid, proc_group_t* pgroup);
 
 // Return the process group with the given ID.
 proc_group_t* proc_group_get(kpid_t gid);

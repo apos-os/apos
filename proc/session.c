@@ -26,13 +26,9 @@ kpid_t proc_setsid(void) {
   process_t* proc = proc_current();
   if (proc->pgroup == proc->id) return -EPERM;
 
-  int result = setpgid(0, 0);
-  if (result) {
-    klogfm(KL_PROC, DFATAL, "setpgid() failed in setsid(): %d\n", result);
-    return result;
-  }
+  proc_group_t* pgroup = proc_group_get(proc->id);
+  setpgid_force(proc, proc->id, pgroup);
 
-  proc_group_t* pgroup = proc_group_get(proc->pgroup);
   pgroup->session = proc->id;
 
   proc_session_t* session = proc_session_get(proc->id);

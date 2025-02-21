@@ -80,10 +80,18 @@ int setpgid(kpid_t pid, kpid_t pgid) {
     return -EACCES;
   }
 
+  setpgid_force(proc, pgid, pgroup);
+  proc_put(proc);
+  return 0;
+}
+
+void setpgid_force(process_t* proc, kpid_t pgid, proc_group_t* pgroup) {
+  KASSERT(proc_group_get(pgid) == pgroup);
+
   // If this is a newly-created process group, set its session to the same as
   // the old process group.
   if (list_empty(&pgroup->procs)) {
-    KASSERT_DBG(pid == pgid);
+    KASSERT_DBG(proc->id == pgid);
     pgroup->session = proc_group_get(proc->pgroup)->session;
   }
 
@@ -91,9 +99,6 @@ int setpgid(kpid_t pid, kpid_t pgid) {
   list_remove(&proc_group_get(proc->pgroup)->procs, &proc->pgroup_link);
   list_push(&pgroup->procs, &proc->pgroup_link);
   proc->pgroup = pgid;
-
-  proc_put(proc);
-  return 0;
 }
 
 proc_group_t* proc_group_get(kpid_t gid) {
