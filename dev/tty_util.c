@@ -41,6 +41,20 @@ int tty_get_fd(int fd, bool require_ctty, tty_t** tty) {
   return 0;
 }
 
+int tty_check_read(const tty_t* tty) {
+  int result = 0;
+  if (tty->session == proc_getsid(0) &&
+      getpgid(0) != proc_session_get(tty->session)->fggrp) {
+    result = -EIO;
+    if (proc_signal_deliverable(kthread_current_thread(), SIGTTIN)) {
+      proc_force_signal_group(getpgid(0), SIGTTIN);
+      result = -EINTR;
+    }
+  }
+
+  return result;
+}
+
 int tty_check_write(const tty_t* tty) {
   ksid_t sid = proc_getsid(0);
   if (tty->session != sid) {

@@ -394,14 +394,8 @@ int ld_read(ld_t* l, char* buf, int n, int flags) {
 
   if (kminor(l->tty) != DEVICE_ID_UNKNOWN) {
     tty_t* tty = tty_get(l->tty);
-    if (tty->session == proc_getsid(0) &&
-        getpgid(0) != proc_session_get(tty->session)->fggrp) {
-      int result = -EIO;
-      if (proc_signal_deliverable(kthread_current_thread(), SIGTTIN)) {
-        proc_force_signal_group(getpgid(0), SIGTTIN);
-        result = -EINTR;
-      }
-
+    int result = tty_check_read(tty);
+    if (result) {
       kspin_unlock(&l->lock);
       return result;
     }

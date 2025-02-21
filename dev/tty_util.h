@@ -22,6 +22,10 @@
 // of the calling process; if it isn't, -ENOTTY is returned.
 int tty_get_fd(int fd, bool require_ctty, tty_t** tty);
 
+// Returns 0 if the current process can read the given TTY, or raises a signal
+// and returns -error.
+int tty_check_read(const tty_t* tty);
+
 // Returns 0 if the current process can write or modify the given TTY (i.e.
 // either the TTY is not the controlling terminal of the process, or it is and
 // the process is in the fg pgroup and SIGTTOU is not blocked).  Otherwise,
