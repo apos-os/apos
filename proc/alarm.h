@@ -17,12 +17,12 @@
 
 #include <stdint.h>
 
-#include "dev/timer.h"
+#include "proc/defint_timer.h"
 
 // An alarm in a process.  Each process has exactly one alarm.
 typedef struct {
   apos_ms_t deadline_ms;
-  timer_handle_t timer;
+  defint_timer_t timer;
 } proc_alarm_t;
 
 // Initialize an alarm in a process.

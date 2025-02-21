@@ -17,27 +17,26 @@
 #include "common/kassert.h"
 #include "common/math.h"
 #include "dev/interrupts.h"
-#include "dev/timer.h"
-#include "memory/kmalloc.h"
+#include "proc/defint_timer.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
 
-static void timer_cb(void* arg) {
+static void timer_cb(defint_timer_t* timer, void* arg) {
   process_t* proc = (process_t*)arg;
   KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
   KASSERT_DBG(get_time_ms() >= proc->alarm.deadline_ms);
 
-  proc->alarm.timer = TIMER_HANDLE_NONE;
-  proc->alarm.deadline_ms = 0;
+  proc->alarm.deadline_ms = APOS_MS_MAX;
 
   if (proc_force_signal(proc, SIGALRM) != 0) {
     klogfm(KL_PROC, WARNING, "unable to send SIGALRM to pid %d\n", proc->id);
   }
+
+  proc_put(proc);
 }
 
 void proc_alarm_init(proc_alarm_t* alarm) {
-  alarm->deadline_ms = 0;
-  alarm->timer = TIMER_HANDLE_NONE;
+  alarm->deadline_ms = APOS_MS_MAX;
 }
 
 unsigned int proc_alarm_ms(unsigned int ms) {
@@ -50,24 +49,23 @@ unsigned int proc_alarm_ms(unsigned int ms) {
   unsigned int old_remaining = 0;
 
   // If there's already an alarm, cancel it.
-  if (proc->alarm.timer != TIMER_HANDLE_NONE) {
-    KASSERT_DBG(proc->alarm.deadline_ms >= ctime);
+  if (proc->alarm.deadline_ms != APOS_MS_MAX) {
+    // Note: add a grace period here because the defint could be running behind
+    // schedule and miss a clock tick (unlikely, but possible).
+    KASSERT_DBG(proc->alarm.deadline_ms + 10 >= ctime);
     old_remaining = round_nearest_div(proc->alarm.deadline_ms - ctime, 1000);
     old_remaining = max(old_remaining, 1U);
 
-    cancel_event_timer(proc->alarm.timer);
-    proc->alarm.timer = TIMER_HANDLE_NONE;
-    proc->alarm.deadline_ms = 0;
+    if (defint_timer_cancel(&proc->alarm.timer)) {
+      proc_put(proc);  // The (cancelled) timer's reference.
+    }
+    proc->alarm.deadline_ms = APOS_MS_MAX;
   }
 
   if (ms > 0) {
     proc->alarm.deadline_ms = deadline;
-
-    if (register_event_timer(deadline, &timer_cb, proc,
-                             &proc->alarm.timer) != 0) {
-      klogfm(KL_PROC, WARNING,
-             "unable to register alarm for pid %d\n", proc->id);
-    }
+    refcount_inc(&proc->refcount);
+    defint_timer_create(deadline, &timer_cb, proc, &proc->alarm.timer);
   }
 
   POP_INTERRUPTS();
