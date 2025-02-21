@@ -262,20 +262,9 @@ static void sigaction_test(void) {
   // do user-space tests.
 }
 
-static void signal_allowed_test(void) {
-  process_t A, B, A_default, B_default;
-
-  A_default.ruid = 1001; A_default.rgid = 2001;
-  A_default.euid = 1002; A_default.egid = 2002;
-  A_default.suid = 1003; A_default.sgid = 2003;
-  B_default.ruid = 3001; B_default.rgid = 4001;
-  B_default.euid = 3002; B_default.egid = 4002;
-  B_default.suid = 3003; B_default.sgid = 4003;
-
-  A_default.pgroup = B_default.pgroup = proc_current()->pgroup;
-
+static void signal_allowed_test1(process_t* A_default, process_t* B_default) {
+  process_t A = *A_default, B = *B_default;
   KTEST_BEGIN("proc_signal_allowed(): root can send any signal");
-  A = A_default; B = B_default;
   A.euid = SUPERUSER_UID;
 
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGTERM));
@@ -293,15 +282,18 @@ static void signal_allowed_test(void) {
   KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGAPOSTKILL));
 
   KTEST_BEGIN("proc_signal_allowed(): allowed if ruid matches ruid");
-  A = A_default; B = B_default;
+  A = *A_default; B = *B_default;
   A.ruid = B.ruid;
 
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
+}
+
+static void signal_allowed_test2(process_t* A_default, process_t* B_default) {
+  process_t A = *A_default, B = *B_default;
 
   KTEST_BEGIN("proc_signal_allowed(): allowed if euid matches ruid");
-  A = A_default; B = B_default;
   A.euid = B.ruid;
 
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
@@ -309,7 +301,7 @@ static void signal_allowed_test(void) {
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
 
   KTEST_BEGIN("proc_signal_allowed(): allowed if ruid matches suid");
-  A = A_default; B = B_default;
+  A = *A_default; B = *B_default;
   A.ruid = B.suid;
 
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
@@ -317,7 +309,7 @@ static void signal_allowed_test(void) {
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
 
   KTEST_BEGIN("proc_signal_allowed(): allowed if euid matches suid");
-  A = A_default; B = B_default;
+  A = *A_default; B = *B_default;
   A.euid = B.suid;
 
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
@@ -325,8 +317,45 @@ static void signal_allowed_test(void) {
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
 }
 
-static void signal_allowed_testB(void) {
-  process_t A, B, A_default, B_default;
+static void signal_allowed_test3(process_t* A_default, process_t* B_default) {
+  process_t A = *A_default, B = *B_default;
+
+  KTEST_BEGIN("proc_signal_allowed(): NOT allowed if nothing matches");
+  A = *A_default; B = *B_default;
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGUSR1));
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
+
+  KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if suid matches ruid");
+  A = *A_default; B = *B_default;
+  A.suid = B.ruid;
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
+
+  KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if suid matches euid");
+  A = *A_default; B = *B_default;
+  A.suid = B.euid;
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
+
+  KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if suid matches suid");
+  A = *A_default; B = *B_default;
+  A.suid = B.suid;
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
+
+  KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if gids match");
+  A = *A_default; B = *B_default;
+  A.rgid = B.rgid;
+  A.egid = B.egid;
+  A.sgid = B.sgid;
+
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGUSR1));
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
+}
+
+static void signal_allowed_tests(void) {
+  process_t A_default, B_default;
 
   A_default.ruid = 1001; A_default.rgid = 2001;
   A_default.euid = 1002; A_default.egid = 2002;
@@ -337,39 +366,9 @@ static void signal_allowed_testB(void) {
 
   A_default.pgroup = B_default.pgroup = proc_current()->pgroup;
 
-
-  KTEST_BEGIN("proc_signal_allowed(): NOT allowed if nothing matches");
-  A = A_default; B = B_default;
-  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
-  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGUSR1));
-  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
-  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
-
-  KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if suid matches ruid");
-  A = A_default; B = B_default;
-  A.suid = B.ruid;
-  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
-
-  KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if suid matches euid");
-  A = A_default; B = B_default;
-  A.suid = B.euid;
-  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
-
-  KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if suid matches suid");
-  A = A_default; B = B_default;
-  A.suid = B.suid;
-  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
-
-  KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if gids match");
-  A = A_default; B = B_default;
-  A.rgid = B.rgid;
-  A.egid = B.egid;
-  A.sgid = B.sgid;
-
-  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
-  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGUSR1));
-  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
-  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
+  signal_allowed_test1(&A_default, &B_default);
+  signal_allowed_test2(&A_default, &B_default);
+  signal_allowed_test3(&A_default, &B_default);
 }
 
 // Child process that sleeps then exits, to let us test if signals were
@@ -1357,8 +1356,7 @@ void signal_test(void) {
   kill_test();
   sigaction_test();
 
-  signal_allowed_test();
-  signal_allowed_testB();
+  signal_allowed_tests();
   signal_permission_test();
 
   signal_send_to_pgroup_test();
