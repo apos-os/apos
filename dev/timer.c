@@ -24,6 +24,7 @@
 #include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
+#include "proc/defint_timer.h"
 #include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
 #include "proc/spinlock.h"
@@ -119,6 +120,8 @@ static void internal_timer_handler(void* arg) {
 #endif
     kfree(timer);
   }
+
+  defint_timer_run(now);
 
   sched_tick();
 }
