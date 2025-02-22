@@ -16,6 +16,7 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "common/list.h"
 #include "proc/process.h"
 
 // Process groups.  Each element of the table is a list of processes in that
@@ -96,8 +97,8 @@ void setpgid_force(process_t* proc, kpid_t pgid, proc_group_t* pgroup) {
   }
 
   // Remove the process from its current group and add it to the new one.
-  list_remove(&proc_group_get(proc->pgroup)->procs, &proc->pgroup_link);
-  list_push(&pgroup->procs, &proc->pgroup_link);
+  proc_group_remove(proc_group_get(proc->pgroup), proc);
+  proc_group_add(pgroup, proc);
   proc->pgroup = pgid;
 }
 
@@ -106,4 +107,39 @@ proc_group_t* proc_group_get(kpid_t gid) {
     return NULL;
   else
     return &g_proc_group_table[gid];
+}
+
+void proc_group_add(proc_group_t* group, process_t* proc) {
+  KASSERT(group->num_procs >= 0);
+  // KASSERT_DBG(group->num_procs == list_size(&group->procs));
+  list_push(&group->procs, &proc->pgroup_link);
+  group->num_procs++;
+}
+
+void proc_group_remove(proc_group_t* group, process_t* proc) {
+  KASSERT(group->num_procs > 0);
+  // KASSERT_DBG(group->num_procs == list_size(&group->procs));
+  KASSERT_DBG(list_link_on_list(&group->procs, &proc->pgroup_link));
+  list_remove(&group->procs, &proc->pgroup_link);
+  group->num_procs--;
+}
+
+int proc_group_snapshot(const proc_group_t* group, process_t*** procs_out) {
+  if (group->num_procs == 0) {
+    *procs_out = NULL;
+    return 0;
+  }
+
+  process_t** procs =
+      (process_t**)kmalloc(sizeof(process_t*) * group->num_procs);
+  KASSERT(procs != NULL);
+  int i = 0;
+  FOR_EACH_LIST(iter, &group->procs) {
+    procs[i] = LIST_ENTRY(iter, process_t, pgroup_link);
+    refcount_inc(&procs[i]->refcount);
+    i++;
+  }
+  KASSERT(i == group->num_procs);
+  *procs_out = procs;
+  return group->num_procs;
 }

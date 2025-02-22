@@ -84,8 +84,7 @@ int proc_fork(proc_func_t start, void* arg) {
   new_process->umask = proc_current()->umask;
 
   new_process->pgroup = proc_current()->pgroup;
-  list_push(&proc_group_get(new_process->pgroup)->procs,
-            &new_process->pgroup_link);
+  proc_group_add(proc_group_get(new_process->pgroup), new_process);
 
   for (int i = 0; i < APOS_RLIMIT_NUM_RESOURCES; ++i) {
     new_process->limits[i] = proc_current()->limits[i];

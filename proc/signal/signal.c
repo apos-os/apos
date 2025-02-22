@@ -177,11 +177,17 @@ int proc_force_signal_group(kpid_t pgid, int sig) {
     return -EINVAL;
   }
 
+  process_t** group_procs = NULL;
+  int num_procs = proc_group_snapshot(pgroup, &group_procs);
   int result = 0;
-  for (list_link_t* link = pgroup->procs.head; link != 0x0; link = link->next) {
-    result =
-        proc_force_signal(container_of(link, process_t, pgroup_link), sig);
-    if (result) break;
+  if (num_procs > 0) {
+    for (int i = 0; i < num_procs; ++i) {
+      if (result == 0) {
+        result = proc_force_signal(group_procs[i], sig);
+      }
+      proc_put(group_procs[i]);
+    }
+    kfree(group_procs);
   }
 
   POP_INTERRUPTS();
@@ -237,13 +243,17 @@ int proc_kill(kpid_t pid, int sig) {
       return -ESRCH;
     }
 
+    process_t** group_procs = NULL;
+    int num_procs = proc_group_snapshot(pgroup, &group_procs);
     int num_signalled = 0;
-    for (list_link_t* link = pgroup->procs.head; link != 0x0;
-         link = link->next) {
-      int result =
-          proc_kill_one(container_of(link, process_t, pgroup_link), sig);
-      KASSERT_DBG(result == 0 || result == -EPERM);
-      if (result == 0) num_signalled++;
+    if (num_procs > 0) {
+      for (int i = 0; i < num_procs; ++i) {
+        int result = proc_kill_one(group_procs[i], sig);
+        KASSERT_DBG(result == 0 || result == -EPERM);
+        if (result == 0) num_signalled++;
+        proc_put(group_procs[i]);
+      }
+      kfree(group_procs);
     }
     return (num_signalled > 0) ? 0 : -EPERM;
   } else {

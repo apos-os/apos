@@ -136,6 +136,7 @@ void proc_init_stage1(void) {
     g_proc_table[i] = 0x0;
 
     proc_group_t* pgroup = proc_group_get(i);
+    pgroup->num_procs = 0;
     pgroup->procs = LIST_INIT;
     pgroup->session = -1;
 
@@ -155,7 +156,7 @@ void proc_init_stage1(void) {
   g_proc_table[0]->rgid = g_proc_table[0]->egid = g_proc_table[0]->sgid =
       SUPERUSER_GID;
   g_proc_table[0]->pgroup = 0;
-  list_push(&proc_group_get(0)->procs, &g_proc_table[0]->pgroup_link);
+  proc_group_add(proc_group_get(0), g_proc_table[0]);
   proc_group_get(0)->session = 0;
   g_current_proc = 0;
 

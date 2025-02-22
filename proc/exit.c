@@ -114,7 +114,7 @@ void proc_finish_exit(void) {
   proc_alarm_ms(0);
 
   // Remove it from the process group list.
-  list_remove(&proc_group_get(p->pgroup)->procs, &p->pgroup_link);
+  proc_group_remove(proc_group_get(p->pgroup), p);
 
   // Move any pending children to the root process.
   process_t* const root_process = proc_get(0);

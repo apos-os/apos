@@ -21,6 +21,9 @@
 #include "user/include/apos/posix_types.h"
 
 typedef struct {
+  // Number of processes in the group.
+  int num_procs;
+
   // The processes in the group.
   list_t procs;
 
@@ -44,5 +47,18 @@ void setpgid_force(process_t* proc, kpid_t pgid, proc_group_t* pgroup);
 
 // Return the process group with the given ID.
 proc_group_t* proc_group_get(kpid_t gid);
+
+// Add or remove a process from the given process group.
+void proc_group_add(proc_group_t* group, process_t* proc);
+void proc_group_remove(proc_group_t* group, process_t* proc);
+
+// Atomically snapshots the given process group into an array.  This allows
+// other operations (such as sending signals) to happen concurrently with
+// process group modifications.
+//
+// Returns the number of processes in the array, and puts the array into
+// |procs_out|.  If the result is > 0, the caller MUST both (a) call proc_put()
+// on each entry, then (b) free the array.
+int proc_group_snapshot(const proc_group_t* group, process_t*** procs_out);
 
 #endif
