@@ -42,12 +42,15 @@ int tty_get_fd(int fd, bool require_ctty, tty_t** tty) {
 }
 
 int tty_check_read(const tty_t* tty) {
+  const process_t* me = proc_current();
+  const proc_group_t* my_pgroup = proc_group_get(me->pgroup);
+  const proc_session_t* tty_session = proc_session_get(tty->session);
   int result = 0;
-  if (tty->session == proc_getsid(0) &&
-      getpgid(0) != proc_session_get(tty->session)->fggrp) {
+  if (tty->session == my_pgroup->session && me->pgroup != tty_session->fggrp) {
     result = -EIO;
+    // TODO(aoates): this should be a process-wide check, not a thread one.
     if (proc_signal_deliverable(kthread_current_thread(), SIGTTIN)) {
-      proc_force_signal_group(getpgid(0), SIGTTIN);
+      proc_force_signal_group(me->pgroup, SIGTTIN);
       result = -EINTR;
     }
   }
@@ -56,18 +59,21 @@ int tty_check_read(const tty_t* tty) {
 }
 
 int tty_check_write(const tty_t* tty) {
-  ksid_t sid = proc_getsid(0);
-  if (tty->session != sid) {
+  const process_t* me = proc_current();
+  const proc_group_t* my_pgroup = proc_group_get(me->pgroup);
+
+  if (tty->session != my_pgroup->session) {
     return 0;
   }
+  const proc_session_t* session = proc_session_get(tty->session);
 
   // TODO(aoates): check if the process group is orphaned and SIGTTOU isn't
   // blocked or ignored, and return EIO.
 
-  const kpid_t my_pgid = getpgid(0);
-  if (my_pgid != proc_session_get(sid)->fggrp) {
+  if (me->pgroup != session->fggrp) {
+    // TODO(aoates): this should be a process-wide check, not a thread one.
     if (proc_signal_deliverable(kthread_current_thread(), SIGTTOU)) {
-      proc_force_signal_group(my_pgid, SIGTTOU);
+      proc_force_signal_group(me->pgroup, SIGTTOU);
       return -EINTR;
     }
   }
