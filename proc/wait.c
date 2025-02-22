@@ -56,18 +56,19 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
   if ((options & ~WUNTRACED & ~WCONTINUED & ~WNOHANG) != 0) return -EINVAL;
 
   process_t* const p = proc_current();
-  if (pid == 0) pid = -p->pgroup;
 
   // Look for an existing zombie child.
   process_t* zombie = 0x0;
   while (!zombie) {
+    // We re-check the current pgroup each time we sleep, in case it changes.
+    kpid_t search_pid = (pid == 0) ? -p->pgroup : pid;
     bool found_matching_child = false;
     list_link_t* child_link = p->children_list.head;
     while (child_link) {
       process_t* const child_process = container_of(child_link, process_t,
                                                     children_link);
       KASSERT(child_process->parent == p);
-      if (matches_pid(child_process, pid)) {
+      if (matches_pid(child_process, search_pid)) {
         found_matching_child = true;
         if (eligable_wait(child_process, options)) {
           zombie = child_process;
