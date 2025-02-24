@@ -246,12 +246,12 @@ void proc_put(process_t* proc) {
   }
 }
 
-void proc_set_current(process_t* process) {
+void proc_set_current(process_t* process) NO_THREAD_SAFETY_ANALYSIS {
   KASSERT_MSG(process->id >= 0 && process->id < PROC_MAX_PROCS,
               "bad process ID: %d", process->id);
-  kspin_lock(&g_proc_table_lock);
+  // No need to lock the table lock, there is no data race so long as the
+  // process table is valid.
   KASSERT(g_proc_table[process->id] == process);
-  kspin_unlock(&g_proc_table_lock);
   g_current_proc = process->id;
 }
 
