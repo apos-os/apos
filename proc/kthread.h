@@ -40,6 +40,9 @@ typedef struct kthread_data* kthread_t;
 // Initialize the kthreads package.
 void kthread_init(void);
 
+// Return a handle to the currently running thread.
+kthread_t kthread_current_thread(void);
+
 // Create a new thread.  The new thread will start in start_routine, with arg
 // passed.  The new thread is NOT automatically made runnable --- you must call
 // scheduler_make_runnable(...) on it after creation if you want it to run.

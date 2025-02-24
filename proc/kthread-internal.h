@@ -122,9 +122,6 @@ typedef struct kthread_data kthread_data_t;
 // cleaned up when they exit.
 void kthread_destroy(kthread_t thread);
 
-// Return a handle to the currently running thread.
-kthread_t kthread_current_thread(void);
-
 // Explicitly switch execution to another thread.
 void kthread_switch(kthread_t new_thread);
 
