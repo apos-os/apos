@@ -30,6 +30,7 @@
 
 #include "arch/proc/user_context.h"
 #include "common/types.h"
+#include "proc/group.h"
 #include "proc/process.h"
 #include "syscall/context.h"
 #include "user/include/apos/posix_signal.h"
@@ -62,7 +63,9 @@ bool proc_signal_deliverable(kthread_t thread, int signum);
 int proc_force_signal(process_t* proc, int sig);
 
 // As above, but sends a signal to every process in the given group.
-int proc_force_signal_group(kpid_t pgid, int sig);
+int proc_force_signal_group(kpid_t pgid, int sig) EXCLUDES(g_proc_table_lock);
+int proc_force_signal_group_locked(const proc_group_t* pgroup, int sig)
+    REQUIRES(g_proc_table_lock);
 
 // As above, but forces the signal to be handled on the given thread.  Returns 0
 // on success, or -errno on error.
@@ -70,8 +73,8 @@ int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig);
 
 // Send a signal to the given process, as per kill(2).  Returns 0 on success, or
 // -errno on error.
-int proc_kill(kpid_t pid, int sig);
-int proc_kill_thread(kthread_t thread, int sig);
+int proc_kill(kpid_t pid, int sig) EXCLUDES(g_proc_table_lock);
+int proc_kill_thread(kthread_t thread, int sig) EXCLUDES(g_proc_table_lock);
 
 // Examine and/or change a signal action, as per sigaction(2).  Returns 0 on
 // success, or -errno on error.
@@ -127,6 +130,7 @@ int proc_sigreturn(const ksigset_t* old_mask, const user_context_t* context,
                    const syscall_context_t* syscall_ctx);
 
 // Returns 1 if process A can send the given signal to process C.
-int proc_signal_allowed(const process_t* A, const process_t* B, int signal);
+int proc_signal_allowed(const process_t* A, const process_t* B, int signal)
+  EXCLUDES(g_proc_table_lock);
 
 #endif

@@ -25,6 +25,7 @@
 #include "proc/scheduler.h"
 #include "proc/session.h"
 #include "proc/signal/signal.h"
+#include "proc/spinlock.h"
 #include "vfs/vfs.h"
 
 void proc_exit(int status) {
@@ -88,12 +89,22 @@ void proc_finish_exit(void) {
     p->cwd = 0x0;
   }
 
-  const ksid_t sid = proc_getsid(0);
-  if (sid == p->id) {  // Controlling process/session leader.
-    proc_session_t* session = proc_session_get(sid);
+  // TODO(aoates): if this is orphaning a process group, send SIGHUP to it.
+
+  // Note: the vm_area_t list is torn down in the parent in proc_wait, NOT here.
+
+  // Cancel any outstanding alarms.
+  proc_alarm_ms(0);
+
+  kspin_lock(&g_proc_table_lock);
+  const proc_group_t* my_pgroup = proc_group_get(p->pgroup);
+  if (my_pgroup->session == p->id) {  // Controlling process/session leader.
+    proc_session_t* session = proc_session_get(my_pgroup->session);
+    KASSERT_DBG(p->pgroup == p->id);
     if (session->ctty != PROC_SESSION_NO_CTTY) {
       if (session->fggrp >= 0) {
-        proc_force_signal_group(session->fggrp, SIGHUP);
+        const proc_group_t* fggrp = proc_group_get(session->fggrp);
+        proc_force_signal_group_locked(fggrp, SIGHUP);
       }
 
       tty_t* tty = tty_get(kmakedev(DEVICE_MAJOR_TTY, session->ctty));
@@ -106,15 +117,9 @@ void proc_finish_exit(void) {
     }
   }
 
-  // TODO(aoates): if this is orphaning a process group, send SIGHUP to it.
-
-  // Note: the vm_area_t list is torn down in the parent in proc_wait, NOT here.
-
-  // Cancel any outstanding alarms.
-  proc_alarm_ms(0);
-
   // Remove it from the process group list.
   proc_group_remove(proc_group_get(p->pgroup), p);
+  kspin_unlock(&g_proc_table_lock);
 
   // Move any pending children to the root process.
   process_t* const root_process = proc_get(0);

@@ -83,8 +83,10 @@ int proc_fork(proc_func_t start, void* arg) {
 
   new_process->umask = proc_current()->umask;
 
+  kspin_lock(&g_proc_table_lock);
   new_process->pgroup = proc_current()->pgroup;
   proc_group_add(proc_group_get(new_process->pgroup), new_process);
+  kspin_unlock(&g_proc_table_lock);
 
   for (int i = 0; i < APOS_RLIMIT_NUM_RESOURCES; ++i) {
     new_process->limits[i] = proc_current()->limits[i];

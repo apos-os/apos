@@ -136,6 +136,9 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   }
 
   char* tbuf = kmalloc(1024);
+  kspin_lock(&g_proc_table_lock);
+  int pgroup = proc->pgroup;
+  kspin_unlock(&g_proc_table_lock);
   ksprintf(tbuf,
            "pid: %d\n"
            "state: %s\n"
@@ -151,7 +154,7 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
            "",
            pid, proc_state_to_string(proc->state),
            proc->parent ? proc->parent->id : -1, cwd, proc->ruid, proc->rgid,
-           proc->euid, proc->egid, proc->suid, proc->sgid, proc->pgroup,
+           proc->euid, proc->egid, proc->suid, proc->sgid, pgroup,
            proc->execed, proc->user_arch);
   char* buf_ptr = tbuf + kstrlen(tbuf);
   for (list_link_t* link = proc->children_list.head;

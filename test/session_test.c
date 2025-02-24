@@ -87,6 +87,22 @@ static void child_set_pgid(void* arg) {
   KEXPECT_EQ(-EPERM, setpgid(0, target_pgroup));
 }
 
+static ksid_t get_pgroup_session(kpid_t pgroup) EXCLUDES(g_proc_table_lock) {
+  kspin_lock(&g_proc_table_lock);
+  ksid_t session = proc_group_get(pgroup)->session;
+  kspin_unlock(&g_proc_table_lock);
+  return session;
+}
+
+static int get_my_ctty(void) {
+  kspin_lock(&g_proc_table_lock);
+  proc_session_t* session =
+      proc_session_get(proc_getsid_locked(proc_current()));
+  int ctty = session->ctty;
+  kspin_unlock(&g_proc_table_lock);
+  return ctty;
+}
+
 static void set_pgid_across_sessions_test(void* arg) {
   const ksid_t orig_session = proc_getsid(0);
   const kpid_t orig_pgroup = getpgid(0);
@@ -95,7 +111,7 @@ static void set_pgid_across_sessions_test(void* arg) {
   kpid_t child = proc_fork(&child_set_pgid, (void*)(intptr_t)orig_pgroup);
   KEXPECT_EQ(-EPERM, setpgid(child, orig_pgroup));
   KEXPECT_EQ(child, proc_wait(NULL));
-  KEXPECT_EQ(orig_session, proc_group_get(orig_pgroup)->session);
+  KEXPECT_EQ(orig_session, get_pgroup_session(orig_pgroup));
 }
 
 static void change_user(void* arg) {
@@ -142,16 +158,22 @@ static void do_session_test(void* arg) {
 
 
   KTEST_BEGIN("setsid() basic");
+  kspin_lock(&g_proc_table_lock);
   KEXPECT_NE(proc_current()->id, proc_current()->pgroup);
+  kspin_unlock(&g_proc_table_lock);
+
   KEXPECT_EQ(proc_current()->id, proc_setsid());
+  kspin_lock(&g_proc_table_lock);
   KEXPECT_EQ(proc_current()->id, proc_current()->pgroup);
+  kspin_unlock(&g_proc_table_lock);
+
   KEXPECT_EQ(proc_current()->id, getpgid(0));
-  KEXPECT_EQ(proc_current()->id,
-             proc_group_get(proc_current()->pgroup)->session);
+  KEXPECT_EQ(proc_current()->id, get_pgroup_session(getpgid(0)));
+
   KEXPECT_EQ(proc_current()->id, proc_getsid(0));
   KEXPECT_EQ(proc_current()->id, proc_getsid(proc_current()->id));
 
-  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(PROC_SESSION_NO_CTTY, get_my_ctty());
 
   KTEST_BEGIN("setsid() fails if already process group leader");
   KEXPECT_EQ(-EPERM, proc_setsid());
@@ -193,7 +215,11 @@ static void do_session_test(void* arg) {
   for (int i = 0; i < 10 && !wait; ++i) scheduler_yield();
   KEXPECT_EQ(-EPERM, setpgid(child, child));
   KEXPECT_EQ(-EPERM, setpgid(child, proc_current()->id));
-  KEXPECT_EQ(child, proc_get(child)->pgroup);
+  KEXPECT_EQ(-EPERM, getpgid(child));
+  process_t* child_proc = proc_get(child);
+  kspin_lock(&g_proc_table_lock);
+  KEXPECT_EQ(child, child_proc->pgroup);
+  kspin_unlock(&g_proc_table_lock);
   KEXPECT_EQ(0, proc_kill(child, SIGKILL));
   KEXPECT_EQ(child, proc_wait(NULL));
 
@@ -216,12 +242,14 @@ static void do_session_test(void* arg) {
 
   KTEST_BEGIN("setpgid(): on another process updates session");
   child = proc_fork(&do_nothing, NULL);
+  kspin_lock(&g_proc_table_lock);
   KASSERT(list_empty(&proc_group_get(child)->procs));
   proc_group_get(child)->session = PROC_MAX_PROCS - 1;
+  kspin_unlock(&g_proc_table_lock);
 
   KEXPECT_EQ(0, setpgid(child, 0));
   KEXPECT_EQ(child, getpgid(child));
-  KEXPECT_EQ(proc_current()->id, proc_group_get(child)->session);
+  KEXPECT_EQ(proc_current()->id, get_pgroup_session(child));
 
   KEXPECT_EQ(child, proc_wait(NULL));
 
@@ -243,7 +271,7 @@ static int open_tty(apos_dev_t test_tty, int flags) {
 // Helper for the below.  Create a new session and open the given TTY.
 static int setsid_and_open_tty(apos_dev_t test_tty) {
   KEXPECT_EQ(proc_current()->id, proc_setsid());
-  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(PROC_SESSION_NO_CTTY, get_my_ctty());
 
   return open_tty(test_tty, 0);
 }
@@ -254,7 +282,7 @@ static void do_open_ctty(void* arg) {
   KEXPECT_EQ(-1, tty_get(test_tty)->session);
   setsid_and_open_tty(test_tty);
 
-  KEXPECT_EQ(kminor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(kminor(test_tty), get_my_ctty());
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
 }
 
@@ -263,7 +291,7 @@ static void open_tty_shouldnt_set_ctty(void* arg) {
   const ksid_t orig_tty_session = tty_get(test_tty)->session;
   setsid_and_open_tty(test_tty);
 
-  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(PROC_SESSION_NO_CTTY, get_my_ctty());
   KEXPECT_EQ(orig_tty_session, tty_get(test_tty)->session);
 }
 
@@ -273,13 +301,13 @@ static void do_open_another_ctty_test(void* arg) {
   KEXPECT_EQ(-1, tty_get(test_tty)->session);
   setsid_and_open_tty(test_tty);
 
-  KEXPECT_EQ(kminor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(kminor(test_tty), get_my_ctty());
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
 
   kpid_t child = proc_fork(&open_tty_shouldnt_set_ctty, arg);
   KEXPECT_EQ(child, proc_wait(NULL));
 
-  KEXPECT_EQ(kminor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(kminor(test_tty), get_my_ctty());
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
 }
 
@@ -293,7 +321,7 @@ static void open_second_tty(void* arg) {
 
   open_tty(test_tty2, 0);
 
-  KEXPECT_EQ(kminor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(kminor(test_tty), get_my_ctty());
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
   KEXPECT_EQ(-1, tty_get(test_tty2)->session);
 
@@ -316,7 +344,7 @@ static void non_leader_exit_doesnt_release_ctty(void* arg) {
   child = proc_fork(&open_tty_subproc, arg);
   KEXPECT_EQ(child, proc_wait(NULL));
 
-  KEXPECT_EQ(kminor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(kminor(test_tty), get_my_ctty());
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
 }
 
@@ -326,7 +354,7 @@ static void non_leader_open_doesnt_set_ctty(void* arg) {
   kpid_t child = proc_fork(&open_tty_subproc, arg);
   KEXPECT_EQ(child, proc_wait(NULL));
 
-  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(PROC_SESSION_NO_CTTY, get_my_ctty());
   KEXPECT_EQ(-1, tty_get((intptr_t)arg)->session);
 }
 
@@ -334,12 +362,12 @@ static void no_ctty_flag(void* arg) {
   KTEST_BEGIN("open(O_NOCTTY) doesn't set the CTTY");
   KEXPECT_EQ(proc_current()->id, proc_setsid());
 
-  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(PROC_SESSION_NO_CTTY, get_my_ctty());
   KEXPECT_EQ(-1, tty_get((intptr_t)arg)->session);
 
   open_tty((intptr_t)arg, VFS_O_NOCTTY);
 
-  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(PROC_SESSION_NO_CTTY, get_my_ctty());
   KEXPECT_EQ(-1, tty_get((intptr_t)arg)->session);
 }
 
@@ -395,7 +423,7 @@ static void tcsetpgrp_test_inner(void* arg) {
   KTEST_BEGIN("tcsetpgrp(): no controlling terminal");
   KEXPECT_EQ(proc_current()->id, proc_setsid());
   int fd = vfs_open(tty_name, VFS_O_RDONLY | VFS_O_NOCTTY);
-  KEXPECT_EQ(-ENOTTY, proc_tcsetpgrp(fd, proc_current()->pgroup));
+  KEXPECT_EQ(-ENOTTY, proc_tcsetpgrp(fd, getpgid(0)));
 
   KTEST_BEGIN("tcgetpgrp(): no controlling terminal");
   KEXPECT_EQ(-ENOTTY, proc_tcgetpgrp(fd));
@@ -540,10 +568,11 @@ static void tcsetpgrp_test_inner(void* arg) {
   KTEST_BEGIN("tcsetpgrp(): bad file descriptor");
   fd = vfs_open(tty_name, VFS_O_RDONLY | VFS_O_NOCTTY);
   vfs_close(fd);
-  KEXPECT_EQ(-EBADF, proc_tcsetpgrp(-5, proc_current()->pgroup));
-  KEXPECT_EQ(-EBADF, proc_tcsetpgrp(PROC_MAX_FDS, proc_current()->pgroup));
-  KEXPECT_EQ(-EBADF, proc_tcsetpgrp(PROC_MAX_FDS + 1, proc_current()->pgroup));
-  KEXPECT_EQ(-EBADF, proc_tcsetpgrp(fd, proc_current()->pgroup));
+  kpid_t pgroup = getpgid(0);
+  KEXPECT_EQ(-EBADF, proc_tcsetpgrp(-5, pgroup));
+  KEXPECT_EQ(-EBADF, proc_tcsetpgrp(PROC_MAX_FDS, pgroup));
+  KEXPECT_EQ(-EBADF, proc_tcsetpgrp(PROC_MAX_FDS + 1, pgroup));
+  KEXPECT_EQ(-EBADF, proc_tcsetpgrp(fd, pgroup));
 
   KTEST_BEGIN("tcgetpgrp(): bad file descriptor");
   KEXPECT_EQ(-EBADF, proc_tcgetpgrp(-5));

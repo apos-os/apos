@@ -24,6 +24,7 @@
 #include "proc/group.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
+#include "proc/spinlock.h"
 #include "proc/user.h"
 #include "proc/user_prepare.h"
 #include "user/include/apos/syscalls.h"
@@ -168,16 +169,26 @@ int proc_force_signal(process_t* proc, int sig) {
 }
 
 int proc_force_signal_group(kpid_t pgid, int sig) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock(&g_proc_table_lock);
   proc_group_t* pgroup = proc_group_get(pgid);
   if (!pgroup) {
     klogfm(KL_PROC, DFATAL, "invalid pgid in proc_force_signal_group(): %d\n",
            pgid);
-    POP_INTERRUPTS();
+    kspin_unlock(&g_proc_table_lock);
     return -EINVAL;
   }
 
+  int result = proc_force_signal_group_locked(pgroup, sig);
+  kspin_unlock(&g_proc_table_lock);
+  return result;
+}
+
+int proc_force_signal_group_locked(const proc_group_t* pgroup, int sig) {
+  kspin_assert_is_held(&g_proc_table_lock);
+
   process_t** group_procs = NULL;
+  // TODO(aoates): split this out into two steps the callers must use, so that
+  // proc_force_signal() can be called without the task list lock held.
   int num_procs = proc_group_snapshot(pgroup, &group_procs);
   int result = 0;
   if (num_procs > 0) {
@@ -190,7 +201,6 @@ int proc_force_signal_group(kpid_t pgid, int sig) {
     kfree(group_procs);
   }
 
-  POP_INTERRUPTS();
   return result;
 }
 
@@ -204,7 +214,7 @@ int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig) {
   return 0;
 }
 
-static int proc_kill_one(process_t* proc, int sig) {
+static int proc_kill_one(process_t* proc, int sig) EXCLUDES(g_proc_table_lock) {
   if (!proc || (proc->state != PROC_RUNNING && proc->state != PROC_STOPPED &&
                 proc->state != PROC_ZOMBIE)) {
     return -ESRCH;
@@ -230,21 +240,28 @@ int proc_kill(kpid_t pid, int sig) {
     for (kpid_t pid = 2; pid < PROC_MAX_PROCS; pid++) {
       process_t* proc = proc_get_ref(pid);
       if (proc) {
+        // TODO(aoates): this should ignore the current process.  Confirm it.
         proc_kill_one(proc, sig);
         proc_put(proc);
       }
     }
     return 0;
   } else if (pid <= 0) {
+    // Find and snapshot the group we're sending to.
+    kspin_lock(&g_proc_table_lock);
     if (pid == 0) pid = -proc_current()->pgroup;
 
     const proc_group_t* pgroup = proc_group_get(-pid);
     if (!pgroup || list_empty(&pgroup->procs)) {
+      kspin_unlock(&g_proc_table_lock);
       return -ESRCH;
     }
 
     process_t** group_procs = NULL;
     int num_procs = proc_group_snapshot(pgroup, &group_procs);
+    kspin_unlock(&g_proc_table_lock);
+
+    // Send the signal.
     int num_signalled = 0;
     if (num_procs > 0) {
       for (int i = 0; i < num_procs; ++i) {
@@ -595,12 +612,15 @@ int proc_signal_allowed(const process_t* A, const process_t* B, int signal) {
   // SIGAPOSTKILL is never allowed to be sent (except internally, to a specific
   // thread, which bypasses this check).
   if (signal == SIGAPOSTKILL) return 0;
-  return (proc_is_superuser(A) ||
-          A->ruid == B->ruid ||
-          A->euid == B->ruid ||
-          A->ruid == B->suid ||
-          A->euid == B->suid ||
-          (proc_group_get(A->pgroup)->session ==
-           proc_group_get(B->pgroup)->session &&
-           signal == SIGCONT));
+  kspin_lock(&g_proc_table_lock);
+  int result = (proc_is_superuser(A) ||
+                A->ruid == B->ruid ||
+                A->euid == B->ruid ||
+                A->ruid == B->suid ||
+                A->euid == B->suid ||
+                (proc_group_get(A->pgroup)->session ==
+                 proc_group_get(B->pgroup)->session &&
+                 signal == SIGCONT));
+  kspin_unlock(&g_proc_table_lock);
+  return result;
 }

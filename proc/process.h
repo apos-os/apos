@@ -24,6 +24,7 @@
 #include "proc/kthread.h"
 #include "proc/load/load.h"
 #include "proc/pmutex.h"
+#include "proc/spinlock.h"
 #include "user/include/apos/posix_signal.h"
 #include "user/include/apos/resource.h"
 #include "vfs/file.h"
@@ -31,6 +32,9 @@
 #define PROC_MAX_PROCS 256
 #define PROC_MAX_FDS 32
 #define PROC_UNUSED_FD -1
+
+// Lock that protects the process table, process group table, and session table.
+extern kspinlock_t g_proc_table_lock;
 
 struct vnode;
 
@@ -85,7 +89,7 @@ struct process {
   kgid_t sgid;
 
   // The current process group.
-  kpid_t pgroup;
+  kpid_t pgroup GUARDED_BY(g_proc_table_lock);
 
   // Link on the process group list.
   list_link_t pgroup_link;
@@ -144,11 +148,11 @@ process_t* proc_current(void);
 // Return the process_t with the given ID, or NULL if there is none.  Does not
 // increment the refcount, and should only be used by code that knows the
 // process will continue to live (such a single-threaded test code).
-process_t* proc_get(kpid_t id);
+process_t* proc_get(kpid_t id) EXCLUDES(g_proc_table_lock);
 
 // As above, but adds a refcount to the process --- the caller must call
 // proc_put() on it later.
-process_t* proc_get_ref(kpid_t id);
+process_t* proc_get_ref(kpid_t id) EXCLUDES(g_proc_table_lock);
 
 void proc_put(process_t* proc);
 

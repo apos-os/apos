@@ -289,14 +289,18 @@ void ld_provide(ld_t* l, char c) {
     if (signal != APOS_SIGNULL) {
       const tty_t* tty = tty_get(l->tty);
       KASSERT_DBG(tty != NULL);
+      kspin_lock(&g_proc_table_lock);
       if (tty->session >= 0) {
         const proc_session_t* session = proc_session_get(tty->session);
         KASSERT_DBG(session->ctty == (int)kminor(l->tty));
+
         if (session->fggrp >= 0) {
-          int result = proc_force_signal_group(session->fggrp, signal);
+          proc_group_t* pgroup = proc_group_get(session->fggrp);
+          int result = proc_force_signal_group_locked(pgroup, signal);
           KASSERT_DBG(result == 0);
         }
       }
+      kspin_unlock(&g_proc_table_lock);
     }
   }
   ktcflag_t lflag = l->termios.c_lflag;

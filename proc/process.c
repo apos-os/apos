@@ -34,6 +34,7 @@
 #include "proc/scheduler.h"
 #include "proc/session.h"
 #include "proc/signal/signal.h"
+#include "proc/spinlock.h"
 #include "proc/user.h"
 
 #define PROC_DEFAULT_UMASK 022
@@ -43,20 +44,22 @@
 // area.
 static process_t g_first_process;
 
+// Global lock that protects the process table, process groups, and sessions.
+kspinlock_t g_proc_table_lock = KSPINLOCK_NORMAL_INIT_STATIC;
+
 // vm_area_t's representing the regions mapped for the kernel binary, and the
 // physically-mapped region, respectively.  They will be put in
 // g_first_process's memory map.
 static vm_area_t g_kernel_mapped_vm_area;
 static vm_area_t g_physical_mapped_vm_area[MEM_MAX_PHYS_MAPS];
 
-process_t* g_proc_table[PROC_MAX_PROCS];
+process_t* g_proc_table[PROC_MAX_PROCS] GUARDED_BY(g_proc_table_lock);
 static kpid_t g_current_proc = -1;
 static int g_proc_init_stage = 0;
-static uint32_t g_next_guid = 1;
+static uint32_t g_next_guid GUARDED_BY(g_proc_table_lock) = 1;
 
-static void proc_init_process(process_t* p) {
+static void proc_init_process(process_t* p) NO_THREAD_SAFETY_ANALYSIS {
   pmutex_init(&p->mu);
-  pmutex_constructor(&p->mu);
   p->refcount = REFCOUNT_INIT;
   p->guid = 0;
   p->id = -1;
@@ -98,22 +101,27 @@ static void proc_init_process(process_t* p) {
 }
 
 process_t* proc_alloc(void) {
+  process_t* proc = (process_t*)kmalloc(sizeof(process_t));
+  if (!proc) return 0x0;
+  proc_init_process(proc);
+
   int id = -1;
+  kspin_lock(&g_proc_table_lock);
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
     if (g_proc_table[i] == NULL && list_empty(&proc_group_get(i)->procs)) {
       id = i;
       break;
     }
   }
-  if (id < 0) return 0x0;
-
-  process_t* proc = (process_t*)kmalloc(sizeof(process_t));
-  if (!proc) return 0x0;
-
-  proc_init_process(proc);
+  if (id < 0) {
+    kspin_unlock(&g_proc_table_lock);
+    kfree(proc);
+    return 0x0;
+  }
   proc->guid = g_next_guid++;
   proc->id = id;
   g_proc_table[id] = proc;
+  kspin_unlock(&g_proc_table_lock);
   return proc;
 }
 
@@ -123,15 +131,19 @@ void proc_destroy(process_t* process) {
   KASSERT(list_empty(&process->threads));
   KASSERT(process->page_directory == 0x0);
   KASSERT(process->id > 0 && process->id < PROC_MAX_PROCS);
-  KASSERT(g_proc_table[process->id] == process);
 
+  kspin_lock(&g_proc_table_lock);
+  KASSERT(g_proc_table[process->id] == process);
   g_proc_table[process->id] = NULL;
+  kspin_unlock(&g_proc_table_lock);
+
   process->id = -1;
   kfree(process);
 }
 
 void proc_init_stage1(void) {
   KASSERT(g_proc_init_stage == 0);
+  kspin_constructor(&g_proc_table_lock);
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
     g_proc_table[i] = 0x0;
 
@@ -186,6 +198,7 @@ void proc_init_stage1(void) {
 void proc_init_stage2(void) {
   KASSERT(g_proc_init_stage == 1);
   KASSERT(g_current_proc == 0);
+  kspin_constructor(&g_proc_table_lock);
 
   // Create first process.
   list_push(&g_proc_table[0]->threads,
@@ -195,27 +208,36 @@ void proc_init_stage2(void) {
   g_proc_init_stage = 2;
 }
 
-process_t* proc_current(void) {
+process_t* proc_current(void) NO_THREAD_SAFETY_ANALYSIS {
   KASSERT(g_current_proc >= 0 && g_current_proc < PROC_MAX_PROCS);
   KASSERT(g_proc_init_stage >= 1);
   // TODO(aoates): consider a check here to verify raw kernel threads don't
   // reference process data (such as file descriptors).
+  // No need to lock the table lock, we know our reference is good.
   return g_proc_table[g_current_proc];
 }
 
 process_t* proc_get(kpid_t id) {
-  if (id < 0 || id >= PROC_MAX_PROCS)
-    return NULL;
-  else
-    return g_proc_table[id];
+  process_t* proc = proc_get_ref(id);
+  if (proc) {
+    KASSERT(refcount_get(&proc->refcount) > 1);
+    proc_put(proc);
+  }
+  return proc;
 }
 
 process_t* proc_get_ref(kpid_t id) {
-  process_t* p = proc_get(id);
-  if (p) {
-    refcount_inc(&p->refcount);
+  if (id < 0 || id >= PROC_MAX_PROCS) {
+    return NULL;
+  } else {
+    kspin_lock(&g_proc_table_lock);
+    process_t* p = g_proc_table[id];
+    if (p) {
+      refcount_inc(&p->refcount);
+    }
+    kspin_unlock(&g_proc_table_lock);
+    return p;
   }
-  return p;
 }
 
 void proc_put(process_t* proc) {
@@ -227,7 +249,9 @@ void proc_put(process_t* proc) {
 void proc_set_current(process_t* process) {
   KASSERT_MSG(process->id >= 0 && process->id < PROC_MAX_PROCS,
               "bad process ID: %d", process->id);
+  kspin_lock(&g_proc_table_lock);
   KASSERT(g_proc_table[process->id] == process);
+  kspin_unlock(&g_proc_table_lock);
   g_current_proc = process->id;
 }
 

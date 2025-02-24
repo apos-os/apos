@@ -18,10 +18,11 @@
 #include "common/kassert.h"
 #include "common/list.h"
 #include "proc/process.h"
+#include "proc/spinlock.h"
 
 // Process groups.  Each element of the table is a list of processes in that
 // group.
-proc_group_t g_proc_group_table[PROC_MAX_PROCS];
+proc_group_t g_proc_group_table[PROC_MAX_PROCS] GUARDED_BY(g_proc_table_lock);
 
 kpid_t getpgid(kpid_t pid) {
   if (pid < 0 || pid >= PROC_MAX_PROCS) {
@@ -32,13 +33,16 @@ kpid_t getpgid(kpid_t pid) {
     return -ESRCH;
   }
 
+  kspin_lock(&g_proc_table_lock);
   if (proc_group_get(proc->pgroup)->session !=
       proc_group_get(proc_current()->pgroup)->session) {
+    kspin_unlock(&g_proc_table_lock);
     if (pid != 0) proc_put(proc);
     return -EPERM;
   }
 
   kpid_t result = proc->pgroup;
+  kspin_unlock(&g_proc_table_lock);
   if (pid != 0) proc_put(proc);
   return result;
 }
@@ -57,14 +61,17 @@ int setpgid(kpid_t pid, kpid_t pgid) {
     return -ESRCH;
   }
 
+  kspin_lock(&g_proc_table_lock);
   proc_group_t* cur_pgroup = proc_group_get(proc->pgroup);
   if (cur_pgroup->session == proc->id) {  // Is session leader?
+    kspin_unlock(&g_proc_table_lock);
     proc_put(proc);
     return -EPERM;
   }
 
   proc_group_t* my_pgroup = proc_group_get(proc_current()->pgroup);
   if (cur_pgroup->session != my_pgroup->session) {
+    kspin_unlock(&g_proc_table_lock);
     proc_put(proc);
     return -EPERM;  // Child, but in a different session.
   }
@@ -72,16 +79,19 @@ int setpgid(kpid_t pid, kpid_t pgid) {
   proc_group_t* pgroup = proc_group_get(pgid);
   if (pgid != pid &&
       (list_empty(&pgroup->procs) || pgroup->session != my_pgroup->session)) {
+    kspin_unlock(&g_proc_table_lock);
     proc_put(proc);
     return -EPERM;
   }
 
   if (proc->parent == proc_current() && proc->execed) {
+    kspin_unlock(&g_proc_table_lock);
     proc_put(proc);
     return -EACCES;
   }
 
   setpgid_force(proc, pgid, pgroup);
+  kspin_unlock(&g_proc_table_lock);
   proc_put(proc);
   return 0;
 }
@@ -103,6 +113,9 @@ void setpgid_force(process_t* proc, kpid_t pgid, proc_group_t* pgroup) {
 }
 
 proc_group_t* proc_group_get(kpid_t gid) {
+  if (kthread_current_thread()) {
+    kspin_assert_is_held(&g_proc_table_lock);
+  }
   if (gid < 0 || gid >= PROC_MAX_PROCS)
     return NULL;
   else

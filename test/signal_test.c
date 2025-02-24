@@ -354,7 +354,7 @@ static void signal_allowed_test3(process_t* A_default, process_t* B_default) {
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
 }
 
-static void signal_allowed_tests(void) {
+static void signal_allowed_tests(void) NO_THREAD_SAFETY_ANALYSIS {
   process_t A_default, B_default;
 
   A_default.ruid = 1001; A_default.rgid = 2001;

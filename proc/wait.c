@@ -23,6 +23,7 @@
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/sleep.h"
+#include "proc/spinlock.h"
 #include "user/include/apos/wait.h"
 
 kpid_t proc_wait(int* exit_status) {
@@ -31,7 +32,8 @@ kpid_t proc_wait(int* exit_status) {
 
 // Returns true if the given process matches the pid (which has the semantics as
 // for waitpid()'s pid argument).
-static bool matches_pid(process_t* proc, kpid_t wait_pid) {
+static bool matches_pid(process_t* proc, kpid_t wait_pid)
+    REQUIRES(g_proc_table_lock) {
   KASSERT_DBG(proc->parent == proc_current());
   return (wait_pid == -1 || wait_pid == proc->id || wait_pid == -proc->pgroup);
 }
@@ -60,6 +62,7 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
   // Look for an existing zombie child.
   process_t* zombie = 0x0;
   while (!zombie) {
+    kspin_lock(&g_proc_table_lock);
     // We re-check the current pgroup each time we sleep, in case it changes.
     kpid_t search_pid = (pid == 0) ? -p->pgroup : pid;
     bool found_matching_child = false;
@@ -77,6 +80,7 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
       }
       child_link = child_link->next;
     }
+    kspin_unlock(&g_proc_table_lock);
 
     if (!found_matching_child) {
       return -ECHILD;

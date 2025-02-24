@@ -56,13 +56,19 @@ static void loop_until_done(void* arg) {
 }
 
 static int group_contains(kpid_t pgid, kpid_t pid) {
+  int result = 0;
+  kspin_lock(&g_proc_table_lock);
   for (list_link_t* link = proc_group_get(pgid)->procs.head;
        link != 0x0;
        link = link->next) {
     process_t* proc = container_of(link, process_t, pgroup_link);
-    if (proc->id == pid) return 1;
+    if (proc->id == pid) {
+      result = 1;
+      break;
+    }
   }
-  return 0;
+  kspin_unlock(&g_proc_table_lock);
+  return result;
 }
 
 static void basic_setgpid_test(void* arg) {
@@ -169,7 +175,14 @@ static void child_setgpid_test(void* arg) {
   KEXPECT_EQ(false, proc_get(child)->execed);
   proc_get(child)->execed = true;
   KEXPECT_EQ(-EACCES, setpgid(child, 0));
-  KEXPECT_EQ(proc_current()->pgroup, getpgid(child));
+  KEXPECT_EQ(getpgid(0), getpgid(child));
+
+  // Double check the raw values.
+  process_t* child_proc = proc_get_ref(child);
+  kspin_lock(&g_proc_table_lock);
+  KEXPECT_EQ(proc_current()->pgroup, child_proc->pgroup);
+  kspin_unlock(&g_proc_table_lock);
+  proc_put(child_proc);
 
   test_done = 1;
   KEXPECT_EQ(child, proc_wait(0x0));

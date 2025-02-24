@@ -32,6 +32,7 @@
 #include "proc/process.h"
 #include "proc/session.h"
 #include "proc/signal/signal.h"
+#include "proc/spinlock.h"
 #include "proc/user.h"
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/anonfs.h"
@@ -604,7 +605,9 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
       KLOG(DFATAL, "tty_get() failed in vnode open\n");
       return -EIO;
     }
-    const ksid_t sid = proc_getsid(0);
+
+    kspin_lock(&g_proc_table_lock);
+    const ksid_t sid = proc_getsid_locked(proc_current());
     proc_session_t* const session = proc_session_get(sid);
     if (sid == proc_current()->id &&
         session->ctty == PROC_SESSION_NO_CTTY && tty->session < 0) {
@@ -613,6 +616,7 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
       session->ctty = kminor(child->dev);
       tty->session = sid;
     }
+    kspin_unlock(&g_proc_table_lock);
   }
 
   // Find the next free file descriptor.

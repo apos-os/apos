@@ -43,6 +43,7 @@ int tty_get_fd(int fd, bool require_ctty, tty_t** tty) {
 
 int tty_check_read(const tty_t* tty) {
   const process_t* me = proc_current();
+  kspin_lock(&g_proc_table_lock);
   const proc_group_t* my_pgroup = proc_group_get(me->pgroup);
   const proc_session_t* tty_session = proc_session_get(tty->session);
   int result = 0;
@@ -50,15 +51,23 @@ int tty_check_read(const tty_t* tty) {
     result = -EIO;
     // TODO(aoates): this should be a process-wide check, not a thread one.
     if (proc_signal_deliverable(kthread_current_thread(), SIGTTIN)) {
-      proc_force_signal_group(me->pgroup, SIGTTIN);
+      proc_force_signal_group_locked(my_pgroup, SIGTTIN);
       result = -EINTR;
     }
   }
+  kspin_unlock(&g_proc_table_lock);
 
   return result;
 }
 
 int tty_check_write(const tty_t* tty) {
+  kspin_lock(&g_proc_table_lock);
+  int result = tty_check_write_locked(tty);
+  kspin_unlock(&g_proc_table_lock);
+  return result;
+}
+
+int tty_check_write_locked(const tty_t* tty) {
   const process_t* me = proc_current();
   const proc_group_t* my_pgroup = proc_group_get(me->pgroup);
 
@@ -73,7 +82,7 @@ int tty_check_write(const tty_t* tty) {
   if (me->pgroup != session->fggrp) {
     // TODO(aoates): this should be a process-wide check, not a thread one.
     if (proc_signal_deliverable(kthread_current_thread(), SIGTTOU)) {
-      proc_force_signal_group(me->pgroup, SIGTTOU);
+      proc_force_signal_group_locked(my_pgroup, SIGTTOU);
       return -EINTR;
     }
   }
