@@ -87,7 +87,7 @@ ksigset_t proc_pending_signals(const process_t* proc) {
   return set;
 }
 
-bool proc_signal_deliverable(kthread_t thread, int signum) {
+bool proc_thread_signal_deliverable(kthread_t thread, int signum) {
   const ksigaction_t* action = &thread->process->signal_dispositions[signum];
   if (action->sa_handler == SIG_IGN) {
     return false;
@@ -114,7 +114,7 @@ ksigset_t proc_dispatchable_signals(void) {
   // of currently-ignored signals and use that here.
   for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     if (ksigismember(&thread->assigned_signals, signum) &&
-        proc_signal_deliverable(thread, signum))
+        proc_thread_signal_deliverable(thread, signum))
       ksigaddset(&set, signum);
   }
 
@@ -125,7 +125,7 @@ ksigset_t proc_dispatchable_signals(void) {
 // will be delivered to the thread, try to wake it up.
 static void do_assign_signal(kthread_t thread, int signum) {
   ksigaddset(&thread->assigned_signals, signum);
-  if (proc_signal_deliverable(thread, signum)) {
+  if (proc_thread_signal_deliverable(thread, signum)) {
     scheduler_interrupt_thread(thread);
   }
 }
@@ -410,7 +410,7 @@ int proc_sigwait(const ksigset_t* set, int* sig_out) {
       // We use proc_signal_deliverable() as well as checking the mask to ignore
       // signals that are ignored.
       if (ksigismember(&waitable_signals, signum) &&
-          proc_signal_deliverable(thread, signum)) {
+          proc_thread_signal_deliverable(thread, signum)) {
         ksigdelset(&thread->assigned_signals, signum);
         *sig_out = signum;
         result = 0;
@@ -444,12 +444,12 @@ static bool dispatch_signal(int signum, const user_context_t* context,
   // TODO(aoates): support sigaction flags.
 
   if (action->sa_handler == SIG_IGN) {
-    KASSERT_DBG(!proc_signal_deliverable(kthread_current_thread(), signum));
+    KASSERT_DBG(!proc_thread_signal_deliverable(kthread_current_thread(), signum));
     return true;
   } else if (action->sa_handler == SIG_DFL) {
     switch (kDefaultActions[signum]) {
       case SIGACT_STOP:
-        KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
+        KASSERT_DBG(proc_thread_signal_deliverable(kthread_current_thread(), signum));
         klogfm(KL_PROC, DEBUG, "stopping process %d", proc->id);
         proc->state = PROC_STOPPED;
         proc->exit_status = 0x100 | signum;
@@ -457,19 +457,19 @@ static bool dispatch_signal(int signum, const user_context_t* context,
         break;
 
       case SIGACT_CONTINUE:
-        KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
+        KASSERT_DBG(proc_thread_signal_deliverable(kthread_current_thread(), signum));
         // We should have already been continued before calling this.
         KASSERT_DBG(proc->state == PROC_RUNNING);
         break;
 
       case SIGACT_IGNORE:
-        KASSERT_DBG(!proc_signal_deliverable(kthread_current_thread(), signum));
+        KASSERT_DBG(!proc_thread_signal_deliverable(kthread_current_thread(), signum));
         return true;
 
       case SIGACT_TERM:
       case SIGACT_TERM_AND_CORE:
         // TODO(aoates): generate a core file if necessary.
-        KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
+        KASSERT_DBG(proc_thread_signal_deliverable(kthread_current_thread(), signum));
         proc_exit(128 + signum);
         die("unreachable");
 
@@ -490,7 +490,7 @@ static bool dispatch_signal(int signum, const user_context_t* context,
 
     // Save the old signal mask, apply the mask from the action, and mask out
     // the current signal as well.
-    KASSERT_DBG(proc_signal_deliverable(thread, signum));
+    KASSERT_DBG(proc_thread_signal_deliverable(thread, signum));
     ksigset_t old_mask = thread->signal_mask;
     thread->signal_mask |= action->sa_mask;
     if (!(action->sa_flags & SA_NODEFER))

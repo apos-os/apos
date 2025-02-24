@@ -51,7 +51,7 @@ int tty_check_read(const tty_t* tty) {
   if (tty->session == my_pgroup->session && me->pgroup != tty_session->fggrp) {
     result = -EIO;
     // TODO(aoates): this should be a process-wide check, not a thread one.
-    if (proc_signal_deliverable(kthread_current_thread(), SIGTTIN)) {
+    if (proc_thread_signal_deliverable(kthread_current_thread(), SIGTTIN)) {
       proc_force_signal_group_locked(my_pgroup, SIGTTIN);
       result = -EINTR;
     }
@@ -82,7 +82,7 @@ int tty_check_write_locked(const tty_t* tty) {
 
   if (me->pgroup != session->fggrp) {
     // TODO(aoates): this should be a process-wide check, not a thread one.
-    if (proc_signal_deliverable(kthread_current_thread(), SIGTTOU)) {
+    if (proc_thread_signal_deliverable(kthread_current_thread(), SIGTTOU)) {
       proc_force_signal_group_locked(my_pgroup, SIGTTOU);
       return -EINTR;
     }
