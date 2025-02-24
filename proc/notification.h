@@ -16,7 +16,7 @@
 
 #include <stdbool.h>
 
-#include "proc/kthread.h"
+#include "proc/kmutex.h"
 
 // A basic notification, inspired by absl::Notification.
 struct notification;

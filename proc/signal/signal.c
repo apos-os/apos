@@ -22,6 +22,7 @@
 #include "memory/kmalloc.h"
 #include "proc/exit.h"
 #include "proc/group.h"
+#include "proc/kthread-internal.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/spinlock.h"

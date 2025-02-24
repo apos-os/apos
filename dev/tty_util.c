@@ -16,6 +16,7 @@
 #include "common/errno.h"
 #include "dev/tty.h"
 #include "proc/group.h"
+#include "proc/kthread.h"
 #include "proc/session.h"
 #include "proc/signal/signal.h"
 #include "vfs/vfs.h"

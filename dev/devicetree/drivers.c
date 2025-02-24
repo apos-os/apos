@@ -26,7 +26,7 @@
 #include "dev/rtc/goldfish-rtc.h"
 #include "dev/serial/uart16550.h"
 #include "memory/kmalloc.h"
-#include "proc/kthread.h"
+#include "proc/kmutex.h"
 
 #define KLOG(...) klogfm(KL_GENERAL, __VA_ARGS__)
 

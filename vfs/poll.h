@@ -30,7 +30,7 @@
 #include <stdbool.h>
 
 #include "common/list.h"
-#include "proc/kthread.h"
+#include "proc/kthread-queue.h"
 #include "proc/spinlock.h"
 #include "proc/thread_annotations.h"
 #include "user/include/apos/vfs/poll.h"

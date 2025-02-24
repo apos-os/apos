@@ -21,6 +21,7 @@
 #include "proc/fork.h"
 #include "proc/group.h"
 #include "proc/kthread.h"
+#include "proc/kthread-internal.h"
 #include "proc/process.h"
 #include "proc/process-internal.h"
 #include "proc/scheduler.h"

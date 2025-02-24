@@ -23,7 +23,9 @@
 #ifndef APOO_SCHEDULER_H
 #define APOO_SCHEDULER_H
 
+#include "proc/kmutex.h"
 #include "proc/kthread.h"
+#include "proc/kthread-queue.h"
 #include "proc/spinlock.h"
 
 // Initialize the scheduler.

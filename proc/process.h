@@ -19,9 +19,10 @@
 #include <stdbool.h>
 
 #include "common/list.h"
+#include "memory/memory.h"
 #include "proc/alarm.h"
-#include "proc/kthread-internal.h"
 #include "proc/kthread.h"
+#include "proc/kthread-queue.h"
 #include "proc/load/load.h"
 #include "proc/pmutex.h"
 #include "proc/spinlock.h"
@@ -51,7 +52,7 @@ static inline const char* proc_state_to_string(proc_state_t state);
 // Note: any fields added here (and potentially in kthread_t) must be properly
 // handled in fork(), execve(), and exit().
 // TODO(aoates): update all fields here to be properly prempt-safe.
-struct process {
+typedef struct process {
   uint32_t guid;
   kpid_t id;  // Index into global process table.
   pmutex_t mu;
@@ -104,7 +105,7 @@ struct process {
   bin_arch_t user_arch;
 
   // Parent process.
-  process_t* parent;
+  struct process* parent;
 
   // Child processes (alive and zombies).
   list_t children_list;
@@ -122,7 +123,7 @@ struct process {
   struct apos_rlimit limits[APOS_RLIMIT_NUM_RESOURCES];
 
   refcount_t refcount;
-};
+} process_t;
 
 // Initialize the process table, and create the first process (process 0) from
 // the current thread.

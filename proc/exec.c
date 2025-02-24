@@ -24,6 +24,7 @@
 #include "memory/memory.h"
 #include "memory/mmap.h"
 #include "proc/exec.h"
+#include "proc/kthread-internal.h"
 #include "proc/load/load.h"
 #include "proc/pmutex.h"
 #include "proc/signal/signal.h"

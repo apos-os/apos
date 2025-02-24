@@ -16,6 +16,7 @@
 #include "common/kassert.h"
 #include "common/list.h"
 #include "proc/kthread.h"
+#include "proc/kthread-internal.h"
 #include "proc/pmutex.h"
 #include "proc/process.h"
 

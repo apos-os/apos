@@ -16,6 +16,7 @@
 
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 

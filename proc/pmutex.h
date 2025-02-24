@@ -26,8 +26,8 @@
 #ifndef APOO_PROC_PMUTEX_H
 #define APOO_PROC_PMUTEX_H
 
+#include "proc/kmutex.h"
 #include "proc/thread_annotations.h"
-#include "proc/kthread.h"
 
 typedef struct CAPABILITY("mutex") {
   kmutex_t _mu;

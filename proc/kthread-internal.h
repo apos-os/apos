@@ -20,12 +20,11 @@
 #include <stdint.h>
 
 #include "arch/proc/kthread-context.h"
-#include "arch/proc/kthread-stack.h"
 #include "common/atomic.h"
 #include "common/list.h"
 #include "common/types.h"
-#include "memory/memory.h"
-#include "proc/kthread.h"
+#include "proc/kthread-queue.h"
+#include "proc/process.h"
 #include "user/include/apos/posix_signal.h"
 #include "syscall/context.h"
 
@@ -39,9 +38,6 @@ typedef enum {
   KTHREAD_DONE = 2,       // Finished.
   KTHREAD_DESTROYED = 3,  // Destroyed.  Should never be seen.
 } kthread_state_t;
-
-struct process;
-typedef struct process process_t;
 
 struct kthread_data {
   kthread_id_t id;

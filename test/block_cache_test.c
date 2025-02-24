@@ -27,6 +27,7 @@
 #include "proc/exit.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
+#include "proc/kthread-internal.h"
 #include "proc/notification.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"

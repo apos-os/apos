@@ -17,6 +17,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "memory/kmalloc.h"
+#include "proc/kthread-internal.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
 

@@ -30,6 +30,7 @@
 #include "net/util.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
+#include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"

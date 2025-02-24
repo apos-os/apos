@@ -19,6 +19,7 @@
 #include "proc/exit.h"
 #include "proc/group.h"
 #include "proc/kthread.h"
+#include "proc/kthread-internal.h"
 #include "proc/pmutex.h"
 #include "proc/process-internal.h"
 #include "proc/process.h"

@@ -19,7 +19,8 @@
 #include <stddef.h>
 
 #include "common/circbuf.h"
-#include "proc/kthread.h"
+#include "proc/kmutex.h"
+#include "proc/kthread-queue.h"
 #include "user/include/apos/posix_types.h"
 #include "vfs/poll.h"
 
