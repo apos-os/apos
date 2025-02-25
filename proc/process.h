@@ -95,7 +95,7 @@ typedef struct process {
   kpid_t pgroup GUARDED_BY(g_proc_table_lock);
 
   // Link on the process group list.
-  list_link_t pgroup_link;
+  list_link_t pgroup_link GUARDED_BY(g_proc_table_lock);
 
   // The process's umask.
   kmode_t umask;
