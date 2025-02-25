@@ -23,35 +23,36 @@
 #define SUPERUSER_UID 0
 #define SUPERUSER_GID 0
 
-// Returns 1 if the given process is privileged (if the effective uid is the
+// Returns true if the given process is privileged (if the effective uid is the
 // superuser).
-int proc_is_superuser(const process_t* proc);
+bool proc_is_superuser(const process_t* proc) EXCLUDES(g_proc_table_lock);
+bool proc_is_superuser_locked(const process_t* proc) REQUIRES(g_proc_table_lock);
 
 // Change the current user ID.  If the superuser, changes the real, effective,
 // and saved uids.  Otherwise, changes the effective uid to either the real or
 // saved uids.
 //
 // Returns 0 on success, or -errno on error.
-int setuid(kuid_t uid);
+int setuid(kuid_t uid) EXCLUDES(g_proc_table_lock);
 
 // Set the current group ID, as per setuid().
-int setgid(kgid_t gid);
+int setgid(kgid_t gid) EXCLUDES(g_proc_table_lock);
 
 // Return the current real user and group IDs.
-kuid_t getuid(void);
-kgid_t getgid(void);
+kuid_t getuid(void) EXCLUDES(g_proc_table_lock);
+kgid_t getgid(void) EXCLUDES(g_proc_table_lock);
 
 // Set the effective user or group ID.  If the user is not the superuser, the
 // new uid/gid must be the real or saved uid/gid.
-int seteuid(kuid_t uid);
-int setegid(kgid_t gid);
+int seteuid(kuid_t uid) EXCLUDES(g_proc_table_lock);
+int setegid(kgid_t gid) EXCLUDES(g_proc_table_lock);
 
 // Return the current effective user and group IDs.
-kuid_t geteuid(void);
-kgid_t getegid(void);
+kuid_t geteuid(void) EXCLUDES(g_proc_table_lock);
+kgid_t getegid(void) EXCLUDES(g_proc_table_lock);
 
 // Set the real and effective user/group IDs, if allowed.
-int setreuid(kuid_t ruid, kuid_t euid);
-int setregid(kgid_t rgid, kgid_t egid);
+int setreuid(kuid_t ruid, kuid_t euid) EXCLUDES(g_proc_table_lock);
+int setregid(kgid_t rgid, kgid_t egid) EXCLUDES(g_proc_table_lock);
 
 #endif

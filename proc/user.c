@@ -17,76 +17,108 @@
 #include "common/errno.h"
 #include "proc/process.h"
 
-int proc_is_superuser(const process_t* proc) {
+bool proc_is_superuser(const process_t* proc) {
+  kspin_lock(&g_proc_table_lock);
+  bool result = proc_is_superuser_locked(proc);
+  kspin_unlock(&g_proc_table_lock);
+  return result;
+}
+
+bool proc_is_superuser_locked(const process_t* proc) {
   return proc->euid == SUPERUSER_UID;
 }
 
 int setuid(kuid_t uid) {
-  if (proc_is_superuser(proc_current())) {
+  int result = 0;
+  kspin_lock(&g_proc_table_lock);
+  if (proc_is_superuser_locked(proc_current())) {
     proc_current()->ruid = uid;
     proc_current()->euid = uid;
     proc_current()->suid = uid;
   } else if (uid == proc_current()->ruid || uid == proc_current()->suid) {
     proc_current()->euid = uid;
   } else {
-    return -EPERM;
+    result = -EPERM;
   }
+  kspin_unlock(&g_proc_table_lock);
 
-  return 0;
+  return result;
 }
 
 int setgid(kgid_t gid) {
-  if (proc_is_superuser(proc_current())) {
+  int result = 0;
+  kspin_lock(&g_proc_table_lock);
+  if (proc_is_superuser_locked(proc_current())) {
     proc_current()->rgid = gid;
     proc_current()->egid = gid;
     proc_current()->sgid = gid;
   } else if (gid == proc_current()->rgid || gid == proc_current()->sgid) {
     proc_current()->egid = gid;
   } else {
-    return -EPERM;
+    result = -EPERM;
   }
+  kspin_unlock(&g_proc_table_lock);
 
-  return 0;
+  return result;
 }
 
 kuid_t getuid(void) {
-  return proc_current()->ruid;
+  kspin_lock(&g_proc_table_lock);
+  kuid_t result = proc_current()->ruid;
+  kspin_unlock(&g_proc_table_lock);
+  return result;
 }
 
 kgid_t getgid(void) {
-  return proc_current()->rgid;
+  kspin_lock(&g_proc_table_lock);
+  kgid_t result = proc_current()->rgid;
+  kspin_unlock(&g_proc_table_lock);
+  return result;
 }
 
 int seteuid(kuid_t uid) {
-  if (proc_is_superuser(proc_current()) || uid == proc_current()->ruid ||
+  int result = 0;
+  kspin_lock(&g_proc_table_lock);
+  if (proc_is_superuser_locked(proc_current()) || uid == proc_current()->ruid ||
       uid == proc_current()->suid) {
     proc_current()->euid = uid;
-    return 0;
   } else {
-    return -EPERM;
+    result = -EPERM;
   }
+  kspin_unlock(&g_proc_table_lock);
+  return result;
 }
 
 int setegid(kgid_t gid) {
-  if (proc_is_superuser(proc_current()) || gid == proc_current()->rgid ||
+  int result = 0;
+  kspin_lock(&g_proc_table_lock);
+  if (proc_is_superuser_locked(proc_current()) || gid == proc_current()->rgid ||
       gid == proc_current()->sgid) {
     proc_current()->egid = gid;
-    return 0;
   } else {
-    return -EPERM;
+    result = -EPERM;
   }
+  kspin_unlock(&g_proc_table_lock);
+  return result;
 }
 
 kuid_t geteuid(void) {
-  return proc_current()->euid;
+  kspin_lock(&g_proc_table_lock);
+  kuid_t result = proc_current()->euid;
+  kspin_unlock(&g_proc_table_lock);
+  return result;
 }
 
 kgid_t getegid(void) {
-  return proc_current()->egid;
+  kspin_lock(&g_proc_table_lock);
+  kgid_t result = proc_current()->egid;
+  kspin_unlock(&g_proc_table_lock);
+  return result;
 }
 
 int setreuid(kuid_t ruid, kuid_t euid) {
-  const int super = proc_is_superuser(proc_current());
+  kspin_lock(&g_proc_table_lock);
+  const int super = proc_is_superuser_locked(proc_current());
   const kuid_t old_ruid = proc_current()->ruid;
   const kuid_t old_euid = proc_current()->euid;
   const kuid_t old_suid = proc_current()->suid;
@@ -96,6 +128,7 @@ int setreuid(kuid_t ruid, kuid_t euid) {
     if (super || ruid == old_euid || ruid == old_suid) {
       new_ruid = ruid;
     } else {
+      kspin_unlock(&g_proc_table_lock);
       return -EPERM;
     }
   }
@@ -103,6 +136,7 @@ int setreuid(kuid_t ruid, kuid_t euid) {
     if (super || euid == old_ruid || euid == old_suid) {
       new_euid = euid;
     } else {
+      kspin_unlock(&g_proc_table_lock);
       return -EPERM;
     }
   }
@@ -111,11 +145,13 @@ int setreuid(kuid_t ruid, kuid_t euid) {
   if (ruid != -1 || (euid != -1 && euid != proc_current()->ruid)) {
     proc_current()->suid = new_euid;
   }
+  kspin_unlock(&g_proc_table_lock);
   return 0;
 }
 
 int setregid(kgid_t rgid, kgid_t egid) {
-  const int super = proc_is_superuser(proc_current());
+  kspin_lock(&g_proc_table_lock);
+  const int super = proc_is_superuser_locked(proc_current());
   const kgid_t old_rgid = proc_current()->rgid;
   const kgid_t old_egid = proc_current()->egid;
   const kgid_t old_sgid = proc_current()->sgid;
@@ -125,6 +161,7 @@ int setregid(kgid_t rgid, kgid_t egid) {
     if (super || rgid == old_egid || rgid == old_sgid) {
       new_rgid = rgid;
     } else {
+      kspin_unlock(&g_proc_table_lock);
       return -EPERM;
     }
   }
@@ -132,6 +169,7 @@ int setregid(kgid_t rgid, kgid_t egid) {
     if (super || egid == old_rgid || egid == old_sgid) {
       new_egid = egid;
     } else {
+      kspin_unlock(&g_proc_table_lock);
       return -EPERM;
     }
   }
@@ -140,5 +178,6 @@ int setregid(kgid_t rgid, kgid_t egid) {
   if (rgid != -1 || (egid != -1 && egid != proc_current()->rgid)) {
     proc_current()->sgid = new_egid;
   }
+  kspin_unlock(&g_proc_table_lock);
   return 0;
 }

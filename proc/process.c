@@ -227,6 +227,14 @@ process_t* proc_get(kpid_t id) {
   return proc;
 }
 
+process_t* proc_get_locked(kpid_t id) {
+  if (id < 0 || id >= PROC_MAX_PROCS) {
+    return NULL;
+  } else {
+    return g_proc_table[id];
+  }
+}
+
 process_t* proc_get_ref(kpid_t id) {
   if (id < 0 || id >= PROC_MAX_PROCS) {
     return NULL;

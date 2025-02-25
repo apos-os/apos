@@ -264,7 +264,8 @@ static void sigaction_test(void) {
   // do user-space tests.
 }
 
-static void signal_allowed_test1(process_t* A_default, process_t* B_default) {
+static void signal_allowed_test1(process_t* A_default, process_t* B_default)
+    NO_THREAD_SAFETY_ANALYSIS {
   process_t A = *A_default, B = *B_default;
   KTEST_BEGIN("proc_signal_allowed(): root can send any signal");
   A.euid = SUPERUSER_UID;
@@ -292,7 +293,8 @@ static void signal_allowed_test1(process_t* A_default, process_t* B_default) {
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
 }
 
-static void signal_allowed_test2(process_t* A_default, process_t* B_default) {
+static void signal_allowed_test2(process_t* A_default, process_t* B_default)
+    NO_THREAD_SAFETY_ANALYSIS {
   process_t A = *A_default, B = *B_default;
 
   KTEST_BEGIN("proc_signal_allowed(): allowed if euid matches ruid");
@@ -319,7 +321,8 @@ static void signal_allowed_test2(process_t* A_default, process_t* B_default) {
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
 }
 
-static void signal_allowed_test3(process_t* A_default, process_t* B_default) {
+static void signal_allowed_test3(process_t* A_default, process_t* B_default)
+    NO_THREAD_SAFETY_ANALYSIS {
   process_t A = *A_default, B = *B_default;
 
   KTEST_BEGIN("proc_signal_allowed(): NOT allowed if nothing matches");
@@ -381,16 +384,21 @@ static void signal_child_func(void* arg) {
 }
 
 static void signal_setuid_then_kill_func(void* arg) {
+  kspin_lock(&g_proc_table_lock);
   proc_current()->ruid = 100;
   proc_current()->euid = 100;
   proc_current()->suid = 100;
+  kspin_unlock(&g_proc_table_lock);
 
   int child_pid = proc_fork(&signal_child_func, 0x0);
   KEXPECT_GE(child_pid, 0);
 
-  proc_get(child_pid)->ruid = 101;
-  proc_get(child_pid)->euid = 101;
-  proc_get(child_pid)->suid = 101;
+  process_t* child = proc_get(child_pid);
+  kspin_lock(&g_proc_table_lock);
+  child->ruid = 101;
+  child->euid = 101;
+  child->suid = 101;
+  kspin_unlock(&g_proc_table_lock);
 
   KEXPECT_EQ(-EPERM, proc_kill(child_pid, SIGKILL));
   KEXPECT_EQ(-EPERM, proc_kill(child_pid, SIGAPOSTEST));
@@ -405,9 +413,12 @@ static void signal_permission_test(void) {
   int child_pid = proc_fork(&signal_child_func, (void*)100);
   KEXPECT_GE(child_pid, 0);
 
-  proc_get(child_pid)->ruid = 101;
-  proc_get(child_pid)->euid = 101;
-  proc_get(child_pid)->suid = 101;
+  process_t* child = proc_get(child_pid);
+  kspin_lock(&g_proc_table_lock);
+  child->ruid = 101;
+  child->euid = 101;
+  child->suid = 101;
+  kspin_unlock(&g_proc_table_lock);
 
   KEXPECT_EQ(0, proc_kill(child_pid, SIGAPOSTEST));
   int exit_code;
@@ -432,7 +443,10 @@ static void create_process_group(kpid_t* okA, kpid_t* okB, kpid_t* bad) {
   KEXPECT_EQ(0, setpgid(*okB, *okA));
   KEXPECT_EQ(0, setpgid(*bad, *okA));
 
-  proc_get(*bad)->ruid = proc_get(*bad)->euid = proc_get(*bad)->suid = 1000;
+  process_t* bad_proc = proc_get(*bad);
+  kspin_lock(&g_proc_table_lock);
+  bad_proc->ruid = bad_proc->euid = bad_proc->suid = 1000;
+  kspin_unlock(&g_proc_table_lock);
 }
 
 // Create a process group then send SIGKILL to it.  |arg| is a bitfield.  If bit
@@ -550,9 +564,11 @@ static void signal_send_to_all_allowed_test(void) {
   }
 
   // Make children 1 and 3 killable by child 4.
-  proc_get(children[0])->ruid = 800;
-  proc_get(children[1])->ruid = 600;
-  proc_get(children[2])->ruid = 800;
+  kspin_lock(&g_proc_table_lock);
+  proc_get_locked(children[0])->ruid = 800;
+  proc_get_locked(children[1])->ruid = 600;
+  proc_get_locked(children[2])->ruid = 800;
+  kspin_unlock(&g_proc_table_lock);
   children[3] = proc_fork(&send_all_allowed_func, (void*)800);
 
   int statuses[4];

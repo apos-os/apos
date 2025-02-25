@@ -79,7 +79,10 @@ int proc_fork(proc_func_t start, void* arg) {
 
   // Don't duplicate the alarm; pending alarms are cleared in the child.
 
+  new_process->umask = parent->umask;
+
   // Propagate identity.
+  kspin_lock(&g_proc_table_lock);
   new_process->ruid = parent->ruid;
   new_process->rgid = parent->rgid;
   new_process->euid = parent->euid;
@@ -87,9 +90,6 @@ int proc_fork(proc_func_t start, void* arg) {
   new_process->suid = parent->suid;
   new_process->sgid = parent->sgid;
 
-  new_process->umask = parent->umask;
-
-  kspin_lock(&g_proc_table_lock);
   new_process->pgroup = parent->pgroup;
   proc_group_add(proc_group_get(new_process->pgroup), new_process);
   kspin_unlock(&g_proc_table_lock);

@@ -66,12 +66,20 @@ static int vfs_check_mode_internal(vfs_mode_op_t op,
 
 int vfs_check_mode(vfs_mode_op_t op, const process_t* proc,
                    const vnode_t* vnode) {
-  return vfs_check_mode_internal(op, vnode, proc_is_superuser(proc),
-                                 proc->euid, proc->egid);
+  kspin_lock(&g_proc_table_lock);
+  bool is_superuser = proc_is_superuser_locked(proc);
+  kuid_t euid = proc->euid;
+  kgid_t egid = proc->egid;
+  kspin_unlock(&g_proc_table_lock);
+  return vfs_check_mode_internal(op, vnode, is_superuser, euid, egid);
 }
 
 int vfs_check_mode_rugid(vfs_mode_op_t op, const process_t* proc,
                          const vnode_t* vnode) {
-  return vfs_check_mode_internal(op, vnode, proc_is_superuser(proc),
-                                 proc->ruid, proc->rgid);
+  kspin_lock(&g_proc_table_lock);
+  bool is_superuser = proc_is_superuser_locked(proc);
+  kuid_t ruid = proc->ruid;
+  kgid_t rgid = proc->rgid;
+  kspin_unlock(&g_proc_table_lock);
+  return vfs_check_mode_internal(op, vnode, is_superuser, ruid, rgid);
 }

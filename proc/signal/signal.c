@@ -697,7 +697,7 @@ int proc_signal_allowed(const process_t* A, const process_t* B, int signal) {
   // thread, which bypasses this check).
   if (signal == SIGAPOSTKILL) return 0;
   kspin_lock(&g_proc_table_lock);
-  int result = (proc_is_superuser(A) ||
+  int result = (proc_is_superuser_locked(A) ||
                 A->ruid == B->ruid ||
                 A->euid == B->ruid ||
                 A->ruid == B->suid ||

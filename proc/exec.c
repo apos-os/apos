@@ -105,8 +105,10 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
   }
 
   // TODO(aoates): handle set-user-ID/set-group-ID bits.
+  kspin_lock(&g_proc_table_lock);
   proc_current()->suid = proc_current()->euid;
   proc_current()->sgid = proc_current()->egid;
+  kspin_unlock(&g_proc_table_lock);
 
   user_context_t ctx;
   result = arch_prep_exec(binary, argv, envp, &ctx);

@@ -84,12 +84,15 @@ typedef struct process {
   proc_alarm_t alarm GUARDED_BY(&spin_mu);
 
   // Real, effective, and saved uid and gid.
-  kuid_t ruid;
-  kgid_t rgid;
-  kuid_t euid;
-  kgid_t egid;
-  kuid_t suid;
-  kgid_t sgid;
+  // These must be compared across processes, and are not expected to change
+  // frequently, so we lock them with g_proc_table_lock rather than per-process
+  // locks for lock-ordering simplicity.
+  kuid_t ruid GUARDED_BY(g_proc_table_lock);
+  kgid_t rgid GUARDED_BY(g_proc_table_lock);
+  kuid_t euid GUARDED_BY(g_proc_table_lock);
+  kgid_t egid GUARDED_BY(g_proc_table_lock);
+  kuid_t suid GUARDED_BY(g_proc_table_lock);
+  kgid_t sgid GUARDED_BY(g_proc_table_lock);
 
   // The current process group.
   kpid_t pgroup GUARDED_BY(g_proc_table_lock);
@@ -152,6 +155,7 @@ process_t* proc_current(void);
 // increment the refcount, and should only be used by code that knows the
 // process will continue to live (such a single-threaded test code).
 process_t* proc_get(kpid_t id) EXCLUDES(g_proc_table_lock);
+process_t* proc_get_locked(kpid_t id) REQUIRES(g_proc_table_lock);
 
 // As above, but adds a refcount to the process --- the caller must call
 // proc_put() on it later.
