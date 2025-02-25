@@ -59,6 +59,7 @@
 #include "user/include/apos/vfs/poll.h"
 #include "vfs/poll.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_internal.h"
 #include "vfs/vfs_test_util.h"
 
 #define TEST_SEQ_START (UINT32_MAX - 102)
@@ -10407,9 +10408,14 @@ static void syn_during_listen_close_test(void) {
   tcp_test_state_t c1;
   init_tcp_test_child(&s, &c1, DST_IP, 1002);
 
-  // Trigger the race condition.
+  // Trigger the race condition.  Do it directly by unreffing the file_t to
+  // avoid problems locking the process mutex in vfs_close.
+  file_t* socket_file = NULL;
+  KEXPECT_EQ(0, lookup_fd(s.socket, &socket_file));  // Get a ref.
+  KEXPECT_EQ(0, vfs_close(s.socket));  // Close the FD.
+
   test_point_add("tcp:close_listening", &send_test_syn, &c1);
-  KEXPECT_EQ(0, vfs_close(s.socket));
+  file_unref(socket_file);  // Release the last reference.
   KEXPECT_EQ(1, test_point_remove("tcp:close_listening"));
   s.socket = -1;
   KEXPECT_FALSE(raw_has_packets(&s));

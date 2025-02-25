@@ -785,7 +785,7 @@ int vfs_open(const char* path, int flags, ...) {
   return result;
 }
 
-void vfs_close_locked(int fd, file_t* file) {
+void vfs_close_file(int fd, file_t* file) {
   process_t* proc = proc_current();
   pmutex_assert_is_held(&proc->mu);
   KASSERT(fd >= 0 && fd < PROC_MAX_FDS);
@@ -798,21 +798,27 @@ void vfs_close_locked(int fd, file_t* file) {
   file_unref(file);
 }
 
-int vfs_close(int fd) {
+int vfs_close_locked(int fd) {
   process_t* proc = proc_current();
-  pmutex_lock(&proc->mu);
+  pmutex_assert_is_held(&proc->mu);
   file_t* file = NULL;
   int result = lookup_fd_locked(fd, &file);
   if (result) {
-    pmutex_unlock(&proc->mu);
     return result;
   }
-  vfs_close_locked(fd, file);
-  pmutex_unlock(&proc->mu);
+  vfs_close_file(fd, file);
 
   // Unref our local ref (vfs_close_locked takes care of the FD table ref).
   file_unref(file);
   return 0;
+}
+
+int vfs_close(int fd) {
+  process_t* proc = proc_current();
+  pmutex_lock(&proc->mu);
+  int result = vfs_close_locked(fd);
+  pmutex_unlock(&proc->mu);
+  return result;
 }
 
 int vfs_dup(int orig_fd) {
@@ -862,7 +868,7 @@ int vfs_dup2(int fd1, int fd2) {
   // Close fd2 if it already exists.
   result = lookup_fd_locked(fd2, &file2);
   if (result == 0) {
-    vfs_close_locked(fd2, file2);
+    vfs_close_file(fd2, file2);
     file_unref(file2);
   }
 
