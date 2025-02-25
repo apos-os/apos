@@ -17,6 +17,7 @@
 #include "dev/dev.h"
 #include "memory/kmalloc.h"
 #include "proc/defint.h"
+#include "proc/defint_timer.h"
 #include "proc/fork.h"
 #include "proc/sleep.h"
 #include "proc/signal/signal.h"
@@ -133,6 +134,7 @@ typedef struct {
   short events;
   short future_events;
   int poll_sleep_ms;
+  defint_timer_t timer;
 } fake_dev_t;
 
 typedef struct {
@@ -161,33 +163,25 @@ static int cd_fake_dev_poll(char_dev_t* dev, short event_mask,
     return poll_add_event(poll, &fdev->event, event_mask);
 }
 
-static void do_trigger_fake_dev_defint(void* arg) {
+static void do_trigger_fake_dev(defint_timer_t* timer, void* arg) {
   fake_dev_t* fdev = (fake_dev_t*)arg;
   fdev->events = fdev->future_events;
   poll_trigger_event(&fdev->event, fdev->events);
 }
 
-static void do_trigger_fake_dev(void* arg) {
-  defint_schedule(&do_trigger_fake_dev_defint, arg);
-}
-
-static void do_non_trigger_fake_dev_defint(void* arg) {
+static void do_non_trigger_fake_dev(defint_timer_t* timer, void* arg) {
   fake_dev_t* fdev = (fake_dev_t*)arg;
   fdev->events = fdev->future_events;
-}
-
-static void do_non_trigger_fake_dev(void* arg) {
-  defint_schedule(&do_non_trigger_fake_dev_defint, arg);
 }
 
 // Trigger a fake_dev's event, either synchronously or in the future.
 static void trigger_fake_dev(fake_dev_t* fdev, short events, int delay_ms) {
   fdev->future_events = events;
   if (delay_ms <= 0)
-    do_trigger_fake_dev(fdev);
+    do_trigger_fake_dev(NULL, fdev);
   else
-    register_event_timer(get_time_ms() + delay_ms, &do_trigger_fake_dev, fdev,
-                         NULL);
+    defint_timer_create(get_time_ms() + delay_ms, &do_trigger_fake_dev, fdev,
+                        &fdev->timer);
 }
 
 // Schedule an event to happen on the device in the future that won't trigger
@@ -195,19 +189,15 @@ static void trigger_fake_dev(fake_dev_t* fdev, short events, int delay_ms) {
 static void fake_dev_non_trigger_event(fake_dev_t* fdev, short events,
                                        int delay_ms) {
   fdev->future_events = events;
-  register_event_timer(get_time_ms() + delay_ms, &do_non_trigger_fake_dev, fdev,
-                       NULL);
+  defint_timer_create(get_time_ms() + delay_ms, &do_non_trigger_fake_dev, fdev,
+                      &fdev->timer);
 }
 
 // As above, but doesn't update the events (to simulate triggering the event,
 // but someone else consuming it before the poll() gets around).
-static void do_trigger_fake_devB_defint(void* arg) {
+static void do_trigger_fake_devB(defint_timer_t* timer, void* arg) {
   fake_dev_t* fdev = (fake_dev_t*)arg;
   poll_trigger_event(&fdev->event, fdev->future_events);
-}
-
-static void do_trigger_fake_devB(void* arg) {
-  defint_schedule(&do_trigger_fake_devB_defint, arg);
 }
 
 static void basic_cd_test(chardev_args_t* args) {
@@ -247,8 +237,8 @@ static void basic_cd_test(chardev_args_t* args) {
   KTEST_BEGIN("poll(): delayed trigger wake up but no event test");
   set_cd_events(args, 0, 0);
   args->fake_devs[0].future_events = KPOLLIN;
-  register_event_timer(get_time_ms() + 50, &do_trigger_fake_devB,
-                       &args->fake_devs[0], NULL);
+  defint_timer_create(get_time_ms() + 50, &do_trigger_fake_devB,
+                      &args->fake_devs[0], &args->fake_devs[0].timer);
 
   pfds[0].fd = args->fd[0];
   pfds[0].events = KPOLLIN | KPOLLOUT;
@@ -664,7 +654,7 @@ static void deleted_cd_test(void) {
   vfs_close(fd);
 }
 
-static void do_signal(void* arg) {
+static void do_signal(defint_timer_t* timer, void* arg) {
   KEXPECT_EQ(0, proc_force_signal((process_t*)arg, SIGUSR1));
 }
 
@@ -679,7 +669,8 @@ static void interrupt_test(void* x) {
     pfds[i].revents = 123;
   }
 
-  register_event_timer(get_time_ms() + 30, &do_signal, proc_current(), NULL);
+  defint_timer_t timer;
+  defint_timer_create(get_time_ms() + 30, &do_signal, proc_current(), &timer);
   apos_ms_t start = get_time_ms();
   KEXPECT_EQ(-EINTR, vfs_poll(pfds, 3, 100));
   apos_ms_t end = get_time_ms();
@@ -696,7 +687,7 @@ static void interrupt_test(void* x) {
     pfds[i].revents = 123;
   }
 
-  register_event_timer(get_time_ms() + 30, &do_signal, proc_current(), NULL);
+  defint_timer_create(get_time_ms() + 30, &do_signal, proc_current(), &timer);
   start = get_time_ms();
   KEXPECT_EQ(-EINTR, vfs_poll(pfds, 3, -1));
   end = get_time_ms();
@@ -713,7 +704,7 @@ static void interrupt_test(void* x) {
     pfds[i].revents = 123;
   }
 
-  do_signal(proc_current());
+  do_signal(NULL, proc_current());
   start = get_time_ms();
   KEXPECT_EQ(-EINTR, vfs_poll(pfds, 3, -1));
   end = get_time_ms();
