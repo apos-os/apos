@@ -408,9 +408,9 @@ static int sig_is_pending(process_t* proc, int sig) {
 }
 
 static int sig_is_pending_thread(kthread_t thread, int sig) {
-  kspin_lock(&thread->process->spin_mu);
+  kthread_lock_proc_spin(thread);
   int result = ksigismember(&thread->assigned_signals, sig);
-  kspin_unlock(&thread->process->spin_mu);
+  kthread_unlock_proc_spin(thread);
   return result;
 }
 

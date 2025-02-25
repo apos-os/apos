@@ -25,7 +25,7 @@ void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg,
                            syscall_context_t* syscall_ctx) {
   do {
     kthread_t me = kthread_current_thread();
-    kspin_lock(&me->process->spin_mu);
+    kthread_lock_proc_spin(me);
     if (ksigismember(&me->process->pending_signals, SIGCONT) ||
         ksigismember(&me->assigned_signals, SIGCONT)) {
       klogfm(KL_PROC, DEBUG, "continuing process %d", proc_current()->id);
@@ -36,7 +36,7 @@ void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg,
       // process:
       scheduler_wake_all(&proc_current()->stopped_queue);
     }
-    kspin_unlock(&me->process->spin_mu);
+    kthread_unlock_proc_spin(me);
 
     if (proc_assign_pending_signals()) {
       user_context_t context = context_fn(arg);

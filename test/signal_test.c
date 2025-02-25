@@ -32,10 +32,12 @@
 
 // TODO(aoates): remove these helpers when proper multi-thread support is in.
 static kthread_data_t* get_proc_thread(process_t* proc)
-    REQUIRES(proc->spin_mu) {
+    EXCLUDES(proc->spin_mu) {
+  kspin_lock(&proc->spin_mu);
   KASSERT_DBG(proc->threads.head == proc->threads.tail);
   kthread_data_t* result =
       container_of(proc->threads.head, kthread_data_t, proc_threads_link);
+  kspin_unlock(&proc->spin_mu);
   return result;
 }
 
@@ -738,12 +740,8 @@ static void signal_interrupt_thread_test(void) {
 
     int child = proc_fork(&signal_interrupt_victim, &args);
     scheduler_yield();
-    process_t* child_proc = proc_get(child);
-    kspin_lock(&child_proc->spin_mu);
-    kthread_t child_thread = get_proc_thread(child_proc);
-    kspin_unlock(&child_proc->spin_mu);
     proc_force_signal_on_thread(proc_get(child),
-                                child_thread, args.signum);
+                                get_proc_thread(proc_get(child)), args.signum);
 
     KEXPECT_EQ(0, kthread_queue_empty(&args.queue));
     scheduler_wake_all(&args.queue);
@@ -760,12 +758,8 @@ static void signal_interrupt_thread_test(void) {
 
     int child = proc_fork(&signal_interrupt_victim, &args);
     scheduler_yield();
-    process_t* child_proc = proc_get(child);
-    kspin_lock(&child_proc->spin_mu);
-    kthread_t child_thread = get_proc_thread(child_proc);
-    kspin_unlock(&child_proc->spin_mu);
     proc_force_signal_on_thread(proc_get(child),
-                                child_thread, args.signum);
+                                get_proc_thread(proc_get(child)), args.signum);
 
     KEXPECT_EQ(1, kthread_queue_empty(&args.queue));
     scheduler_wake_all(&args.queue);
@@ -804,9 +798,10 @@ static void ksleep_interrupted_test(void) {
 
 static void sigprocmask_test(void) {
   // (cheating)
-  kspin_lock(&proc_current()->spin_mu);
+  kthread_t thread = kthread_current_thread();
+  kthread_lock_proc_spin(thread);
   const ksigset_t orig_mask = kthread_current_thread()->signal_mask;
-  kspin_unlock(&proc_current()->spin_mu);
+  kthread_unlock_proc_spin(thread);
 
   KTEST_BEGIN("sigprocmask(): block signals");
   ksigset_t mask, mask2;
@@ -926,16 +921,17 @@ static void sigprocmask_test(void) {
   KEXPECT_EQ(-EINVAL, proc_sigprocmask(-1, &mask, &mask2));
   KEXPECT_EQ(-EINVAL, proc_sigprocmask(100, &mask, &mask2));
 
-  kspin_lock(&proc_current()->spin_mu);
+  kthread_lock_proc_spin(thread);
   kthread_current_thread()->signal_mask = orig_mask;
-  kspin_unlock(&proc_current()->spin_mu);
+  kthread_unlock_proc_spin(thread);
 }
 
 static void sigpending_test(void) {
   KTEST_BEGIN("sigpending() test -- unassigned signal");
-  kspin_lock(&proc_current()->spin_mu);
+  kthread_t thread = kthread_current_thread();
+  kthread_lock_proc_spin(thread);
   ksigemptyset(&kthread_current_thread()->assigned_signals);
-  kspin_unlock(&proc_current()->spin_mu);
+  kthread_unlock_proc_spin(thread);
 
   ksigset_t orig_mask;
   KEXPECT_EQ(0, proc_sigprocmask(0, NULL, &orig_mask));
@@ -987,9 +983,10 @@ static void sigpending_test(void) {
 
   // Cleanup.
   KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &orig_mask, NULL));
-  kspin_lock(&proc_current()->spin_mu);
+  thread = kthread_current_thread();
+  kthread_lock_proc_spin(thread);
   ksigdelset(&kthread_current_thread()->assigned_signals, SIGUSR1);
-  kspin_unlock(&proc_current()->spin_mu);
+  kthread_unlock_proc_spin(thread);
 }
 
 static ksigset_t make_empty_sigset(void) {
@@ -1140,9 +1137,10 @@ static void sigsuspend_test(void) {
 
   KEXPECT_EQ(0, sem_wait(&g_sem));
   KEXPECT_EQ(PROC_RUNNING, proc_get(child)->state);
-  kspin_lock(&proc_get(child)->spin_mu);
-  KEXPECT_EQ(new_mask, get_proc_thread(proc_get(child))->signal_mask);
-  kspin_unlock(&proc_get(child)->spin_mu);
+  kthread_t thread = get_proc_thread(proc_get(child));
+  kthread_lock_proc_spin(thread);
+  KEXPECT_EQ(new_mask, thread->signal_mask);
+  kthread_unlock_proc_spin(thread);
 
   KEXPECT_EQ(0, proc_kill(child, SIGUSR1));
   KEXPECT_EQ(child, proc_wait(NULL));
@@ -1156,9 +1154,9 @@ static void sigsuspend_test(void) {
 
   KEXPECT_EQ(0, sem_wait(&g_sem));
   KEXPECT_EQ(PROC_RUNNING, proc_get(child)->state);
-  kspin_lock(&proc_get(child)->spin_mu);
-  KEXPECT_EQ(mask2, get_proc_thread(proc_get(child))->signal_mask);
-  kspin_unlock(&proc_get(child)->spin_mu);
+  kthread_lock_proc_spin(thread);
+  KEXPECT_EQ(mask2, thread->signal_mask);
+  kthread_unlock_proc_spin(thread);
 
   KEXPECT_EQ(0, proc_kill(child, SIGUSR1));
   KEXPECT_EQ(child, proc_wait(NULL));
@@ -1274,19 +1272,19 @@ static void* sigwait_test_helper1(void* arg) {
   KEXPECT_EQ(0, proc_sigwait(&set, &args->sig[0]));
   args->done[0] = true;
   KEXPECT_TRUE(args->sig[0] == SIGUSR1 || args->sig[0] == SIGUSR2);
-  kspin_lock(&proc_current()->spin_mu);
-  KEXPECT_FALSE(ksigismember(&kthread_current_thread()->assigned_signals,
-                             args->sig[0]));
-  kspin_unlock(&proc_current()->spin_mu);
+  kthread_t thread = kthread_current_thread();
+  kthread_lock_proc_spin(thread);
+  KEXPECT_FALSE(ksigismember(&thread->assigned_signals, args->sig[0]));
+  kthread_unlock_proc_spin(thread);
 
   KEXPECT_EQ(0, proc_sigwait(&set, &args->sig[1]));
   args->done[1] = true;
   KEXPECT_TRUE(args->sig[1] == SIGUSR1 || args->sig[1] == SIGUSR2);
   KEXPECT_NE(args->sig[0], args->sig[1]);
-  kspin_lock(&proc_current()->spin_mu);
-  KEXPECT_FALSE(ksigismember(&kthread_current_thread()->assigned_signals,
-                             args->sig[1]));
-  kspin_unlock(&proc_current()->spin_mu);
+  thread = kthread_current_thread();
+  kthread_lock_proc_spin(thread);
+  KEXPECT_FALSE(ksigismember(&thread->assigned_signals, args->sig[1]));
+  kthread_unlock_proc_spin(thread);
 
   args->sig[2] = -1;
   KEXPECT_EQ(-EINTR, proc_sigwait(&set, &args->sig[2]));
@@ -1375,10 +1373,11 @@ void signal_test(void) {
   for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     KASSERT(proc_sigaction(signum, 0x0, &saved_handlers[signum]) == 0);
   }
-  kspin_lock(&proc_current()->spin_mu);
-  ksigset_t saved_pending_signals = proc_current()->pending_signals;
-  ksigset_t saved_assigned_signals = kthread_current_thread()->assigned_signals;
-  kspin_unlock(&proc_current()->spin_mu);
+  kthread_t thread = kthread_current_thread();
+  kthread_lock_proc_spin(thread);
+  ksigset_t saved_pending_signals = thread->process->pending_signals;
+  ksigset_t saved_assigned_signals = thread->assigned_signals;
+  kthread_unlock_proc_spin(thread);
   // TODO(aoates): do we want to save/restore the signal mask as well?
 
   ksigemptyset_test();
@@ -1412,8 +1411,9 @@ void signal_test(void) {
       KASSERT(proc_sigaction(signum, &saved_handlers[signum], 0x0) == 0);
     }
   }
-  kspin_lock(&proc_current()->spin_mu);
-  proc_current()->pending_signals = saved_pending_signals;
-  kthread_current_thread()->assigned_signals = saved_assigned_signals;
-  kspin_unlock(&proc_current()->spin_mu);
+  thread = kthread_current_thread();
+  kthread_lock_proc_spin(thread);
+  thread->process->pending_signals = saved_pending_signals;
+  thread->assigned_signals = saved_assigned_signals;
+  kthread_unlock_proc_spin(thread);
 }
