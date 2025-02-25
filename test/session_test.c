@@ -19,6 +19,8 @@
 #include "proc/exit.h"
 #include "proc/fork.h"
 #include "proc/group.h"
+#include "proc/kthread-internal.h"
+#include "proc/notification.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/session.h"
@@ -405,6 +407,10 @@ static int sig_is_pending(process_t* proc, int sig) {
   return ksigismember(&pending, sig);
 }
 
+static int sig_is_pending_thread(kthread_t thread, int sig) {
+  return ksigismember(&thread->assigned_signals, sig);
+}
+
 static void empty_sig_handler(int sig) {}
 
 static void tcsetpgrp_test_inner(void* arg) {
@@ -723,6 +729,16 @@ static void do_read_from_bg(void* arg) {
   ksleep(10000);
 }
 
+static void* thread_allow_sigttin(void* arg) {
+  notification_t* done = (notification_t*)arg;
+  ksigset_t kSigTtinSet;
+  ksigemptyset(&kSigTtinSet);
+  ksigaddset(&kSigTtinSet, SIGTTIN);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &kSigTtinSet, NULL));
+  KEXPECT_TRUE(ntfn_await_with_timeout(done, 5000));
+  return NULL;
+}
+
 static void read_from_bg_test_inner(void* arg) {
   const apos_dev_t test_tty = (intptr_t)arg;
   ksigset_t kSigTtinSet;
@@ -777,6 +793,29 @@ static void read_from_bg_test_inner(void* arg) {
   KEXPECT_EQ(-EIO, vfs_read(tty_fd, &buf, 1));
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
   KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTIN));
+
+
+  KTEST_BEGIN("read() on CTTY from bg process (SIGTTIN masked, only in current thread)");
+  act.sa_handler = SIG_DFL;
+  KEXPECT_EQ(0, proc_sigaction(SIGTTIN, &act, NULL));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &kSigTtinSet, NULL));
+
+  kthread_t bg_thread;
+  notification_t done;
+  ntfn_init(&done);
+  KEXPECT_EQ(0, proc_thread_create(&bg_thread, &thread_allow_sigttin, &done));
+
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTIN));
+  KEXPECT_EQ(-EINTR, vfs_read(tty_fd, &buf, 1));
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(0, sig_is_pending_thread(kthread_current_thread(), SIGTTIN));
+  KEXPECT_EQ(1, sig_is_pending_thread(bg_thread, SIGTTIN));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(child_in_grp), SIGTTIN));
+  ntfn_notify(&done);
+  KEXPECT_EQ(NULL, kthread_join(bg_thread));
+  proc_suppress_signal(proc_current(), SIGTTIN);
+  proc_suppress_signal(proc_get(child_in_grp), SIGTTIN);
 
 
   KTEST_BEGIN("read() on CTTY from bg process (SIGTTIN ignored)");
@@ -879,6 +918,16 @@ static void do_write_from_bg_tostop(void* arg) {
   ksleep(10000);
 }
 
+static void* thread_allow_sigttou(void* arg) {
+  notification_t* done = (notification_t*)arg;
+  ksigset_t kSigTtouSet;
+  ksigemptyset(&kSigTtouSet);
+  ksigaddset(&kSigTtouSet, SIGTTOU);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &kSigTtouSet, NULL));
+  KEXPECT_TRUE(ntfn_await_with_timeout(done, 5000));
+  return NULL;
+}
+
 static void write_from_bg_tostop_test_inner(void* arg) {
   const apos_dev_t test_tty = (intptr_t)arg;
   ksigset_t kSigTtouSet;
@@ -933,6 +982,29 @@ static void write_from_bg_tostop_test_inner(void* arg) {
   KEXPECT_EQ(1, vfs_write(tty_fd, "x", 1));
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
   KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+
+
+  KTEST_BEGIN("write() on CTTY from bg process (SIGTTOU masked, only in current thread) w/ TOSTOP");
+  act.sa_handler = SIG_DFL;
+  KEXPECT_EQ(0, proc_sigaction(SIGTTOU, &act, NULL));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &kSigTtouSet, NULL));
+
+  kthread_t bg_thread;
+  notification_t done;
+  ntfn_init(&done);
+  KEXPECT_EQ(0, proc_thread_create(&bg_thread, &thread_allow_sigttou, &done));
+
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+  KEXPECT_EQ(-EINTR, vfs_write(tty_fd, "x", 1));
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending_thread(kthread_current_thread(), SIGTTOU));
+  KEXPECT_EQ(1, sig_is_pending_thread(bg_thread, SIGTTOU));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+  ntfn_notify(&done);
+  KEXPECT_EQ(NULL, kthread_join(bg_thread));
+  proc_suppress_signal(proc_current(), SIGTTOU);
+  proc_suppress_signal(proc_get(child_in_grp), SIGTTOU);
 
 
   KTEST_BEGIN("write() on CTTY from bg process (SIGTTOU ignored) w/ TOSTOP");

@@ -87,21 +87,46 @@ ksigset_t proc_pending_signals(const process_t* proc) {
   return set;
 }
 
-bool proc_thread_signal_deliverable(kthread_t thread, int signum) {
-  const ksigaction_t* action = &thread->process->signal_dispositions[signum];
+// Helper that determines if a signal is deliverable _at the process level_.
+static bool process_wide_signal_deliverable(process_t* process, int signum) {
+  const ksigaction_t* action = &process->signal_dispositions[signum];
   if (action->sa_handler == SIG_IGN) {
     return false;
   } else if (action->sa_handler == SIG_DFL &&
              kDefaultActions[signum] == SIGACT_IGNORE) {
     return false;
-  } else if (ksigismember(&thread->signal_mask, signum)) {
-    return false;
   } else if (action->sa_handler != SIG_DFL &&
-             thread->process->state == PROC_STOPPED) {
+             process->state == PROC_STOPPED) {
     return false;
   }
 
   return true;
+}
+
+bool proc_thread_signal_deliverable(kthread_t thread, int signum) {
+  if (ksigismember(&thread->signal_mask, signum)) {
+    return false;
+  }
+
+  return process_wide_signal_deliverable(thread->process, signum);
+}
+
+bool proc_signal_deliverable(process_t* proc, int signum) {
+  if (!process_wide_signal_deliverable(proc, signum)) {
+    return false;
+  }
+
+  bool result = false;
+  FOR_EACH_LIST(iter_link, &proc->threads) {
+    const kthread_data_t* thread =
+        LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
+    if (!ksigismember(&thread->signal_mask, signum)) {
+      result = true;
+      break;
+    }
+  }
+
+  return result;
 }
 
 ksigset_t proc_dispatchable_signals(void) {

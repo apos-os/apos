@@ -58,6 +58,9 @@ ksigset_t proc_dispatchable_signals(void);
 // not blocked or ignored [explicitly or by default]).
 bool proc_thread_signal_deliverable(kthread_t thread, int signum);
 
+// As above, but for the whole process (checks all threads).
+bool proc_signal_deliverable(process_t* proc, int signum);
+
 // Force send a signal to the given process, without any permission checks or
 // the like.  Returns 0 on success, or -errno on error.
 int proc_force_signal(process_t* proc, int sig);
