@@ -23,8 +23,11 @@
 #include "proc/wait.h"
 
 static bool has_sigtkill(void) {
-  return ksigismember(&kthread_current_thread()->assigned_signals,
-                      SIGAPOSTKILL);
+  kspin_lock(&proc_current()->spin_mu);
+  bool result =
+      ksigismember(&kthread_current_thread()->assigned_signals, SIGAPOSTKILL);
+  kspin_unlock(&proc_current()->spin_mu);
+  return result;
 }
 
 static void* do_exit_thread(void* x) {

@@ -26,6 +26,7 @@
 #include "proc/load/load.h"
 #include "proc/pmutex.h"
 #include "proc/spinlock.h"
+#include "proc/thread_annotations.h"
 #include "user/include/apos/posix_signal.h"
 #include "user/include/apos/resource.h"
 #include "vfs/file.h"
@@ -57,7 +58,8 @@ typedef struct process {
   kpid_t id;  // Index into global process table.
   pmutex_t mu;
   proc_state_t state;
-  list_t threads;  // All process threads.
+  kspinlock_t spin_mu ACQUIRED_AFTER(&mu);
+  list_t threads GUARDED_BY(&spin_mu);  // All process threads.
   int exit_status;  // Exit status if PROC_ZOMBIE, or PROC_STOPPED.
   bool exiting;  // Whether the process is exiting.
 
@@ -73,10 +75,10 @@ typedef struct process {
   page_dir_ptr_t page_directory;
 
   // Set of pending signals.
-  ksigset_t pending_signals;
+  ksigset_t pending_signals GUARDED_BY(&spin_mu);
 
   // Current signal dispositions.
-  ksigaction_t signal_dispositions[APOS_SIGMAX + 1];
+  ksigaction_t signal_dispositions[APOS_SIGMAX + 1] GUARDED_BY(&spin_mu);
 
   // Pending alarm, if any.
   proc_alarm_t alarm;

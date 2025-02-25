@@ -131,7 +131,6 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
 
   // Copy its exit status and destroy the process_t.
   zombie->state = PROC_INVALID;
-  KASSERT(list_empty(&zombie->threads));
   if (exit_status) {
     *exit_status = zombie->exit_status;
   }

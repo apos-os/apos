@@ -408,7 +408,10 @@ static int sig_is_pending(process_t* proc, int sig) {
 }
 
 static int sig_is_pending_thread(kthread_t thread, int sig) {
-  return ksigismember(&thread->assigned_signals, sig);
+  kspin_lock(&thread->process->spin_mu);
+  int result = ksigismember(&thread->assigned_signals, sig);
+  kspin_unlock(&thread->process->spin_mu);
+  return result;
 }
 
 static void empty_sig_handler(int sig) {}

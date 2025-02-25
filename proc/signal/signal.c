@@ -77,18 +77,21 @@ static signal_default_action_t kDefaultActions[APOS_SIGMAX + 1] = {
 static const ksigset_t kUnblockableSignals =
     (1 << (SIGKILL - 1)) | (1 << (SIGSTOP - 1)) | (1 << (SIGAPOSTKILL - 1));
 
-ksigset_t proc_pending_signals(const process_t* proc) {
+ksigset_t proc_pending_signals(process_t* proc) {
+  kspin_lock(&proc->spin_mu);
   ksigset_t set = proc->pending_signals;
   FOR_EACH_LIST(iter_link, &proc->threads) {
     const kthread_data_t* thread =
         LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
     set = ksigunionset(set, thread->assigned_signals);
   }
+  kspin_unlock(&proc->spin_mu);
   return set;
 }
 
 // Helper that determines if a signal is deliverable _at the process level_.
-static bool process_wide_signal_deliverable(process_t* process, int signum) {
+static bool process_wide_signal_deliverable(process_t* process, int signum)
+    REQUIRES(process->spin_mu) {
   const ksigaction_t* action = &process->signal_dispositions[signum];
   if (action->sa_handler == SIG_IGN) {
     return false;
@@ -104,6 +107,8 @@ static bool process_wide_signal_deliverable(process_t* process, int signum) {
 }
 
 static bool proc_thread_signal_deliverable(kthread_t thread, int signum) {
+  // REQUIRES(thread->process->spin_mu)
+  kspin_assert_is_held(&thread->process->spin_mu);
   if (ksigismember(&thread->signal_mask, signum)) {
     return false;
   }
@@ -112,7 +117,9 @@ static bool proc_thread_signal_deliverable(kthread_t thread, int signum) {
 }
 
 bool proc_signal_deliverable(process_t* proc, int signum) {
+  kspin_lock(&proc->spin_mu);
   if (!process_wide_signal_deliverable(proc, signum)) {
+    kspin_unlock(&proc->spin_mu);
     return false;
   }
 
@@ -125,6 +132,7 @@ bool proc_signal_deliverable(process_t* proc, int signum) {
       break;
     }
   }
+  kspin_unlock(&proc->spin_mu);
 
   return result;
 }
@@ -137,11 +145,13 @@ ksigset_t proc_dispatchable_signals(void) {
 
   // TODO(aoates): rather than iterating through all the signals, track the set
   // of currently-ignored signals and use that here.
+  kspin_lock(&thread->process->spin_mu);
   for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     if (ksigismember(&thread->assigned_signals, signum) &&
         proc_thread_signal_deliverable(thread, signum))
       ksigaddset(&set, signum);
   }
+  kspin_unlock(&thread->process->spin_mu);
 
   return set;
 }
@@ -149,6 +159,8 @@ ksigset_t proc_dispatchable_signals(void) {
 // Force assign the given signal to the thread.  If the signal isn't masked, and
 // will be delivered to the thread, try to wake it up.
 static void do_assign_signal(kthread_t thread, int signum) {
+    // REQUIRES(thread->process->spin_mu)
+  kspin_assert_is_held(&thread->process->spin_mu);
   ksigaddset(&thread->assigned_signals, signum);
   if (proc_thread_signal_deliverable(thread, signum)) {
     scheduler_interrupt_thread(thread);
@@ -157,7 +169,8 @@ static void do_assign_signal(kthread_t thread, int signum) {
 
 // Try to assign the given signal to a thread in the process.  Fails if it is
 // masked in all threads, returning false.
-static void proc_try_assign_signal(process_t* proc, int signum) {
+static void proc_try_assign_signal(process_t* proc, int signum)
+    REQUIRES(proc->spin_mu) {
   if (proc->state == PROC_ZOMBIE) {
     return;
   }
@@ -180,10 +193,10 @@ static void proc_try_assign_signal(process_t* proc, int signum) {
 int proc_force_signal(process_t* proc, int sig) {
   KASSERT_DBG(sig != SIGAPOSTKILL);  // Must be sent to specific thread.
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock(&proc->spin_mu);
   int result = ksigaddset(&proc->pending_signals, sig);
   proc_try_assign_signal(proc, sig);
-  POP_INTERRUPTS();
+  kspin_unlock(&proc->spin_mu);
 
   // Wake up a stopped victim at random to handle the SIGCONT (it will update
   // the process's state, wake up the rest of the threads, etc).
@@ -231,12 +244,18 @@ int proc_force_signal_group_locked(const proc_group_t* pgroup, int sig) {
 }
 
 int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig) {
-  // This isn't very interesting until we have multiple threads in a process.
+  KASSERT(thread->process == proc);
+  kspin_lock(&proc->spin_mu);
+  int result = proc_force_signal_on_thread_locked(proc, thread, sig);
+  kspin_unlock(&proc->spin_mu);
+  return result;
+}
+
+int proc_force_signal_on_thread_locked(process_t* proc, kthread_t thread, int sig) {
+  kspin_assert_is_held(&proc->spin_mu);
   KASSERT(thread->process == proc);
   KASSERT_DBG(list_link_on_list(&proc->threads, &thread->proc_threads_link));
-  PUSH_AND_DISABLE_INTERRUPTS();
   do_assign_signal(thread, sig);
-  POP_INTERRUPTS();
   return 0;
 }
 
@@ -337,26 +356,31 @@ int proc_sigaction(int signum, const struct ksigaction* act,
     return -EINVAL;
   }
 
+  process_t* proc = proc_current();
+  kspin_lock(&proc->spin_mu);
   if (oldact) {
-    *oldact = proc_current()->signal_dispositions[signum];
+    *oldact = proc->signal_dispositions[signum];
   }
 
   if (act) {
-    PUSH_AND_DISABLE_INTERRUPTS();
-    proc_current()->signal_dispositions[signum] = *act;
-    POP_INTERRUPTS();
+    proc->signal_dispositions[signum] = *act;
   }
+  kspin_unlock(&proc->spin_mu);
 
   return 0;
 }
 
 int proc_sigprocmask(int how, const ksigset_t* restrict set,
                      ksigset_t* restrict oset) {
+  process_t* proc = proc_current();
+  kthread_t thread = kthread_current_thread();
+  KASSERT_DBG(thread->process == proc);
+  kspin_lock(&proc->spin_mu);
   if (oset) {
-    *oset = kthread_current_thread()->signal_mask;
+    *oset = thread->signal_mask;
   }
 
-  ksigset_t new_mask = kthread_current_thread()->signal_mask;
+  ksigset_t new_mask = thread->signal_mask;
   if (set) {
     switch (how) {
       case SIG_BLOCK:
@@ -372,11 +396,13 @@ int proc_sigprocmask(int how, const ksigset_t* restrict set,
         break;
 
       default:
+        kspin_unlock(&proc->spin_mu);
         return -EINVAL;
     }
   }
   new_mask = ksigsubtractset(new_mask, kUnblockableSignals);
-  kthread_current_thread()->signal_mask = new_mask;
+  thread->signal_mask = new_mask;
+  kspin_unlock(&proc->spin_mu);
   return 0;
 }
 
@@ -384,14 +410,20 @@ int proc_sigpending(ksigset_t* set) {
   process_t* proc = proc_current();
   kthread_data_t* thread = kthread_current_thread();
   KASSERT(thread->process == proc);
+  kspin_lock(&proc->spin_mu);
   KASSERT_DBG(list_link_on_list(&proc->threads, &thread->proc_threads_link));
   *set = proc->pending_signals |
       (thread->assigned_signals & thread->signal_mask);
+  kspin_unlock(&proc->spin_mu);
   return 0;
 }
 
 int proc_sigsuspend(const ksigset_t* sigmask) {
   ksigset_t old_mask;
+  // No need to lock between here and the wait below --- this is atomic from a
+  // signal delivery perspective (if a signal arrives between the two calls, the
+  // wait call will simply return -EINTR).
+  // TODO(aoates): write a test for this
   int result = proc_sigprocmask(SIG_SETMASK, sigmask, &old_mask);
   KASSERT_DBG(result == 0);
   proc_assign_pending_signals();
@@ -413,9 +445,12 @@ int proc_sigsuspend(const ksigset_t* sigmask) {
 int proc_sigwait(const ksigset_t* set, int* sig_out) {
   // All requested signals must already be blocked.
   kthread_t thread = kthread_current_thread();
+  kspin_lock(&thread->process->spin_mu);
   if ((*set & thread->signal_mask) != *set) {
+    kspin_unlock(&thread->process->spin_mu);
     return -EINVAL;
   }
+  kspin_unlock(&thread->process->spin_mu);
 
   ksigset_t old_mask;
   int result = proc_sigprocmask(SIG_UNBLOCK, set, &old_mask);
@@ -428,6 +463,7 @@ int proc_sigwait(const ksigset_t* set, int* sig_out) {
   KASSERT_DBG(result == SWAIT_INTERRUPTED);
 
   // Find a signal to pass back.
+  kspin_lock(&thread->process->spin_mu);
   ksigset_t waitable_signals = *set & thread->assigned_signals;
   result = -EINTR;
   if (!ksigisemptyset(waitable_signals)) {
@@ -443,18 +479,21 @@ int proc_sigwait(const ksigset_t* set, int* sig_out) {
       }
     }
   }
+  kspin_unlock(&thread->process->spin_mu);
 
   KASSERT(0 == proc_sigprocmask(SIG_SETMASK, &old_mask, NULL));
   return result;
 }
 
 void proc_suppress_signal(process_t* proc, int sig) {
+  kspin_lock(&proc->spin_mu);
   ksigdelset(&proc->pending_signals, sig);
   FOR_EACH_LIST(iter_link, &proc->threads) {
     kthread_data_t* thread =
         LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
     ksigdelset(&thread->assigned_signals, sig);
   }
+  kspin_unlock(&proc->spin_mu);
 }
 
 // Dispatch a particular signal in the current process.  May not return.
@@ -463,18 +502,21 @@ void proc_suppress_signal(process_t* proc, int sig) {
 static bool dispatch_signal(int signum, const user_context_t* context,
                             syscall_context_t* syscall_ctx) {
   process_t* proc = proc_current();
+  kspin_assert_is_held(&proc->spin_mu);
+  kthread_data_t* thread = kthread_current_thread();
+  KASSERT(thread->process == proc);
   KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
 
   const ksigaction_t* action = &proc->signal_dispositions[signum];
   // TODO(aoates): support sigaction flags.
 
   if (action->sa_handler == SIG_IGN) {
-    KASSERT_DBG(!proc_thread_signal_deliverable(kthread_current_thread(), signum));
+    KASSERT_DBG(!proc_thread_signal_deliverable(thread, signum));
     return true;
   } else if (action->sa_handler == SIG_DFL) {
     switch (kDefaultActions[signum]) {
       case SIGACT_STOP:
-        KASSERT_DBG(proc_thread_signal_deliverable(kthread_current_thread(), signum));
+        KASSERT_DBG(proc_thread_signal_deliverable(thread, signum));
         klogfm(KL_PROC, DEBUG, "stopping process %d", proc->id);
         proc->state = PROC_STOPPED;
         proc->exit_status = 0x100 | signum;
@@ -482,23 +524,25 @@ static bool dispatch_signal(int signum, const user_context_t* context,
         break;
 
       case SIGACT_CONTINUE:
-        KASSERT_DBG(proc_thread_signal_deliverable(kthread_current_thread(), signum));
+        KASSERT_DBG(proc_thread_signal_deliverable(thread, signum));
         // We should have already been continued before calling this.
         KASSERT_DBG(proc->state == PROC_RUNNING);
         break;
 
       case SIGACT_IGNORE:
-        KASSERT_DBG(!proc_thread_signal_deliverable(kthread_current_thread(), signum));
+        KASSERT_DBG(!proc_thread_signal_deliverable(thread, signum));
         return true;
 
       case SIGACT_TERM:
       case SIGACT_TERM_AND_CORE:
         // TODO(aoates): generate a core file if necessary.
-        KASSERT_DBG(proc_thread_signal_deliverable(kthread_current_thread(), signum));
+        KASSERT_DBG(proc_thread_signal_deliverable(thread, signum));
+        kspin_unlock(&proc->spin_mu);
         proc_exit(128 + signum);
         die("unreachable");
 
       case SIGACT_TERM_THREAD:
+        kspin_unlock(&proc->spin_mu);
         proc_thread_exit(NULL);
         die("unreachable");
     }
@@ -506,8 +550,6 @@ static bool dispatch_signal(int signum, const user_context_t* context,
     KASSERT_DBG(signum != SIGKILL);
     KASSERT_DBG(signum != SIGSTOP);
     KASSERT_DBG(signum != SIGAPOSTKILL);
-    kthread_data_t* thread = kthread_current_thread();
-    KASSERT(thread->process == proc);
     KASSERT_DBG(list_link_on_list(&proc->threads, &thread->proc_threads_link));
 
     if (proc->state == PROC_STOPPED)
@@ -524,6 +566,7 @@ static bool dispatch_signal(int signum, const user_context_t* context,
     if (syscall_ctx && !(action->sa_flags & SA_RESTART))
       syscall_ctx->flags &= ~SCCTX_RESTARTABLE;
 
+    kspin_unlock(&proc->spin_mu);
     proc_run_user_sighandler(signum, action, &old_mask, context, syscall_ctx);
     die("unreachable");
   }
@@ -533,7 +576,8 @@ static bool dispatch_signal(int signum, const user_context_t* context,
 
 // Assign any pending signals in the process to a thread that can handle them,
 // if any.
-static void signal_assign_pending(process_t* proc) {
+static void signal_assign_pending(process_t* proc) REQUIRES(proc->spin_mu) {
+  kspin_assert_is_held(&proc->spin_mu);
   for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     if (ksigismember(&proc->pending_signals, signum)) {
       proc_try_assign_signal(proc, signum);
@@ -542,30 +586,32 @@ static void signal_assign_pending(process_t* proc) {
 }
 
 int proc_assign_pending_signals(void) {
-  PUSH_AND_DISABLE_INTERRUPTS();
   kthread_data_t* thread = kthread_current_thread();
   KASSERT(thread->process == proc_current());
+  kspin_lock(&thread->process->spin_mu);
   KASSERT_DBG(
       list_link_on_list(&proc_current()->threads, &thread->proc_threads_link));
 
-  signal_assign_pending(proc_current());
+  signal_assign_pending(thread->process);
   int result = !ksigisemptyset(thread->assigned_signals);
 
-  POP_INTERRUPTS();
+  kspin_unlock(&thread->process->spin_mu);
   return result;
 }
 
 void proc_dispatch_pending_signals(const user_context_t* context,
                                    syscall_context_t* syscall_ctx) {
-  PUSH_AND_DISABLE_INTERRUPTS();
-
+  process_t* proc = proc_current();
   const kthread_t thread = kthread_current_thread();
-  KASSERT_DBG(thread->process == proc_current());
+  KASSERT_DBG(thread->process == proc);
+
+  kspin_lock(&proc->spin_mu);
+
   KASSERT_DBG(
       list_link_on_list(&proc_current()->threads, &thread->proc_threads_link));
 
   if (ksigisemptyset(thread->assigned_signals)) {
-    POP_INTERRUPTS();
+    kspin_unlock(&proc->spin_mu);
     return;
   }
 
@@ -576,6 +622,7 @@ void proc_dispatch_pending_signals(const user_context_t* context,
     if (ksigismember(&thread->assigned_signals, signum) &&
         !ksigismember(&thread->signal_mask, signum)) {
       ksigdelset(&thread->assigned_signals, signum);
+      // dispatch_signal may not return!
       if (!dispatch_signal(signum, context, syscall_ctx)) {
         // Re-enqueue the signal for delivery later.
         ksigaddset(&thread->assigned_signals, signum);
@@ -583,7 +630,7 @@ void proc_dispatch_pending_signals(const user_context_t* context,
     }
   }
 
-  POP_INTERRUPTS();
+  kspin_unlock(&proc->spin_mu);
 }
 
 static user_context_t get_user_context(void* arg) {
@@ -601,21 +648,22 @@ int proc_sigreturn(const ksigset_t* old_mask_ptr,
   kfree((void*)context_ptr);
   if (syscall_ctx_ptr) kfree((void*)syscall_ctx_ptr);
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  process_t* proc = proc_current();
+  kthread_t thread = kthread_current_thread();
+  KASSERT_DBG(thread->process == proc);
 
   // Restore the old signal mask, then process any outstanding signals.
-  kthread_t thread = kthread_current_thread();
-  KASSERT_DBG(thread->process == proc_current());
+  kspin_lock(&proc->spin_mu);
   KASSERT_DBG(
       list_link_on_list(&proc_current()->threads, &thread->proc_threads_link));
   thread->signal_mask = old_mask;
+  kspin_unlock(&proc->spin_mu);
 
   // This catches, for example, signals raised in the signal handler that were
   // blocked.
   proc_prep_user_return(&get_user_context, (void*)&context,
                         syscall_ctx_ptr ? &syscall_ctx : NULL);
 
-  POP_INTERRUPTS();
 
   // TODO(aoates): ideally we'd do this in proc_prep_user_return().
   if (syscall_ctx_ptr && (syscall_ctx.flags & SCCTX_RESTARTABLE) &&

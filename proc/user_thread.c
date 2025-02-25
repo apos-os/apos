@@ -60,13 +60,20 @@ int proc_thread_exit_user(void) {
 }
 
 int proc_thread_kill_user(const apos_uthread_id_t* id, int sig) {
+  process_t* proc = proc_current();
+  kspin_lock(&proc->spin_mu);
   FOR_EACH_LIST(iter_link, &proc_current()->threads) {
     kthread_data_t* thread =
         LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
     if (thread->id == id->_id) {
+      kspin_unlock(&proc->spin_mu);
+      // TODO(aoates): we need a refcount on the thread to prevent it being
+      // destroyed after we unlock the spinlock but before we dispatch the
+      // signal.
       return proc_kill_thread(thread, sig);
     }
   }
+  kspin_unlock(&proc->spin_mu);
   return -ESRCH;
 }
 

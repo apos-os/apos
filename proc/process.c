@@ -60,6 +60,7 @@ static uint32_t g_next_guid GUARDED_BY(g_proc_table_lock) = 1;
 
 static void proc_init_process(process_t* p) NO_THREAD_SAFETY_ANALYSIS {
   pmutex_init(&p->mu);
+  p->spin_mu = KSPINLOCK_NORMAL_INIT;
   p->refcount = REFCOUNT_INIT;
   p->guid = 0;
   p->id = -1;
@@ -126,6 +127,7 @@ process_t* proc_alloc(void) {
 }
 
 void proc_destroy(process_t* process) {
+  kspin_destructor(&process->spin_mu);
   KASSERT(refcount_get(&process->refcount) == 0);
   KASSERT(process->state == PROC_INVALID);
   KASSERT(list_empty(&process->threads));
@@ -195,10 +197,9 @@ void proc_init_stage1(void) {
   }
 }
 
-void proc_init_stage2(void) {
+void proc_init_stage2(void) NO_THREAD_SAFETY_ANALYSIS {
   KASSERT(g_proc_init_stage == 1);
   KASSERT(g_current_proc == 0);
-  kspin_constructor(&g_proc_table_lock);
 
   // Create first process.
   list_push(&g_proc_table[0]->threads,
@@ -288,8 +289,11 @@ int proc_thread_create(kthread_t* thread, void* (*start_routine)(void*),
     return result;
   }
 
+  process_t* proc = proc_current();
+  kspin_lock(&proc->spin_mu);
   (*thread)->process = proc_current();
-  list_push(&proc_current()->threads, &(*thread)->proc_threads_link);
+  list_push(&proc->threads, &(*thread)->proc_threads_link);
+  kspin_unlock(&proc->spin_mu);
 
   scheduler_make_runnable(*thread);
 
@@ -300,14 +304,17 @@ void proc_thread_exit(void* x) {
   process_t* const p = proc_current();
   kthread_t thread = kthread_current_thread();
   KASSERT(thread->process == p);
+  kspin_lock(&p->spin_mu);
   KASSERT_DBG(list_link_on_list(&p->threads, &thread->proc_threads_link));
   KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
 
   list_remove(&p->threads, &thread->proc_threads_link);
   thread->process = NULL;
+  bool last_thread = list_empty(&p->threads);
+  kspin_unlock(&p->spin_mu);
 
   // If we're the last thread left in the process, exit the process.
-  if (list_empty(&p->threads)) {
+  if (last_thread) {
     proc_finish_exit();
     die("unreachable");
   }

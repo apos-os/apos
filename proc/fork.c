@@ -25,6 +25,7 @@
 #include "proc/process.h"
 #include "proc/process-internal.h"
 #include "proc/scheduler.h"
+#include "proc/spinlock.h"
 #include "vfs/vfs.h"
 
 typedef struct {
@@ -67,6 +68,7 @@ int proc_fork(proc_func_t start, void* arg) {
 
   // Duplicate any signal handlers.  The set of pending signals in the child
   // is set to empty, however.
+  kspin_constructor(&new_process->spin_mu);
   for (int signo = APOS_SIGMIN; signo <= APOS_SIGMAX; ++signo) {
     new_process->signal_dispositions[signo] =
         proc_current()->signal_dispositions[signo];

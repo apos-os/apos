@@ -51,7 +51,7 @@ static list_t g_all_threads = LIST_INIT_STATIC;
 // A queue of threads that have exited and we can clean up.
 static kthread_queue_t g_reap_queue;
 
-static void kthread_init_kthread(kthread_data_t* t) {
+static void kthread_init_kthread(kthread_data_t* t) NO_THREAD_SAFETY_ANALYSIS {
   t->state = KTHREAD_PENDING;
   t->id = 0;
   t->retval = 0x0;
@@ -153,7 +153,6 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
   thread->id = g_next_id++;
   thread->state = KTHREAD_PENDING;
   thread->retval = 0x0;
-  ksigemptyset(&thread->signal_mask);
   list_push(&g_all_threads, &thread->all_threads_link);
 
   // Allocate a stack for the thread.

@@ -33,7 +33,6 @@ void proc_exit(int status) {
   process_t* const p = proc_current();
   kthread_t thread = kthread_current_thread();
   KASSERT(thread->process == p);
-  KASSERT_DBG(list_link_on_list(&p->threads, &thread->proc_threads_link));
   KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
 
   if (p->id == 0) {
@@ -51,13 +50,16 @@ void proc_exit(int status) {
 
   // Terminate all threads in the process, then exit this one (which will clean
   // up the process if it's the last one running).
+  kspin_lock(&p->spin_mu);
+  KASSERT_DBG(list_link_on_list(&p->threads, &thread->proc_threads_link));
   FOR_EACH_LIST(iter_link, &p->threads) {
     kthread_data_t* thread_iter =
         LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
     if (thread_iter == thread) continue;
 
-    proc_force_signal_on_thread(p, thread_iter, SIGAPOSTKILL);
+    proc_force_signal_on_thread_locked(p, thread_iter, SIGAPOSTKILL);
   }
+  kspin_unlock(&p->spin_mu);
 
   proc_thread_exit(NULL);
 }
@@ -65,16 +67,17 @@ void proc_exit(int status) {
 void proc_finish_exit(void) {
   // We must be the only thread remaining.
   process_t* const p = proc_current();
+  // TODO(aoates): will need to rewrite this function to make locking work more
+  // broadly.  It is _not_ correct to assume this is locked for the whole
+  // function (though it is for file descriptors and the thread list).
+  pmutex_destructor(&p->mu);
+  kspin_destructor(&p->spin_mu);
   KASSERT(list_empty(&p->threads));
   KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
 
   KASSERT(p->id != 0);
 
   // Close all open fds.
-  // TODO(aoates): will need to rewrite this function to make locking work more
-  // broadly.  It is _not_ correct to assume this is locked for the whole
-  // function (though it is for file descriptors).
-  pmutex_destructor(&p->mu);
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
     if (p->fds[i].file >= 0) {
       int result = vfs_close(i);

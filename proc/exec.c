@@ -63,13 +63,16 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
   process_t* const p = proc_current();
   kthread_t thread = kthread_current_thread();
   KASSERT(thread->process == p);
+  kspin_lock(&p->spin_mu);
   FOR_EACH_LIST(iter_link, &p->threads) {
     kthread_data_t* thread_iter =
         LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
     if (thread_iter == thread) continue;
 
-    proc_force_signal_on_thread(p, thread_iter, SIGAPOSTKILL);
+    proc_force_signal_on_thread_locked(p, thread_iter, SIGAPOSTKILL);
   }
+  // TODO(SMP): wait here until all other threads terminate.
+  kspin_unlock(&p->spin_mu);
 
   // Unmap the current user address space.
   result = do_munmap((void*)MEM_FIRST_MAPPABLE_ADDR,

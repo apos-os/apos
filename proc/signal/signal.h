@@ -31,6 +31,7 @@
 #include "arch/proc/user_context.h"
 #include "common/types.h"
 #include "proc/group.h"
+#include "proc/kthread-internal.h"
 #include "proc/process.h"
 #include "syscall/context.h"
 #include "user/include/apos/posix_signal.h"
@@ -48,7 +49,7 @@ static inline ksigset_t ksigsubtractset(ksigset_t A, ksigset_t B) {
 }
 
 // Returns all the pending or assigned signals on the given process.
-ksigset_t proc_pending_signals(const process_t* proc);
+ksigset_t proc_pending_signals(process_t* proc);
 
 // Returns all the signals that are assigned, unmasked, and not ignored in the
 // current thread (i.e., ones that will be dispatched next).
@@ -57,7 +58,8 @@ ksigset_t proc_dispatchable_signals(void);
 // Returns true if the given signal can be delivered to the process (i.e. it's
 // neither blocked in all threads, nor ignored process-wide [explicitly or by
 // default]).
-bool proc_signal_deliverable(process_t* proc, int signum);
+bool proc_signal_deliverable(process_t* proc, int signum)
+    EXCLUDES(proc->spin_mu);
 
 // Force send a signal to the given process, without any permission checks or
 // the like.  Returns 0 on success, or -errno on error.
@@ -70,7 +72,10 @@ int proc_force_signal_group_locked(const proc_group_t* pgroup, int sig)
 
 // As above, but forces the signal to be handled on the given thread.  Returns 0
 // on success, or -errno on error.
-int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig);
+int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig)
+    EXCLUDES(proc->spin_mu);
+int proc_force_signal_on_thread_locked(process_t* proc, kthread_t thread, int sig)
+    REQUIRES(proc->spin_mu);
 
 // Send a signal to the given process, as per kill(2).  Returns 0 on success, or
 // -errno on error.
