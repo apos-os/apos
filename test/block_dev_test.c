@@ -27,7 +27,6 @@
 #include "proc/sleep.h"
 #include "proc/wait.h"
 #include "test/ktest.h"
-#include "test/proc_util.h"
 
 static void basic_test(block_dev_t* bd) {
   KTEST_BEGIN("block device test");
