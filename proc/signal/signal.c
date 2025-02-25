@@ -103,7 +103,7 @@ static bool process_wide_signal_deliverable(process_t* process, int signum) {
   return true;
 }
 
-bool proc_thread_signal_deliverable(kthread_t thread, int signum) {
+static bool proc_thread_signal_deliverable(kthread_t thread, int signum) {
   if (ksigismember(&thread->signal_mask, signum)) {
     return false;
   }

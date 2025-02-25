@@ -54,11 +54,9 @@ ksigset_t proc_pending_signals(const process_t* proc);
 // current thread (i.e., ones that will be dispatched next).
 ksigset_t proc_dispatchable_signals(void);
 
-// Returns true if the given signal can be delivered to the thread (i.e. it's
-// not blocked or ignored [explicitly or by default]).
-bool proc_thread_signal_deliverable(kthread_t thread, int signum);
-
-// As above, but for the whole process (checks all threads).
+// Returns true if the given signal can be delivered to the process (i.e. it's
+// neither blocked in all threads, nor ignored process-wide [explicitly or by
+// default]).
 bool proc_signal_deliverable(process_t* proc, int signum);
 
 // Force send a signal to the given process, without any permission checks or
