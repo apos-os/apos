@@ -23,15 +23,17 @@
 
 static void timer_cb(defint_timer_t* timer, void* arg) {
   process_t* proc = (process_t*)arg;
+  kspin_lock(&proc->spin_mu);
   KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
   KASSERT_DBG(get_time_ms() >= proc->alarm.deadline_ms);
 
   proc->alarm.deadline_ms = APOS_MS_MAX;
 
-  if (proc_force_signal(proc, SIGALRM) != 0) {
+  if (proc_force_signal_locked(proc, SIGALRM) != 0) {
     klogfm(KL_PROC, WARNING, "unable to send SIGALRM to pid %d\n", proc->id);
   }
 
+  kspin_unlock(&proc->spin_mu);
   proc_put(proc);
 }
 
@@ -44,7 +46,7 @@ unsigned int proc_alarm_ms(unsigned int ms) {
   apos_ms_t deadline = ctime + ms;
   process_t* const proc = proc_current();
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock(&proc->spin_mu);
 
   unsigned int old_remaining = 0;
 
@@ -68,6 +70,6 @@ unsigned int proc_alarm_ms(unsigned int ms) {
     defint_timer_create(deadline, &timer_cb, proc, &proc->alarm.timer);
   }
 
-  POP_INTERRUPTS();
+  kspin_unlock(&proc->spin_mu);
   return old_remaining;
 }

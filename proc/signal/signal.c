@@ -194,12 +194,18 @@ static void proc_try_assign_signal(process_t* proc, int signum)
 }
 
 int proc_force_signal(process_t* proc, int sig) {
+  kspin_lock(&proc->spin_mu);
+  int result = proc_force_signal_locked(proc, sig);
+  kspin_unlock(&proc->spin_mu);
+  return result;
+}
+
+int proc_force_signal_locked(process_t* proc, int sig) {
+  kspin_assert_is_held(&proc->spin_mu);
   KASSERT_DBG(sig != SIGAPOSTKILL);  // Must be sent to specific thread.
 
-  kspin_lock(&proc->spin_mu);
   int result = ksigaddset(&proc->pending_signals, sig);
   proc_try_assign_signal(proc, sig);
-  kspin_unlock(&proc->spin_mu);
 
   // Wake up a stopped victim at random to handle the SIGCONT (it will update
   // the process's state, wake up the rest of the threads, etc).

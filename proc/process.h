@@ -81,7 +81,7 @@ typedef struct process {
   ksigaction_t signal_dispositions[APOS_SIGMAX + 1] GUARDED_BY(&spin_mu);
 
   // Pending alarm, if any.
-  proc_alarm_t alarm;
+  proc_alarm_t alarm GUARDED_BY(&spin_mu);
 
   // Real, effective, and saved uid and gid.
   kuid_t ruid;

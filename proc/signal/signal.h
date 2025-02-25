@@ -63,7 +63,8 @@ bool proc_signal_deliverable(process_t* proc, int signum)
 
 // Force send a signal to the given process, without any permission checks or
 // the like.  Returns 0 on success, or -errno on error.
-int proc_force_signal(process_t* proc, int sig);
+int proc_force_signal(process_t* proc, int sig) EXCLUDES(proc->spin_mu);
+int proc_force_signal_locked(process_t* proc, int sig) REQUIRES(proc->spin_mu);
 
 // As above, but sends a signal to every process in the given group.
 int proc_force_signal_group(kpid_t pgid, int sig) EXCLUDES(g_proc_table_lock);
