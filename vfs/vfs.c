@@ -201,8 +201,12 @@ void vfs_init(void) {
     g_file_table[i] = 0x0;
   }
 
-  KASSERT(proc_current()->cwd == 0x0);
-  proc_current()->cwd = vfs_get_root_vnode();
+  process_t* const root_proc = proc_current();
+  pmutex_lock(&root_proc->mu);
+  KASSERT(root_proc->id == 0);
+  KASSERT(root_proc->cwd == 0x0);
+  root_proc->cwd = vfs_get_root_vnode();
+  pmutex_unlock(&root_proc->mu);
 }
 
 fs_t* vfs_get_root_fs(void) {
@@ -1556,7 +1560,14 @@ int vfs_getdents(int fd, kdirent_t* buf, int count) {
 
 int vfs_getcwd(char* path_out, size_t size) {
   // TODO(aoates): size_t all the way down.
-  return vfs_get_vnode_dir_path(proc_current()->cwd, path_out, size);
+  process_t* const me = proc_current();
+  pmutex_lock(&me->mu);
+  vnode_t* cwd = VFS_COPY_REF(me->cwd);
+  pmutex_unlock(&me->mu);
+
+  int result = vfs_get_vnode_dir_path(cwd, path_out, size);
+  VFS_PUT_AND_CLEAR(cwd);
+  return result;
 }
 
 int vfs_chdir(const char* path) {
@@ -1577,8 +1588,11 @@ int vfs_chdir(const char* path) {
   }
 
   // Set new cwd.
-  VFS_PUT_AND_CLEAR(proc_current()->cwd);
-  proc_current()->cwd = VFS_MOVE_REF(new_cwd);
+  process_t* const me = proc_current();
+  pmutex_lock(&me->mu);
+  VFS_PUT_AND_CLEAR(me->cwd);
+  me->cwd = VFS_MOVE_REF(new_cwd);
+  pmutex_unlock(&me->mu);
   return 0;
 }
 
@@ -1607,7 +1621,6 @@ int vfs_get_memobj(int fd, kmode_t mode, memobj_t** memobj_out) {
 }
 
 void vfs_fork_fds(process_t* procA, process_t* procB) {
-  pmutex_lock(&procA->mu);
   if (ENABLE_KERNEL_SAFETY_NETS) {
     for (int i = 0; i < PROC_MAX_FDS; ++i) {
       KASSERT(procB->fds[i].file == PROC_UNUSED_FD);
@@ -1620,7 +1633,6 @@ void vfs_fork_fds(process_t* procA, process_t* procB) {
       file_ref(g_file_table[procA->fds[i].file]);
     }
   }
-  pmutex_unlock(&procA->mu);
 }
 
 // TODO(aoates): add a unit test for this.

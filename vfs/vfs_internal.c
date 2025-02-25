@@ -453,7 +453,14 @@ int is_absolute_path(const char* path) {
 }
 
 vnode_t* get_root_for_path(const char* path) {
-  return get_root_for_path_with_parent(path, proc_current()->cwd);
+  process_t* const me = proc_current();
+  pmutex_lock(&me->mu);
+  vnode_t* cwd = VFS_COPY_REF(me->cwd);
+  pmutex_unlock(&me->mu);
+
+  vnode_t* result = get_root_for_path_with_parent(path, cwd);
+  VFS_PUT_AND_CLEAR(cwd);
+  return result;
 }
 
 vnode_t* get_root_for_path_with_parent(const char* path,

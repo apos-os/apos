@@ -127,6 +127,7 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   if (!proc) return -EINVAL;
 
   char* cwd = kmalloc(VFS_MAX_PATH_LENGTH);
+  pmutex_lock(&proc->mu);
   if (proc->cwd) {
     int result = vfs_get_vnode_dir_path(proc->cwd, cwd, VFS_MAX_PATH_LENGTH);
     if (result < 0)
@@ -168,6 +169,7 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   kstrncpy(buf, tbuf, buflen);
   ((char*)buf)[buflen - 1] = '\0';
 
+  pmutex_unlock(&proc->mu);
   proc_put(proc);
   kfree(tbuf);
   kfree(cwd);
@@ -182,8 +184,10 @@ static int cwd_readlink(fs_t* fs, void* arg, int vnode, void* buf, int buflen) {
   if (!proc) return -EINVAL;
 
   char* cwd = kmalloc(VFS_MAX_PATH_LENGTH);
+  pmutex_lock(&proc->mu);
   int result = vfs_get_vnode_dir_path(proc->cwd, cwd, VFS_MAX_PATH_LENGTH);
   if (result >= 0) kstrncpy(buf, cwd, result);
+  pmutex_unlock(&proc->mu);
 
   proc_put(proc);
   kfree(cwd);

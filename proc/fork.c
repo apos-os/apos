@@ -51,12 +51,15 @@ int proc_fork(proc_func_t start, void* arg) {
   process_t* new_process = proc_alloc();
   if (!new_process) return -ENOMEM;
 
-  new_process->user_arch = proc_current()->user_arch;
+  process_t* const parent = proc_current();
+  new_process->user_arch = parent->user_arch;
 
   // Fork VFS handles.
-  vfs_fork_fds(proc_current(), new_process);
-  new_process->cwd = proc_current()->cwd;
+  pmutex_lock(&parent->mu);
+  vfs_fork_fds(parent, new_process);
+  new_process->cwd = parent->cwd;
   vfs_ref(new_process->cwd);
+  pmutex_unlock(&parent->mu);
 
   // Fork the address space.
   new_process->page_directory = page_frame_alloc_directory();
@@ -71,28 +74,28 @@ int proc_fork(proc_func_t start, void* arg) {
   kspin_constructor(&new_process->spin_mu);
   for (int signo = APOS_SIGMIN; signo <= APOS_SIGMAX; ++signo) {
     new_process->signal_dispositions[signo] =
-        proc_current()->signal_dispositions[signo];
+        parent->signal_dispositions[signo];
   }
 
   // Don't duplicate the alarm; pending alarms are cleared in the child.
 
   // Propagate identity.
-  new_process->ruid = proc_current()->ruid;
-  new_process->rgid = proc_current()->rgid;
-  new_process->euid = proc_current()->euid;
-  new_process->egid = proc_current()->egid;
-  new_process->suid = proc_current()->suid;
-  new_process->sgid = proc_current()->sgid;
+  new_process->ruid = parent->ruid;
+  new_process->rgid = parent->rgid;
+  new_process->euid = parent->euid;
+  new_process->egid = parent->egid;
+  new_process->suid = parent->suid;
+  new_process->sgid = parent->sgid;
 
-  new_process->umask = proc_current()->umask;
+  new_process->umask = parent->umask;
 
   kspin_lock(&g_proc_table_lock);
-  new_process->pgroup = proc_current()->pgroup;
+  new_process->pgroup = parent->pgroup;
   proc_group_add(proc_group_get(new_process->pgroup), new_process);
   kspin_unlock(&g_proc_table_lock);
 
   for (int i = 0; i < APOS_RLIMIT_NUM_RESOURCES; ++i) {
-    new_process->limits[i] = proc_current()->limits[i];
+    new_process->limits[i] = parent->limits[i];
   }
 
   // Create the kthread.
@@ -120,8 +123,8 @@ int proc_fork(proc_func_t start, void* arg) {
 
   scheduler_make_runnable(new_thread);
 
-  new_process->parent = proc_current();
-  list_push(&proc_current()->children_list,
+  new_process->parent = parent;
+  list_push(&parent->children_list,
             &new_process->children_link);
 
   new_process->state = PROC_RUNNING;

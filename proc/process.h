@@ -67,7 +67,7 @@ typedef struct process {
   fd_t fds[PROC_MAX_FDS] GUARDED_BY(&mu);
 
   // The current working directory of the process.
-  struct vnode* cwd;
+  struct vnode* cwd GUARDED_BY(&mu);
 
   // List of vm_area_t's of the mmap'd areas in the current process.
   list_t vm_area_list;
