@@ -93,11 +93,7 @@ void proc_finish_exit(void) {
   }
 
   // TODO(aoates): if this is orphaning a process group, send SIGHUP to it.
-
-  // Remove it from the process group list.
-  // TODO(aoates): move this to process teardown in wait().
-  proc_group_remove(proc_group_get(p->pgroup), p);
-  // Note: we leave p->pgroup intact for anyone calling wait().
+  // Note: actual process group removal will happen in wait().
   kspin_unlock(&g_proc_table_lock);
 
 

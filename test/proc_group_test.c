@@ -17,8 +17,10 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "proc/exit.h"
 #include "proc/fork.h"
 #include "proc/group.h"
+#include "proc/notification.h"
 #include "proc/process.h"
 #include "proc/sleep.h"
 #include "proc/user.h"
@@ -53,6 +55,30 @@ static void loop_until_done(void* arg) {
   while (!*done) {
     ksleep(10);
   }
+}
+
+static void do_nothing(void* arg) {
+  proc_exit(0);
+}
+
+static void become_leader_wait(void* arg) {
+  KEXPECT_EQ(0, setpgid(0, 0));
+  KEXPECT_TRUE(ntfn_await_with_timeout((notification_t*)arg, 1000));
+}
+
+static bool wait_for_zombie(kpid_t pid) {
+  process_t* proc = proc_get_ref(pid);
+  KEXPECT_NE(NULL, proc);
+  apos_ms_t timeout = get_time_ms() + 1000;
+  kspin_lock(&proc->spin_mu);
+  while (proc->state != PROC_ZOMBIE && get_time_ms() < timeout) {
+    kspin_unlock(&proc->spin_mu);
+    ksleep(10);
+    kspin_lock(&proc->spin_mu);
+  }
+  bool result = (proc->state == PROC_ZOMBIE);
+  kspin_unlock(&proc->spin_mu);
+  return result;
 }
 
 static int group_contains(kpid_t pgid, kpid_t pid) {
@@ -235,6 +261,71 @@ static void dont_reuse_pid_of_group_test(void) {
   }
 }
 
+static void setpgid_zombie_test(void* arg) {
+  const kpid_t group = (intptr_t)arg;
+
+  // To ensure it's not looked at or carried to children.
+  proc_current()->execed = true;
+
+  KTEST_BEGIN("setgpid() on zombie child (process leader)");
+  kpid_t child = proc_fork(&do_nothing, NULL);
+  KEXPECT_TRUE(wait_for_zombie(child));
+  KEXPECT_EQ(0, setpgid(child, child));  // Could also be an error.
+  KEXPECT_EQ(child, getpgid(child));
+  KEXPECT_EQ(0, group_contains(proc_current()->id, child));
+  KEXPECT_EQ(0, group_contains(group, child));
+  KEXPECT_EQ(1, group_contains(child, child));
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+
+
+  KTEST_BEGIN("setgpid() on zombie child (not process leader)");
+  notification_t done;
+  ntfn_init(&done);
+  child = proc_fork(&do_nothing, NULL);
+  kpid_t child2 = proc_fork(&become_leader_wait, &done);
+  KEXPECT_TRUE(wait_for_zombie(child));
+  KEXPECT_EQ(0, setpgid(child, child2));  // Could also be an error.
+  KEXPECT_EQ(child2, getpgid(child));
+  KEXPECT_EQ(0, group_contains(proc_current()->id, child));
+  KEXPECT_EQ(0, group_contains(group, child));
+  KEXPECT_EQ(0, group_contains(child, child));
+  KEXPECT_EQ(1, group_contains(child2, child));
+  ntfn_notify(&done);
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+  KEXPECT_EQ(child2, proc_waitpid(child2, NULL, 0));
+
+
+  KTEST_BEGIN("setgpid_force() on zombie child (process leader)");
+  child = proc_fork(&do_nothing, NULL);
+  KEXPECT_TRUE(wait_for_zombie(child));
+  kspin_lock(&g_proc_table_lock);
+  setpgid_force(proc_get_locked(child), child, proc_group_get(child));
+  kspin_unlock(&g_proc_table_lock);
+  KEXPECT_EQ(child, getpgid(child));
+  KEXPECT_EQ(0, group_contains(proc_current()->id, child));
+  KEXPECT_EQ(0, group_contains(group, child));
+  KEXPECT_EQ(1, group_contains(child, child));
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+
+
+  KTEST_BEGIN("setgpid_force() on zombie child (not process leader)");
+  ntfn_init(&done);
+  child = proc_fork(&do_nothing, NULL);
+  child2 = proc_fork(&become_leader_wait, &done);
+  KEXPECT_TRUE(wait_for_zombie(child));
+  kspin_lock(&g_proc_table_lock);
+  setpgid_force(proc_get_locked(child), child2, proc_group_get(child2));
+  kspin_unlock(&g_proc_table_lock);
+  KEXPECT_EQ(child2, getpgid(child));
+  KEXPECT_EQ(0, group_contains(proc_current()->id, child));
+  KEXPECT_EQ(0, group_contains(group, child));
+  KEXPECT_EQ(0, group_contains(child, child));
+  KEXPECT_EQ(1, group_contains(child2, child));
+  ntfn_notify(&done);
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+  KEXPECT_EQ(child2, proc_waitpid(child2, NULL, 0));
+}
+
 void proc_group_test(void) {
   KTEST_SUITE_BEGIN("Process group tests");
 
@@ -249,6 +340,7 @@ void proc_group_test(void) {
   fork_and_run(&invalid_params_setgpid_test, pgroup_leader_pid);
   fork_and_run(&child_setgpid_test, pgroup_leader_pid);
   dont_reuse_pid_of_group_test();
+  fork_and_run(&setpgid_zombie_test, pgroup_leader_pid);
 
   test_done = 1;
   int child = proc_wait(0x0);

@@ -18,6 +18,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "memory/vm.h"
+#include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/process-internal.h"
 #include "proc/process.h"
@@ -115,6 +116,14 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
   }
 
   KASSERT(zombie->state == PROC_ZOMBIE);
+
+  // Remove it from the process group list.
+  // TODO(aoates): fix this race condition -- we should not re-lock the proc
+  // table mutex.
+  kspin_lock(&g_proc_table_lock);
+  proc_group_remove(proc_group_get(zombie->pgroup), zombie);
+  kspin_unlock(&g_proc_table_lock);
+
   list_remove(&p->children_list, &zombie->children_link);
 
   // Tear down the child's address space.
