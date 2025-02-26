@@ -162,11 +162,13 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
   timer_handle_t timeout_handle;
   bool interruptable = !(flags & SWAIT_NO_INTERRUPT);
   if (interruptable) {
-    const ksigset_t dispatchable = proc_dispatchable_signals();
-    if (!ksigisemptyset(dispatchable)) {
-      current->wait_status = SWAIT_INTERRUPTED;
-      POP_INTERRUPTS();
-      return SWAIT_INTERRUPTED;
+    if (!(flags & SWAIT_NO_SIGNAL_CHECK)) {
+      const ksigset_t dispatchable = proc_dispatchable_signals();
+      if (!ksigisemptyset(dispatchable)) {
+        current->wait_status = SWAIT_INTERRUPTED;
+        POP_INTERRUPTS();
+        return SWAIT_INTERRUPTED;
+      }
     }
 
     if (timeout_ms > 0) {

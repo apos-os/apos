@@ -49,6 +49,11 @@ void scheduler_yield(void);
 typedef enum {
   SWAIT_DEFAULT = 0,
   SWAIT_NO_INTERRUPT = 1,  // Wait can't be interrupted.
+
+  // Don't check for pending signals before waiting.  Generally
+  // SWAIT_NO_INTERRUPT should be used instead, unless the thread/process itself
+  // is locked.
+  SWAIT_NO_SIGNAL_CHECK = 2,
 } swait_flags_t;
 
 // Universal scheduler wait function.  Called by variants below.  At most one
