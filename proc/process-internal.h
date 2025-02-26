@@ -29,4 +29,7 @@ void proc_destroy(process_t* process);
 // Change the current process.
 void proc_set_current(process_t* process);
 
+// Cancel the existing alarm, if any, for the process (internal proc helper).
+void proc_alarm_cancel(process_t* proc) REQUIRES(proc->spin_mu);
+
 #endif

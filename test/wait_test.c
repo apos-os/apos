@@ -224,6 +224,8 @@ static void wait_for_pgroup_test(void) {
   kpid_t waitres1 = proc_waitpid(-grandchild, NULL, 0);
   kpid_t waitres2 = proc_waitpid(-grandchild, NULL, 0);
   apos_ms_t end_ms = get_time_ms();
+  KEXPECT_GE(waitres1, 0);
+  KEXPECT_GE(waitres2, 0);
   KEXPECT_EQ(1, waitres1 == child || waitres1 == childB);
   KEXPECT_EQ(1, waitres2 == child || waitres2 == childB);
   KEXPECT_LE(end_ms - start_ms, 50);

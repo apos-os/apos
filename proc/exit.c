@@ -28,6 +28,7 @@
 #include "proc/signal/signal.h"
 #include "proc/spinlock.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_internal.h"
 
 void proc_exit(int status) {
   process_t* const p = proc_current();
@@ -67,39 +68,9 @@ void proc_exit(int status) {
 void proc_finish_exit(void) {
   // We must be the only thread remaining.
   process_t* const p = proc_current();
-  // TODO(aoates): will need to rewrite this function to make locking work more
-  // broadly.  It is _not_ correct to assume this is locked for the whole
-  // function (though it is for file descriptors and the thread list).
-  pmutex_destructor(&p->mu);
-  kspin_destructor(&p->spin_mu);
-  KASSERT(list_empty(&p->threads));
-  KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
-
   KASSERT(p->id != 0);
 
-  // Close all open fds.
-  for (int i = 0; i < PROC_MAX_FDS; ++i) {
-    if (p->fds[i].file >= 0) {
-      int result = vfs_close(i);
-      if (result) {
-        klogfm(KL_PROC, WARNING, "unable to close fd %d in proc_exit(): %s\n",
-               i, errorname(-result));
-      }
-    }
-  }
-
-  if (p->cwd) {
-    vfs_put(p->cwd);
-    p->cwd = 0x0;
-  }
-
-  // TODO(aoates): if this is orphaning a process group, send SIGHUP to it.
-
-  // Note: the vm_area_t list is torn down in the parent in proc_wait, NOT here.
-
-  // Cancel any outstanding alarms.
-  proc_alarm_ms(0);
-
+  // First, remove us from our process group.
   kspin_lock(&g_proc_table_lock);
   const proc_group_t* my_pgroup = proc_group_get(p->pgroup);
   if (my_pgroup->session == p->id) {  // Controlling process/session leader.
@@ -121,10 +92,16 @@ void proc_finish_exit(void) {
     }
   }
 
+  // TODO(aoates): if this is orphaning a process group, send SIGHUP to it.
+
   // Remove it from the process group list.
+  // TODO(aoates): move this to process teardown in wait().
   proc_group_remove(proc_group_get(p->pgroup), p);
+  // Note: we leave p->pgroup intact for anyone calling wait().
   kspin_unlock(&g_proc_table_lock);
 
+
+  // TODO(aoates): fix locking of the process and root.
   // Move any pending children to the root process.
   process_t* const root_process = proc_get(0);
   list_link_t* child_link = list_pop(&p->children_list);
@@ -138,8 +115,43 @@ void proc_finish_exit(void) {
   }
   scheduler_wake_all(&root_process->wait_queue);
 
+
+  // Now clean up our state.  Start with state protected only by the mutex.
+  pmutex_lock(&p->mu);
+
+  // Close all open fds.
+  for (int i = 0; i < PROC_MAX_FDS; ++i) {
+    if (p->fds[i].file >= 0) {
+      int result = vfs_close_locked(i);
+      if (result) {
+        klogfm(KL_PROC, WARNING, "unable to close fd %d in proc_exit(): %s\n",
+               i, errorname(-result));
+      }
+    }
+  }
+
+  if (p->cwd) {
+    vfs_put(p->cwd);
+    p->cwd = 0x0;
+  }
+
+  // Note: the vm_area_t list is torn down in the parent in proc_wait, NOT here.
+
+  // Now clean up state protected by the spinlock.
+  kspin_lock(&p->spin_mu);
+  KASSERT(list_empty(&p->threads));
+  KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
+
+  // Cancel any outstanding alarms.
+  proc_alarm_cancel(p);
+
   p->state = PROC_ZOMBIE;
 
+  kspin_unlock(&p->spin_mu);
+  pmutex_unlock(&p->mu);
+
+  // TODO(aoates): fix locking of the parent --- p should be locked here, but if
+  // so, this could deadlock.
   // Send SIGCHLD to the parent.
   KASSERT(proc_force_signal(p->parent, SIGCHLD) == 0);
 

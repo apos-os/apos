@@ -18,8 +18,10 @@
 #include "common/math.h"
 #include "dev/interrupts.h"
 #include "proc/defint_timer.h"
+#include "proc/process-internal.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
+#include "proc/spinlock.h"
 
 static void timer_cb(defint_timer_t* timer, void* arg) {
   process_t* proc = (process_t*)arg;
@@ -58,10 +60,7 @@ unsigned int proc_alarm_ms(unsigned int ms) {
     old_remaining = round_nearest_div(proc->alarm.deadline_ms - ctime, 1000);
     old_remaining = max(old_remaining, 1U);
 
-    if (defint_timer_cancel(&proc->alarm.timer)) {
-      proc_put(proc);  // The (cancelled) timer's reference.
-    }
-    proc->alarm.deadline_ms = APOS_MS_MAX;
+    proc_alarm_cancel(proc);
   }
 
   if (ms > 0) {
@@ -72,4 +71,15 @@ unsigned int proc_alarm_ms(unsigned int ms) {
 
   kspin_unlock(&proc->spin_mu);
   return old_remaining;
+}
+
+void proc_alarm_cancel(process_t* proc) {
+  kspin_assert_is_held(&proc->spin_mu);
+
+  if (proc->alarm.deadline_ms != APOS_MS_MAX) {
+    if (defint_timer_cancel(&proc->alarm.timer)) {
+      proc_put(proc);  // The (cancelled) timer's reference.
+    }
+    proc->alarm.deadline_ms = APOS_MS_MAX;
+  }
 }
