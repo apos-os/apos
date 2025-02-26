@@ -55,6 +55,11 @@ static bool eligable_wait(process_t* proc, int options) {
   return false;
 }
 
+// Once an eligable child has been found, this finishes the call to waitpid()
+// (cleaning up the child if necessary, setting output parameters, etc).
+static kpid_t finish_waitpid(process_t* zombie, int* exit_status, int options)
+    RELEASE(g_proc_table_lock);
+
 kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
   if ((options & ~WUNTRACED & ~WCONTINUED & ~WNOHANG) != 0) return -EINVAL;
 
@@ -62,7 +67,7 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
 
   // Look for an existing zombie child.
   process_t* zombie = 0x0;
-  while (!zombie) {
+  while (true) {
     kspin_lock(&g_proc_table_lock);
     // We re-check the current pgroup each time we sleep, in case it changes.
     kpid_t search_pid = (pid == 0) ? -p->pgroup : pid;
@@ -75,8 +80,7 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
       if (matches_pid(child_process, search_pid)) {
         found_matching_child = true;
         if (eligable_wait(child_process, options)) {
-          zombie = child_process;
-          break;
+          return finish_waitpid(child_process, exit_status, options);
         }
       }
       child_link = child_link->next;
@@ -88,21 +92,29 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
     }
 
     // If we didn't find one, wait for a child to exit and wake us up.
-    if (!zombie) {
-      if (options & WNOHANG)
-        return 0;
+    KASSERT(!zombie);
+    if (options & WNOHANG)
+      return 0;
 
-      int wait_result = scheduler_wait_on_interruptable(&p->wait_queue, -1);
-      if (wait_result == SWAIT_INTERRUPTED)
-        return -EINTR;
-    }
+    int wait_result = scheduler_wait_on_interruptable(&p->wait_queue, -1);
+    if (wait_result == SWAIT_INTERRUPTED)
+      return -EINTR;
   }
+  die("unreachable");
+}
+
+static kpid_t finish_waitpid(process_t* zombie, int* exit_status, int options) {
+  kspin_assert_is_held(&g_proc_table_lock);
+
+  process_t* const p = proc_current();
+  KASSERT_DBG(zombie->parent == p);
 
   if (zombie->state == PROC_STOPPED) {
     KASSERT_DBG(options & WUNTRACED);
     if (exit_status)
       *exit_status = zombie->exit_status;
     zombie->exit_status = 0;
+    kspin_unlock(&g_proc_table_lock);
     return zombie->id;
   }
 
@@ -112,19 +124,18 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
     if (exit_status)
       *exit_status = zombie->exit_status;
     zombie->exit_status = 0;
+    kspin_unlock(&g_proc_table_lock);
     return zombie->id;
   }
 
   KASSERT(zombie->state == PROC_ZOMBIE);
 
   // Remove it from the process group list.
-  // TODO(aoates): fix this race condition -- we should not re-lock the proc
-  // table mutex.
-  kspin_lock(&g_proc_table_lock);
   proc_group_remove(proc_group_get(zombie->pgroup), zombie);
   kspin_unlock(&g_proc_table_lock);
 
   list_remove(&p->children_list, &zombie->children_link);
+  zombie->parent = NULL;
 
   // Tear down the child's address space.
   // Destroy all VM areas.
