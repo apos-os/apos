@@ -60,8 +60,8 @@ typedef struct process {
   kspinlock_t spin_mu ACQUIRED_AFTER(&mu) ACQUIRED_AFTER(g_proc_table_lock);
   proc_state_t state GUARDED_BY(&spin_mu);
   list_t threads GUARDED_BY(&spin_mu);  // All process threads.
-  int exit_status;  // Exit status if PROC_ZOMBIE, or PROC_STOPPED.
-  bool exiting;  // Whether the process is exiting.
+  int exit_status GUARDED_BY(&spin_mu);  // Exit status if PROC_ZOMBIE, or PROC_STOPPED.
+  bool exiting GUARDED_BY(&spin_mu);  // Whether the process is exiting.
 
   // File descriptors.  Indexes into the global file table.
   fd_t fds[PROC_MAX_FDS] GUARDED_BY(&mu);

@@ -39,8 +39,9 @@ void proc_exit(int status) {
     die("Cannot exit() the root thread");
   }
 
+  kspin_lock(&p->spin_mu);
   // Note: another thread might be simultaneously calling exit() and overwrite
-  // this....that's fine.
+  // this before the exit actually happens....that's fine.
   p->exit_status = status;
 
   // Prevent any new threads from being created.  In the last-thread-exits
@@ -50,7 +51,6 @@ void proc_exit(int status) {
 
   // Terminate all threads in the process, then exit this one (which will clean
   // up the process if it's the last one running).
-  kspin_lock(&p->spin_mu);
   KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
   KASSERT_DBG(list_link_on_list(&p->threads, &thread->proc_threads_link));
   FOR_EACH_LIST(iter_link, &p->threads) {

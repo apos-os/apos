@@ -297,27 +297,29 @@ static void* proc_thread_trampoline(void* arg) {
 
 int proc_thread_create(kthread_t* thread, void* (*start_routine)(void*),
                        void* arg) {
+  process_t* const proc = proc_current();
+  kspin_lock(&proc->spin_mu);
   if (proc_current()->exiting) {
+    kspin_unlock(&proc->spin_mu);
     return -EINTR;
   }
+
   proc_thread_tramp_args_t* pt_args =
       (proc_thread_tramp_args_t*)kmalloc(sizeof(proc_thread_tramp_args_t));
   pt_args->start_routine = start_routine;
   pt_args->arg = arg;
   int result = kthread_create(thread, &proc_thread_trampoline, pt_args);
   if (result) {
+    kspin_unlock(&proc->spin_mu);
     kfree(pt_args);
     return result;
   }
 
-  process_t* proc = proc_current();
-  kspin_lock(&proc->spin_mu);
-  (*thread)->process = proc_current();
+  (*thread)->process = proc;
   list_push(&proc->threads, &(*thread)->proc_threads_link);
   kspin_unlock(&proc->spin_mu);
 
   scheduler_make_runnable(*thread);
-
   return 0;
 }
 
