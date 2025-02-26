@@ -89,9 +89,6 @@ int proc_fork(proc_func_t start, void* arg) {
   new_process->egid = parent->egid;
   new_process->suid = parent->suid;
   new_process->sgid = parent->sgid;
-
-  new_process->pgroup = parent->pgroup;
-  proc_group_add(proc_group_get(new_process->pgroup), new_process);
   kspin_unlock(&g_proc_table_lock);
 
   for (int i = 0; i < APOS_RLIMIT_NUM_RESOURCES; ++i) {
@@ -121,12 +118,18 @@ int proc_fork(proc_func_t start, void* arg) {
   list_push(&new_process->threads, &new_thread->proc_threads_link);
   kthread_detach(new_thread);
 
-  scheduler_make_runnable(new_thread);
+  new_process->state = PROC_RUNNING;
 
   new_process->parent = parent;
   list_push(&parent->children_list,
             &new_process->children_link);
 
-  new_process->state = PROC_RUNNING;
+  kspin_lock(&g_proc_table_lock);
+  new_process->pgroup = parent->pgroup;
+  proc_group_add(proc_group_get(new_process->pgroup), new_process);
+  kspin_unlock(&g_proc_table_lock);
+
+  scheduler_make_runnable(new_thread);
+
   return new_process->id;
 }
