@@ -151,10 +151,8 @@ static void scheduler_timeout(void* arg) {
   POP_INTERRUPTS();
 }
 
-static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
-                                      long timeout_ms, kmutex_t* mu,
-                                      kspinlock_t* sp)
-    NO_THREAD_SAFETY_ANALYSIS {
+int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
+                   kmutex_t* mu, kspinlock_t* sp) NO_THREAD_SAFETY_ANALYSIS {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_t current = kthread_current_thread();
   // We should never be blocking if we're holding a spinlock (unless it's the
@@ -162,6 +160,7 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
   KASSERT_DBG(current->spinlocks_held == (sp ? 1 : 0));
 
   timer_handle_t timeout_handle;
+  bool interruptable = !(flags & SWAIT_NO_INTERRUPT);
   if (interruptable) {
     const ksigset_t dispatchable = proc_dispatchable_signals();
     if (!ksigisemptyset(dispatchable)) {
@@ -176,6 +175,8 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
                                current, &timeout_handle);
       KASSERT_DBG(result == 0);
     }
+  } else {
+    KASSERT_DBG(timeout_ms == -1);
   }
 
   current->state = KTHREAD_PENDING;
@@ -215,27 +216,22 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
 }
 
 void scheduler_wait_on(kthread_queue_t* queue) {
-  int result = scheduler_wait_on_internal(queue, 0, -1, NULL, NULL);
+  int result = scheduler_wait(queue, SWAIT_NO_INTERRUPT, -1, NULL, NULL);
   KASSERT_DBG(result == 0);
 }
 
 int scheduler_wait_on_interruptable(kthread_queue_t* queue, long timeout_ms) {
-  return scheduler_wait_on_internal(queue, 1, timeout_ms, NULL, NULL);
+  return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, NULL, NULL);
 }
 
 int scheduler_wait_on_locked(kthread_queue_t* queue, long timeout_ms,
                              kmutex_t* mu) {
-  return scheduler_wait_on_internal(queue, 1, timeout_ms, mu, NULL);
+  return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, mu, NULL);
 }
 
 int scheduler_wait_on_splocked(kthread_queue_t* queue, long timeout_ms,
                                kspinlock_t* sp) {
-  return scheduler_wait_on_internal(queue, 1, timeout_ms, NULL, sp);
-}
-
-void scheduler_wait_on_locked_no_signals(kthread_queue_t* queue, kmutex_t* mu) {
-  int result = scheduler_wait_on_internal(queue, 0, -1, mu, NULL);
-  KASSERT_DBG(result == 0);
+  return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, NULL, sp);
 }
 
 void scheduler_wake_one(kthread_queue_t* queue) {
