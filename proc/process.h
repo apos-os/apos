@@ -57,8 +57,8 @@ typedef struct process {
   uint32_t guid;
   kpid_t id;  // Index into global process table.
   pmutex_t mu;
-  proc_state_t state;
-  kspinlock_t spin_mu ACQUIRED_AFTER(&mu);
+  kspinlock_t spin_mu ACQUIRED_AFTER(&mu) ACQUIRED_AFTER(g_proc_table_lock);
+  proc_state_t state GUARDED_BY(&spin_mu);
   list_t threads GUARDED_BY(&spin_mu);  // All process threads.
   int exit_status;  // Exit status if PROC_ZOMBIE, or PROC_STOPPED.
   bool exiting;  // Whether the process is exiting.
@@ -175,6 +175,9 @@ int proc_thread_create(kthread_t* thread, void* (*start_routine)(void*),
 // proc_thread_create().  If this thread is the last one in the current process,
 // exits the process (with status 0).
 void proc_thread_exit(void* x) __attribute__((noreturn));
+
+// Returns the state of the process.
+proc_state_t proc_state(kpid_t pid);
 
 // Implementations.
 

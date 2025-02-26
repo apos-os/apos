@@ -58,6 +58,18 @@ static kpid_t g_current_proc = -1;
 static int g_proc_init_stage = 0;
 static uint32_t g_next_guid GUARDED_BY(g_proc_table_lock) = 1;
 
+proc_state_t proc_state(kpid_t pid) {
+  process_t* p = proc_get_ref(pid);
+  if (!p) {
+    return PROC_INVALID;
+  }
+  kspin_lock(&p->spin_mu);
+  proc_state_t state = p->state;
+  kspin_unlock(&p->spin_mu);
+  proc_put(p);
+  return state;
+}
+
 static void proc_init_process(process_t* p) NO_THREAD_SAFETY_ANALYSIS {
   pmutex_init(&p->mu);
   p->spin_mu = KSPINLOCK_NORMAL_INIT;
@@ -127,12 +139,13 @@ process_t* proc_alloc(void) {
 }
 
 void proc_destroy(process_t* process) {
-  kspin_destructor(&process->spin_mu);
+  kspin_lock(&process->spin_mu);
   KASSERT(refcount_get(&process->refcount) == 0);
   KASSERT(process->state == PROC_INVALID);
   KASSERT(list_empty(&process->threads));
   KASSERT(process->page_directory == 0x0);
   KASSERT(process->id > 0 && process->id < PROC_MAX_PROCS);
+  kspin_unlock(&process->spin_mu);
 
   kspin_lock(&g_proc_table_lock);
   KASSERT(g_proc_table[process->id] == process);
@@ -143,7 +156,7 @@ void proc_destroy(process_t* process) {
   kfree(process);
 }
 
-void proc_init_stage1(void) {
+void proc_init_stage1(void) NO_THREAD_SAFETY_ANALYSIS {
   KASSERT(g_proc_init_stage == 0);
   kspin_constructor(&g_proc_table_lock);
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {

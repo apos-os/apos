@@ -41,7 +41,8 @@ static bool matches_pid(process_t* proc, kpid_t wait_pid)
 
 // Returns true if the given process is eligable for waiting with the given
 // waitpid() flags.
-static bool eligable_wait(process_t* proc, int options) {
+static bool eligable_wait(process_t* proc, int options)
+    REQUIRES(proc->spin_mu) {
   if (proc->state == PROC_ZOMBIE) {
     return true;
   } else if ((options & WUNTRACED) && proc->state == PROC_STOPPED &&
@@ -58,7 +59,7 @@ static bool eligable_wait(process_t* proc, int options) {
 // Once an eligable child has been found, this finishes the call to waitpid()
 // (cleaning up the child if necessary, setting output parameters, etc).
 static kpid_t finish_waitpid(process_t* zombie, int* exit_status, int options)
-    RELEASE(g_proc_table_lock);
+  RELEASE(g_proc_table_lock) RELEASE(zombie->spin_mu);
 
 kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
   if ((options & ~WUNTRACED & ~WCONTINUED & ~WNOHANG) != 0) return -EINVAL;
@@ -79,9 +80,11 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
       KASSERT(child_process->parent == p);
       if (matches_pid(child_process, search_pid)) {
         found_matching_child = true;
+        kspin_lock(&child_process->spin_mu);
         if (eligable_wait(child_process, options)) {
           return finish_waitpid(child_process, exit_status, options);
         }
+        kspin_unlock(&child_process->spin_mu);
       }
       child_link = child_link->next;
     }
@@ -104,6 +107,7 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
 }
 
 static kpid_t finish_waitpid(process_t* zombie, int* exit_status, int options) {
+  kspin_assert_is_held(&zombie->spin_mu);
   kspin_assert_is_held(&g_proc_table_lock);
 
   process_t* const p = proc_current();
@@ -114,6 +118,7 @@ static kpid_t finish_waitpid(process_t* zombie, int* exit_status, int options) {
     if (exit_status)
       *exit_status = zombie->exit_status;
     zombie->exit_status = 0;
+    kspin_unlock(&zombie->spin_mu);
     kspin_unlock(&g_proc_table_lock);
     return zombie->id;
   }
@@ -124,27 +129,33 @@ static kpid_t finish_waitpid(process_t* zombie, int* exit_status, int options) {
     if (exit_status)
       *exit_status = zombie->exit_status;
     zombie->exit_status = 0;
+    kspin_unlock(&zombie->spin_mu);
     kspin_unlock(&g_proc_table_lock);
     return zombie->id;
   }
 
   KASSERT(zombie->state == PROC_ZOMBIE);
 
-  // Remove it from the process group list.
-  proc_group_remove(proc_group_get(zombie->pgroup), zombie);
-  kspin_unlock(&g_proc_table_lock);
-
   list_remove(&p->children_list, &zombie->children_link);
   zombie->parent = NULL;
 
+  // Remove it from the process group list.
+  proc_group_remove(proc_group_get(zombie->pgroup), zombie);
+
+  // Must unlock in this order.
+  kspin_unlock(&zombie->spin_mu);
+  kspin_unlock(&g_proc_table_lock);
+
+  // TODO(aoates): make it possible to unlock spinlocks in a different order
+  // than they were locked, so we can unlock only g_proc_table_lock here.
+
+  // Re-lock the zombie to finish tearing it down.
+  kspin_lock(&zombie->spin_mu);
+
   // Tear down the child's address space.
-  // Destroy all VM areas.
-  list_link_t* vm_link = list_pop(&zombie->vm_area_list);
-  while (vm_link) {
-    vm_area_t* const area = container_of(vm_link, vm_area_t, vm_proc_list);
-    vm_area_destroy(area);
-    vm_link = list_pop(&zombie->vm_area_list);
-  }
+  // Make a copy of the VM areas, then destroy them with the spinlock released.
+  list_t vm_areas = zombie->vm_area_list;
+  zombie->vm_area_list = LIST_INIT;
 
   page_frame_free_directory(zombie->page_directory);
   zombie->page_directory = 0x0;
@@ -154,7 +165,18 @@ static kpid_t finish_waitpid(process_t* zombie, int* exit_status, int options) {
   if (exit_status) {
     *exit_status = zombie->exit_status;
   }
+  kspin_unlock(&zombie->spin_mu);
+
+  // Destroy all VM areas.
+  list_link_t* vm_link = list_pop(&vm_areas);
+  while (vm_link) {
+    vm_area_t* const area = container_of(vm_link, vm_area_t, vm_proc_list);
+    vm_area_destroy(area);
+    vm_link = list_pop(&vm_areas);
+  }
+
   kpid_t zombie_pid = zombie->id;
+
   proc_put(zombie);  // Will destroy if no other references.
   return zombie_pid;
 }

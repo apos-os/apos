@@ -26,6 +26,7 @@
 #include "memory/kmalloc.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"
+#include "proc/spinlock.h"
 #include "proc/user.h"
 #include "vfs/cbfs.h"
 #include "vfs/vfs.h"
@@ -146,6 +147,8 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   kuid_t suid = proc->suid;
   kgid_t sgid = proc->sgid;
   kspin_unlock(&g_proc_table_lock);
+
+  kspin_lock(&proc->spin_mu);
   ksprintf(tbuf,
            "pid: %d\n"
            "state: %s\n"
@@ -166,11 +169,14 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   for (list_link_t* link = proc->children_list.head;
        link != 0x0;
        link = link->next) {
-    const process_t* const child = container_of(link, process_t, children_link);
+    process_t* const child = container_of(link, process_t, children_link);
+    kspin_lock(&child->spin_mu);
     ksprintf(buf_ptr, "  %5d (%s)\n", child->id,
              proc_state_to_string(child->state));
+    kspin_unlock(&child->spin_mu);
     buf_ptr += kstrlen(buf_ptr);
   }
+  kspin_unlock(&proc->spin_mu);
   kstrncpy(buf, tbuf, buflen);
   ((char*)buf)[buflen - 1] = '\0';
 

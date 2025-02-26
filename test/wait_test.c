@@ -125,14 +125,14 @@ static void wait_for_specific_pid_test(void) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   KEXPECT_NE(NULL, proc_get(grandchild));
-  KEXPECT_EQ(PROC_RUNNING, proc_get(grandchild)->state);
+  KEXPECT_EQ(PROC_RUNNING, proc_state(grandchild));
   KEXPECT_EQ(-ECHILD, proc_waitpid(grandchild, NULL, 0));
   cleanup_grandchild(grandchild);
 
 
   KTEST_BEGIN("waitpid(): pid is child (already stopped)");
   child = proc_fork(&do_nothing, NULL);
-  for (int i = 0; i < 5 && proc_get(child)->state == PROC_RUNNING; ++i)
+  for (int i = 0; i < 5 && proc_state(child) == PROC_RUNNING; ++i)
     scheduler_yield();
   int status = 5;
   KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
@@ -154,7 +154,7 @@ static void wait_for_specific_pid_test(void) {
   kpid_t childB = proc_fork(&do_nothing, NULL);
   kpid_t childC = proc_fork(&do_nothing, NULL);
   kpid_t childD = proc_fork(&sleep_func, (void*)50);
-  for (int i = 0; i < 5 && proc_get(childC)->state == PROC_RUNNING; ++i)
+  for (int i = 0; i < 5 && proc_state(childC) == PROC_RUNNING; ++i)
     scheduler_yield();
   status = 5;
   KEXPECT_EQ(childC, proc_waitpid(childC, &status, 0));
@@ -168,7 +168,7 @@ static void wait_for_specific_pid_test(void) {
   childB = proc_fork(&do_nothing, NULL);
   childC = proc_fork(&sleep_func, (void*)50);
   childD = proc_fork(&do_nothing, NULL);
-  for (int i = 0; i < 5 && proc_get(childC)->state == PROC_RUNNING; ++i)
+  for (int i = 0; i < 5 && proc_state(childC) == PROC_RUNNING; ++i)
     scheduler_yield();
   status = 5;
   start_ms = get_time_ms();
@@ -216,10 +216,10 @@ static void wait_for_pgroup_test(void) {
   KEXPECT_EQ(0, setpgid(child, grandchild));
   KEXPECT_EQ(0, setpgid(childB, grandchild));
   KEXPECT_EQ(0, setpgid(childC, grandchild));
-  while (proc_get(child)->state == PROC_RUNNING &&
-         proc_get(childB)->state == PROC_RUNNING)
+  while (proc_state(child) == PROC_RUNNING &&
+         proc_state(childB) == PROC_RUNNING)
     scheduler_yield();
-  KEXPECT_EQ(PROC_RUNNING, proc_get(childC)->state);
+  KEXPECT_EQ(PROC_RUNNING, proc_state(childC));
   apos_ms_t start_ms = get_time_ms();
   kpid_t waitres1 = proc_waitpid(-grandchild, NULL, 0);
   kpid_t waitres2 = proc_waitpid(-grandchild, NULL, 0);

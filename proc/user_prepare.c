@@ -23,9 +23,9 @@
 
 void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg,
                            syscall_context_t* syscall_ctx) {
+  kthread_t me = kthread_current_thread();
+  kthread_lock_proc_spin(me);
   do {
-    kthread_t me = kthread_current_thread();
-    kthread_lock_proc_spin(me);
     if (ksigismember(&me->process->pending_signals, SIGCONT) ||
         ksigismember(&me->assigned_signals, SIGCONT)) {
       klogfm(KL_PROC, DEBUG, "continuing process %d", proc_current()->id);
@@ -36,17 +36,27 @@ void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg,
       // process:
       scheduler_wake_all(&proc_current()->stopped_queue);
     }
-    kthread_unlock_proc_spin(me);
 
+    // Unlock to assign signals.
+    // TODO(smp): this is racy --- a signal could come in just after we re-lock
+    // below, and due to SWAIT_NO_SIGNAL_CHECK, we'd miss it.  Fix and test.
+    kthread_unlock_proc_spin(me);
     if (proc_assign_pending_signals()) {
       user_context_t context = context_fn(arg);
       proc_dispatch_pending_signals(&context, syscall_ctx);
     }
+    kthread_lock_proc_spin(me);
 
-    if (proc_current()->state == PROC_STOPPED) {
-      scheduler_wait_on_interruptable(&proc_current()->stopped_queue, -1);
+    if (me->process->state == PROC_STOPPED) {
+      // We don't want scheduler_wait() to re-check signals (which would require
+      // re-taking me->process->spin_mu).
+      scheduler_wait(&me->process->stopped_queue, SWAIT_NO_SIGNAL_CHECK, -1,
+                     NULL, &me->process->spin_mu);
     }
   } while (proc_current()->state == PROC_STOPPED);
+  // TODO(SMP): need to close this race condition --- another thread could
+  // come in and stop us right after we unlock the spinlock.
+  kthread_unlock_proc_spin(me);
 
   if (syscall_ctx) {
     KASSERT_DBG(

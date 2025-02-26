@@ -269,20 +269,30 @@ int proc_force_signal_on_thread_locked(process_t* proc, kthread_t thread, int si
 }
 
 static int proc_kill_one(process_t* proc, int sig) EXCLUDES(g_proc_table_lock) {
-  if (!proc || (proc->state != PROC_RUNNING && proc->state != PROC_STOPPED &&
-                proc->state != PROC_ZOMBIE)) {
+  if (!proc) {
+    return -ESRCH;
+  }
+
+  kspin_lock(&proc->spin_mu);
+  if (proc->state != PROC_RUNNING && proc->state != PROC_STOPPED &&
+      proc->state != PROC_ZOMBIE) {
+    kspin_unlock(&proc->spin_mu);
     return -ESRCH;
   }
 
   if (!proc_signal_allowed(proc_current(), proc, sig)) {
+    kspin_unlock(&proc->spin_mu);
     return -EPERM;
   }
 
   if (sig == APOS_SIGNULL) {
+    kspin_unlock(&proc->spin_mu);
     return 0;
   }
 
-  return proc_force_signal(proc, sig);
+  int result = proc_force_signal_locked(proc, sig);
+  kspin_unlock(&proc->spin_mu);
+  return result;
 }
 
 int proc_kill(kpid_t pid, int sig) {
@@ -514,8 +524,8 @@ static bool dispatch_signal(int signum, const user_context_t* context,
   process_t* proc = proc_current();
   kthread_data_t* thread = kthread_current_thread();
   KASSERT(thread->process == proc);
-  KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
   kthread_assert_proc_spin_held(thread);
+  KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
 
   const ksigaction_t* action = &proc->signal_dispositions[signum];
   // TODO(aoates): support sigaction flags.

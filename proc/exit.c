@@ -34,7 +34,6 @@ void proc_exit(int status) {
   process_t* const p = proc_current();
   kthread_t thread = kthread_current_thread();
   KASSERT(thread->process == p);
-  KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
 
   if (p->id == 0) {
     die("Cannot exit() the root thread");
@@ -52,6 +51,7 @@ void proc_exit(int status) {
   // Terminate all threads in the process, then exit this one (which will clean
   // up the process if it's the last one running).
   kspin_lock(&p->spin_mu);
+  KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
   KASSERT_DBG(list_link_on_list(&p->threads, &thread->proc_threads_link));
   FOR_EACH_LIST(iter_link, &p->threads) {
     kthread_data_t* thread_iter =

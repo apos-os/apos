@@ -1152,7 +1152,7 @@ static void sigsuspend_test(void) {
   KEXPECT_GE(child, 0);
 
   KEXPECT_EQ(0, sem_wait(&g_sem));
-  KEXPECT_EQ(PROC_RUNNING, proc_get(child)->state);
+  KEXPECT_EQ(PROC_RUNNING, proc_state(child));
   kthread_t thread = get_proc_thread(proc_get(child));
   kthread_lock_proc_spin(thread);
   KEXPECT_EQ(new_mask, thread->signal_mask);
@@ -1169,7 +1169,7 @@ static void sigsuspend_test(void) {
   KEXPECT_GE(child, 0);
 
   KEXPECT_EQ(0, sem_wait(&g_sem));
-  KEXPECT_EQ(PROC_RUNNING, proc_get(child)->state);
+  KEXPECT_EQ(PROC_RUNNING, proc_state(child));
   kthread_lock_proc_spin(thread);
   KEXPECT_EQ(mask2, thread->signal_mask);
   kthread_unlock_proc_spin(thread);
@@ -1256,7 +1256,7 @@ static void zombie_test(void) {
   KTEST_BEGIN("kill(): sending a signal to a zombie process");
   kpid_t child = proc_fork(&do_nothing, NULL);
   KEXPECT_GE(child, 0);
-  while (proc_get(child)->state != PROC_ZOMBIE) {
+  while (proc_state(child) != PROC_ZOMBIE) {
     scheduler_yield();
   }
 

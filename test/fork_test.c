@@ -116,7 +116,7 @@ static void reparent_zombie_to_root_inner(void* arg) {
 static void reparent_zombie_to_root_outer(void* arg) {
   *(kpid_t*)arg = proc_fork(&reparent_zombie_to_root_inner, 0x0);
   for (int i = 0; i < 3; ++i) scheduler_yield();
-  KEXPECT_EQ(PROC_ZOMBIE, proc_get(*(kpid_t*)arg)->state);
+  KEXPECT_EQ(PROC_ZOMBIE, proc_state(*(kpid_t*)arg));
   proc_exit(5);
 }
 
