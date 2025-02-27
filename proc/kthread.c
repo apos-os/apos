@@ -179,7 +179,14 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
   // TODO(aoates): rather than having this and legacy_interrupt_sync, etc be
   // implicitly copied from parent thread, add thread creation flags to make it
   // explicit.
-  if (sched_preemption_enabled()) {
+
+  kthread_t me = kthread_current_thread();
+  // Safe to load relaxed; this is atomic for signal handlers, not concurrency.
+  int preemption_disables = atomic_load_relaxed(&me->preemption_disables);
+  KASSERT_DBG(preemption_disables >= me->spinlocks_held);
+  // If the only reason preemption is disabled is the spinlocks we've held, make
+  // the child preemptible.
+  if (preemption_disables - me->spinlocks_held == 0) {
     atomic_store_relaxed(&thread->preemption_disables, 0);
   }
 #if ENABLE_TSAN

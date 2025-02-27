@@ -1074,6 +1074,15 @@ static void* preemption_test_tester(void* arg) {
   scheduler_make_runnable(child);
   KEXPECT_EQ(0, (intptr_t)kthread_join(child));
 
+  KTEST_BEGIN("kthread: preemption state inherited in child threads (spinlock held during creation)");
+  // Holding spinlock should not prevent preemption being enabled in the child.
+  kspinlock_t spin = KSPINLOCK_NORMAL_INIT;
+  kspin_lock(&spin);
+  KEXPECT_EQ(0, kthread_create(&child, &preemption_test_check_enabled, NULL));
+  scheduler_make_runnable(child);
+  kspin_unlock(&spin);
+  KEXPECT_EQ(0, (intptr_t)kthread_join(child));
+
   KTEST_BEGIN("kthread: SPINLOCK_INTERRUPT_SAFE blocks interrupts");
   preemption_test_args_t interrupt_args;
   interrupt_args.intsafe_lock = KSPINLOCK_INTERRUPT_SAFE_INIT;
