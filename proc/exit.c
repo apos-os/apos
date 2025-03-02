@@ -70,7 +70,10 @@ void proc_finish_exit(void) {
   process_t* const p = proc_current();
   KASSERT(p->id != 0);
 
-  // First, remove us from our process group.
+  // Phase 1: do things that require other locks (signalling) and
+  // re-parent children, but leave the process in a valid and consistent state.
+
+  // First, signal our process group if necessary.
   kspin_lock(&g_proc_table_lock);
   const proc_group_t* my_pgroup = proc_group_get(p->pgroup);
   if (my_pgroup->session == p->id) {  // Controlling process/session leader.
@@ -96,23 +99,31 @@ void proc_finish_exit(void) {
   // Note: actual process group removal will happen in wait().
   kspin_unlock(&g_proc_table_lock);
 
-
-  // TODO(aoates): fix locking of the process and root.
-  // Move any pending children to the root process.
+  // Move any pending children to the root process.  Always lock in root ->
+  // parent -> child order.
   process_t* const root_process = proc_get(0);
+  pmutex_lock(&root_process->mu);
+  pmutex_lock(&p->mu);
   list_link_t* child_link = list_pop(&p->children_list);
   while (child_link) {
     process_t* const child_process = container_of(child_link, process_t,
                                                   children_link);
+    pmutex_lock(&child_process->mu);
     KASSERT(child_process->parent == p);
     child_process->parent = root_process;
     list_push(&root_process->children_list, &child_process->children_link);
+    pmutex_unlock(&child_process->mu);
     child_link = list_pop(&p->children_list);
   }
   scheduler_wake_all(&root_process->wait_queue);
+  pmutex_unlock(&p->mu);
+  pmutex_unlock(&root_process->mu);
 
+  // Phase 2: tearing down the process itself (part 1).  At this point, our
+  // process is still in a consistent state, but has no children or other
+  // references to clean up.
 
-  // Now clean up our state.  Start with state protected only by the mutex.
+  // Start with state protected only by the mutex.
   pmutex_lock(&p->mu);
 
   // Close all open fds.
@@ -146,13 +157,19 @@ void proc_finish_exit(void) {
   kspin_unlock(&p->spin_mu);
   pmutex_unlock(&p->mu);
 
-  // TODO(aoates): fix locking of the parent --- p should be locked here, but if
-  // so, this could deadlock.
+  // Phase 3: we must now signal our parent. This requires some locking fun.
+  process_t* parent = proc_get_and_lock_parent(p);
+  pmutex_assert_is_held(&parent->mu);
+
   // Send SIGCHLD to the parent.
-  KASSERT(proc_force_signal(p->parent, SIGCHLD) == 0);
+  KASSERT(proc_force_signal(parent, SIGCHLD) == 0);
 
   // Wake up parent if it's wait()'ing.
-  scheduler_wake_all(&p->parent->wait_queue);
+  scheduler_wake_all(&parent->wait_queue);
+
+  pmutex_unlock(&p->mu);
+  pmutex_unlock(&parent->mu);
+  proc_put(parent);
 
   kthread_exit(0x0);
   die("unreachable");

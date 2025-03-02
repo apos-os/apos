@@ -33,9 +33,10 @@ kpid_t proc_wait(int* exit_status) {
 
 // Returns true if the given process matches the pid (which has the semantics as
 // for waitpid()'s pid argument).
-static bool matches_pid(process_t* proc, kpid_t wait_pid)
-    REQUIRES(g_proc_table_lock) {
-  KASSERT_DBG(proc->parent == proc_current());
+static bool matches_pid(process_t* parent, process_t* proc, kpid_t wait_pid)
+    REQUIRES(g_proc_table_lock) REQUIRES(parent->mu) {
+  // This is safe because we hold the current process's lock.
+  KASSERT_DBG(proc->parent == parent);
   return (wait_pid == -1 || wait_pid == proc->id || wait_pid == -proc->pgroup);
 }
 
@@ -58,8 +59,9 @@ static bool eligable_wait(process_t* proc, int options)
 
 // Once an eligable child has been found, this finishes the call to waitpid()
 // (cleaning up the child if necessary, setting output parameters, etc).
-static kpid_t finish_waitpid(process_t* zombie, int* exit_status, int options)
-  RELEASE(g_proc_table_lock) RELEASE(zombie->spin_mu);
+static kpid_t finish_waitpid(process_t* p, process_t* zombie, int* exit_status,
+                             int options) RELEASE(g_proc_table_lock)
+    RELEASE(p->mu) RELEASE(zombie->spin_mu);
 
 kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
   if ((options & ~WUNTRACED & ~WCONTINUED & ~WNOHANG) != 0) return -EINVAL;
@@ -68,6 +70,7 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
 
   // Look for an existing zombie child.
   process_t* zombie = 0x0;
+  pmutex_lock(&p->mu);
   while (true) {
     kspin_lock(&g_proc_table_lock);
     // We re-check the current pgroup each time we sleep, in case it changes.
@@ -78,11 +81,11 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
       process_t* const child_process = container_of(child_link, process_t,
                                                     children_link);
       KASSERT(child_process->parent == p);
-      if (matches_pid(child_process, search_pid)) {
+      if (matches_pid(p, child_process, search_pid)) {
         found_matching_child = true;
         kspin_lock(&child_process->spin_mu);
         if (eligable_wait(child_process, options)) {
-          return finish_waitpid(child_process, exit_status, options);
+          return finish_waitpid(p, child_process, exit_status, options);
         }
         kspin_unlock(&child_process->spin_mu);
       }
@@ -91,26 +94,32 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
     kspin_unlock(&g_proc_table_lock);
 
     if (!found_matching_child) {
+      pmutex_unlock(&p->mu);
       return -ECHILD;
     }
 
     // If we didn't find one, wait for a child to exit and wake us up.
     KASSERT(!zombie);
-    if (options & WNOHANG)
+    if (options & WNOHANG) {
+      pmutex_unlock(&p->mu);
       return 0;
+    }
 
-    int wait_result = scheduler_wait_on_interruptable(&p->wait_queue, -1);
-    if (wait_result == SWAIT_INTERRUPTED)
+    int wait_result = scheduler_wait_on_plocked(&p->wait_queue, -1, &p->mu);
+    if (wait_result == SWAIT_INTERRUPTED) {
+      pmutex_unlock(&p->mu);
       return -EINTR;
+    }
   }
   die("unreachable");
 }
 
-static kpid_t finish_waitpid(process_t* zombie, int* exit_status, int options) {
+static kpid_t finish_waitpid(process_t* p, process_t* zombie, int* exit_status,
+                             int options) {
+  pmutex_assert_is_held(&p->mu);
   kspin_assert_is_held(&zombie->spin_mu);
   kspin_assert_is_held(&g_proc_table_lock);
 
-  process_t* const p = proc_current();
   KASSERT_DBG(zombie->parent == p);
 
   if (zombie->state == PROC_STOPPED) {
@@ -120,6 +129,7 @@ static kpid_t finish_waitpid(process_t* zombie, int* exit_status, int options) {
     zombie->exit_status = 0;
     kspin_unlock(&zombie->spin_mu);
     kspin_unlock(&g_proc_table_lock);
+    pmutex_unlock(&p->mu);
     return zombie->id;
   }
 
@@ -131,6 +141,7 @@ static kpid_t finish_waitpid(process_t* zombie, int* exit_status, int options) {
     zombie->exit_status = 0;
     kspin_unlock(&zombie->spin_mu);
     kspin_unlock(&g_proc_table_lock);
+    pmutex_unlock(&p->mu);
     return zombie->id;
   }
 
@@ -145,6 +156,7 @@ static kpid_t finish_waitpid(process_t* zombie, int* exit_status, int options) {
   // Must unlock in this order.
   kspin_unlock(&zombie->spin_mu);
   kspin_unlock(&g_proc_table_lock);
+  pmutex_unlock(&p->mu);
 
   // TODO(aoates): make it possible to unlock spinlocks in a different order
   // than they were locked, so we can unlock only g_proc_table_lock here.

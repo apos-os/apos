@@ -346,3 +346,31 @@ void proc_thread_exit(void* x) {
   kthread_exit(x);
   die("unreachable");
 }
+
+process_t* proc_get_and_lock_parent(process_t* child)
+    NO_THREAD_SAFETY_ANALYSIS {
+  // We must always lock in parent->child order --- however, the process's
+  // parent can change.  The process hierarchy is guaranteed to be a DAG
+  // (unless, say, vnodes), so we have a simpler retry loop.
+  //
+  // In practice processes are only every reparented to the root node, but this
+  // logic is general.
+  while (true) {
+    // First read the parent.
+    pmutex_lock(&child->mu);
+    process_t* parent = child->parent;
+    refcount_inc(&parent->refcount);
+    pmutex_unlock(&child->mu);
+
+    // We have a refcount on the parent, so now we can relock in order.
+    pmutex_lock(&parent->mu);
+    pmutex_lock(&child->mu);
+    if (child->parent == parent) {
+      return parent;
+    }
+    KASSERT(child->parent->id == 0);  // Should only be reparented to root proc.
+    pmutex_unlock(&child->mu);
+    pmutex_unlock(&parent->mu);
+  }
+  die("unreachable");
+}

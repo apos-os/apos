@@ -54,11 +54,13 @@ static void basic_test(void) {
   KEXPECT_NE(parent_pid, child_pid);
 
   process_t* child_proc = proc_get(child_pid);
+  pmutex_lock(&child_proc->mu);
   KEXPECT_EQ(&child_proc->children_link,
              proc_current()->children_list.head);
   KEXPECT_EQ(&child_proc->children_link,
              proc_current()->children_list.tail);
   KEXPECT_EQ(proc_current(), child_proc->parent);
+  pmutex_unlock(&child_proc->mu);
 
   int exit_status = -1;
   const kpid_t child_pid_wait = proc_wait(&exit_status);
@@ -102,7 +104,10 @@ static void parent_exit_first_test(void) {
   KEXPECT_EQ(5, exit_status);
 
   // The child should have been adopted by the root process.
-  KEXPECT_EQ(0, proc_get(inner_pid)->parent->id);
+  process_t* inner_child = proc_get(inner_pid);
+  pmutex_lock(&inner_child->mu);
+  KEXPECT_EQ(0, inner_child->parent->id);
+  pmutex_unlock(&inner_child->mu);
 
   for (int i = 0; i < 10; ++i) scheduler_yield();
 
@@ -133,7 +138,10 @@ static void reparent_zombie_to_root_test(void) {
   // The child should have been adopted by the root process, but it may have
   // already been cleaned up.
   if (proc_get(inner_pid)) {
-    KEXPECT_EQ(0, proc_get(inner_pid)->parent->id);
+    process_t* inner_child = proc_get(inner_pid);
+    pmutex_lock(&inner_child->mu);
+    KEXPECT_EQ(0, inner_child->parent->id);
+    pmutex_unlock(&inner_child->mu);
     for (int i = 0; i < 3; ++i) scheduler_yield();
   }
 

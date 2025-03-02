@@ -231,6 +231,11 @@ int scheduler_wait_on_locked(kthread_queue_t* queue, long timeout_ms,
   return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, mu, NULL);
 }
 
+int scheduler_wait_on_plocked(kthread_queue_t* queue, long timeout_ms,
+                             pmutex_t* mu) {
+  return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, &mu->_mu, NULL);
+}
+
 int scheduler_wait_on_splocked(kthread_queue_t* queue, long timeout_ms,
                                kspinlock_t* sp) {
   return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, NULL, sp);

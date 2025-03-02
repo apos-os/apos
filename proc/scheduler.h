@@ -26,6 +26,7 @@
 #include "proc/kmutex.h"
 #include "proc/kthread.h"
 #include "proc/kthread-queue.h"
+#include "proc/pmutex.h"
 #include "proc/spinlock.h"
 
 // Initialize the scheduler.
@@ -86,6 +87,8 @@ int scheduler_wait_on_interruptable(kthread_queue_t* queue, long timeout_ms);
 // Always interruptable.  Returns as scheduler_wait_on_interruptable().
 int scheduler_wait_on_locked(kthread_queue_t* queue, long timeout_ms,
                              kmutex_t* mu);
+int scheduler_wait_on_plocked(kthread_queue_t* queue, long timeout_ms,
+                             pmutex_t* mu);
 
 // As above, but with a spinlock rather than a mutex.
 int scheduler_wait_on_splocked(kthread_queue_t* queue, long timeout_ms,

@@ -64,7 +64,10 @@ static void session_leader_pgid(void* arg) {
 
   KEXPECT_EQ(-EPERM, setpgid(0, 0));
   KEXPECT_EQ(-EPERM, setpgid(proc_current()->id, proc_current()->id));
-  KEXPECT_EQ(-EPERM, setpgid(proc_current()->id, proc_current()->parent->id));
+  pmutex_lock(&proc_current()->mu);
+  kpid_t parent = proc_current()->parent->id;
+  pmutex_unlock(&proc_current()->mu);
+  KEXPECT_EQ(-EPERM, setpgid(proc_current()->id, parent));
   KEXPECT_EQ(proc_current()->id, getpgid(0));
   *(bool*)arg = true;
   ksleep(10);
@@ -80,7 +83,11 @@ static void child_different_session_test(void* arg) {
   KEXPECT_NE(proc_getsid(0), proc_getsid(child));
   KEXPECT_EQ(-EPERM, setpgid(child, child));
   KEXPECT_EQ(-EPERM, setpgid(child, proc_current()->id));
-  KEXPECT_EQ(-EPERM, setpgid(child, proc_current()->parent->id));
+
+  pmutex_lock(&proc_current()->mu);
+  kpid_t parent = proc_current()->parent->id;
+  pmutex_unlock(&proc_current()->mu);
+  KEXPECT_EQ(-EPERM, setpgid(child, parent));
   KEXPECT_EQ(child, proc_wait(NULL));
 }
 

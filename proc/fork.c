@@ -22,6 +22,7 @@
 #include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
+#include "proc/pmutex.h"
 #include "proc/process.h"
 #include "proc/process-internal.h"
 #include "proc/scheduler.h"
@@ -120,6 +121,8 @@ int proc_fork(proc_func_t start, void* arg) {
 
   new_process->state = PROC_RUNNING;
 
+  // Make the child visible via the parent's children_list and process group.
+  pmutex_lock(&parent->mu);
   new_process->parent = parent;
   list_push(&parent->children_list,
             &new_process->children_link);
@@ -128,6 +131,7 @@ int proc_fork(proc_func_t start, void* arg) {
   new_process->pgroup = parent->pgroup;
   proc_group_add(proc_group_get(new_process->pgroup), new_process);
   kspin_unlock(&g_proc_table_lock);
+  pmutex_unlock(&parent->mu);
 
   scheduler_make_runnable(new_thread);
 

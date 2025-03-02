@@ -516,11 +516,19 @@ void proc_suppress_signal(process_t* proc, int sig) {
   kspin_unlock(&proc->spin_mu);
 }
 
+// Bitfield of asynchronous actions the caller should take after dispatching the
+// signals.
+typedef enum {
+  DISPATCH_NONE = 0,
+  DISPATCH_WAKE_PARENT = 1,
+} dispatch_action_t;
+
 // Dispatch a particular signal in the current process.  May not return.
 // Returns true if the signal was dispatched (which includes being ignored), or
 // false if it couldn't be (because the process is stopped).
 static bool dispatch_signal(int signum, const user_context_t* context,
-                            syscall_context_t* syscall_ctx) {
+                            syscall_context_t* syscall_ctx,
+                            dispatch_action_t* caller_action) {
   process_t* proc = proc_current();
   kthread_data_t* thread = kthread_current_thread();
   KASSERT(thread->process == proc);
@@ -540,7 +548,7 @@ static bool dispatch_signal(int signum, const user_context_t* context,
         klogfm(KL_PROC, DEBUG, "stopping process %d", proc->id);
         proc->state = PROC_STOPPED;
         proc->exit_status = 0x100 | signum;
-        scheduler_wake_all(&proc->parent->wait_queue);
+        *caller_action |= DISPATCH_WAKE_PARENT;  // Wake parent later.
         break;
 
       case SIGACT_CONTINUE:
@@ -635,6 +643,7 @@ void proc_dispatch_pending_signals(const user_context_t* context,
     return;
   }
 
+  dispatch_action_t action = DISPATCH_NONE;
   for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     // We need to check the thread's signal mask again, since there may be
     // signals that are assigned to the thread even though they're masked (e.g.
@@ -643,7 +652,7 @@ void proc_dispatch_pending_signals(const user_context_t* context,
         !ksigismember(&thread->signal_mask, signum)) {
       ksigdelset(&thread->assigned_signals, signum);
       // dispatch_signal may not return!
-      if (!dispatch_signal(signum, context, syscall_ctx)) {
+      if (!dispatch_signal(signum, context, syscall_ctx, &action)) {
         // Re-enqueue the signal for delivery later.
         ksigaddset(&thread->assigned_signals, signum);
       }
@@ -651,6 +660,22 @@ void proc_dispatch_pending_signals(const user_context_t* context,
   }
 
   kthread_unlock_proc_spin(thread);
+
+  // Perform any asynchronous followup actions.
+  // TODO(aoates): can we combine STOP and CONTINUE handling in one place so we
+  // don't repeat this awkward locking/unlocking/signalling logic both here and
+  // in user_prepare?
+  if (action & DISPATCH_WAKE_PARENT) {
+    // It's safe to do this racily with the actual stop handling --- worst case
+    // scenario a parent thread already claimed us in waitpid(), and this will
+    // be harmlessly spurious.
+    process_t* const parent = proc_get_and_lock_parent(proc);
+    pmutex_assert_is_held(&parent->mu);
+    scheduler_wake_all(&parent->wait_queue);
+    pmutex_unlock(&proc->mu);
+    pmutex_unlock(&parent->mu);
+    proc_put(parent);
+  }
 }
 
 static user_context_t get_user_context(void* arg) {

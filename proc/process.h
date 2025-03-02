@@ -109,14 +109,15 @@ typedef struct process {
   // User-mode architecture, once determined (e.g. by exec()).
   bin_arch_t user_arch;
 
-  // Parent process.
-  struct process* parent;
+  // Parent process.  Cannot be modified without holding the old and new
+  // parent's mutexs as well.
+  struct process* parent GUARDED_BY(&mu);
 
   // Child processes (alive and zombies).
-  list_t children_list;
+  list_t children_list GUARDED_BY(&mu);
 
   // Link on parent's children list.
-  list_link_t children_link;
+  list_link_t children_link GUARDED_BY(&mu);
 
   // Wait queue for the parent thread wait()'ing.
   kthread_queue_t wait_queue;
@@ -178,6 +179,14 @@ void proc_thread_exit(void* x) __attribute__((noreturn));
 
 // Returns the state of the process.
 proc_state_t proc_state(kpid_t pid);
+
+// Helper to lock both a process and its parent.  Returns the process's parent,
+// with both the parent and the process itself locked.  The caller MUST use the
+// returned parent, not one read earlier, as the process could be reparented
+// during this call.
+//
+// Returns a reference on the parent that must be proc_put() by the caller.
+process_t* proc_get_and_lock_parent(process_t* child) ACQUIRE(child->mu);
 
 // Implementations.
 

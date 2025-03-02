@@ -56,15 +56,38 @@ int setpgid(kpid_t pid, kpid_t pgid) {
   if (pgid == 0) pgid = pid;
 
   process_t* proc = proc_get_ref(pid);
-  if (!proc || (proc != proc_current() && proc->parent != proc_current())) {
-    if (proc) proc_put(proc);
+  if (!proc) {
     return -ESRCH;
   }
+
+  process_t* parent = proc_get_and_lock_parent(proc);
+  pmutex_assert_is_held(&parent->mu);
+  if (proc != proc_current() && parent != proc_current()) {
+    pmutex_unlock(&proc->mu);
+    pmutex_unlock(&parent->mu);
+    proc_put(proc);
+    proc_put(parent);
+    return -ESRCH;
+  }
+
+  if (parent == proc_current() && proc->execed) {
+    pmutex_unlock(&proc->mu);
+    pmutex_unlock(&parent->mu);
+    proc_put(proc);
+    proc_put(parent);
+    return -EACCES;
+  }
+
+  // Done with parent checks.
+  pmutex_unlock(&parent->mu);
+  proc_put(parent);
+  parent = NULL;
 
   kspin_lock(&g_proc_table_lock);
   proc_group_t* cur_pgroup = proc_group_get(proc->pgroup);
   if (cur_pgroup->session == proc->id) {  // Is session leader?
     kspin_unlock(&g_proc_table_lock);
+    pmutex_unlock(&proc->mu);
     proc_put(proc);
     return -EPERM;
   }
@@ -72,6 +95,7 @@ int setpgid(kpid_t pid, kpid_t pgid) {
   proc_group_t* my_pgroup = proc_group_get(proc_current()->pgroup);
   if (cur_pgroup->session != my_pgroup->session) {
     kspin_unlock(&g_proc_table_lock);
+    pmutex_unlock(&proc->mu);
     proc_put(proc);
     return -EPERM;  // Child, but in a different session.
   }
@@ -80,18 +104,14 @@ int setpgid(kpid_t pid, kpid_t pgid) {
   if (pgid != pid &&
       (list_empty(&pgroup->procs) || pgroup->session != my_pgroup->session)) {
     kspin_unlock(&g_proc_table_lock);
+    pmutex_unlock(&proc->mu);
     proc_put(proc);
     return -EPERM;
   }
 
-  if (proc->parent == proc_current() && proc->execed) {
-    kspin_unlock(&g_proc_table_lock);
-    proc_put(proc);
-    return -EACCES;
-  }
-
   setpgid_force(proc, pgid, pgroup);
   kspin_unlock(&g_proc_table_lock);
+  pmutex_unlock(&proc->mu);
   proc_put(proc);
   return 0;
 }
