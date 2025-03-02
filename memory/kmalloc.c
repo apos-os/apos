@@ -29,6 +29,7 @@
 #include "memory/allocator.h"
 #include "memory/kmalloc-internal.h"
 #include "memory/memory.h"
+#include "memory/page_alloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
 #include "proc/kthread-internal.h"
@@ -366,6 +367,11 @@ void kmalloc_log_heap_profile(void) {
     }
     cblock = cblock->next;
   }
+  // Note: this is racy, as other pages could be allocated or freed between here
+  // and when we actually list all the pages below.
+  size_t pages_allocated = page_frame_allocated_pages();
+  total_objects += pages_allocated;
+  total_bytes += pages_allocated * PAGE_SIZE;
 
   KLOG(INFO, "heap profile:  %zu:  %zu [  %zu:  %zu] @ heap/1\n",
        total_objects, total_bytes, total_objects, total_bytes);
@@ -390,6 +396,8 @@ void kmalloc_log_heap_profile(void) {
     }
     cblock = cblock->next;
   }
+
+  page_frame_log_profile();
 
   KLOG(INFO, "#### heap profile end ####\n");
 
