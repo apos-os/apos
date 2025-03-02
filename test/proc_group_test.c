@@ -78,6 +78,7 @@ static bool wait_for_zombie(kpid_t pid) {
   }
   bool result = (proc->state == PROC_ZOMBIE);
   kspin_unlock(&proc->spin_mu);
+  proc_put(proc);
   return result;
 }
 
