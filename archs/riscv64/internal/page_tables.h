@@ -79,6 +79,10 @@ phys_addr_t rsv_get_top_page_table(page_dir_ptr_t as);
 // Creates a page_dir_ptr_t from a (top level) page table.
 page_dir_ptr_t rsv_create_as(phys_addr_t pt_phys);
 
+// Given a page directory, zero and free all page tables in the hierarchy (but
+// not the top-level directory).
+void rsv_free_as_tables(page_dir_ptr_t as);
+
 // Return a pointer to the PTE for the given mapping in the given address space
 // with the given size.  The virtual address must be aligned to the requested
 // mapsize.  If |create| is true, intermediate page tables will be allocated as

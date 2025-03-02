@@ -120,10 +120,13 @@ page_dir_ptr_t page_frame_alloc_directory(void) {
 }
 
 void page_frame_free_directory(page_dir_ptr_t as) {
+  // Reclaim mid-level tables.
+  rsv_free_as_tables(as);
+
+  // Free the top level.
   phys_addr_t pt_phys = rsv_get_top_page_table(as);
   KASSERT(pt_phys);
   KASSERT(pt_phys % PAGE_SIZE == 0);
-  // TODO(aoates): reclaim mid-level tables.
   page_frame_free(pt_phys);
 }
 

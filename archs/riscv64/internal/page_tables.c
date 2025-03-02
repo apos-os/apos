@@ -41,6 +41,8 @@
 #define RSV_SATP_MODE_SV39 (8ull << 60)
 #define RSV_SATP_PPN(satp) ((satp) & 0xFFFFFFFFFFF)
 
+#define RSV_SV39_LEVELS 3
+
 // We use the same indexing scheme as the virtual address breakdown --- pte2 is
 // the top-level PTE (corresponding to VPN2), etc.
 
@@ -124,7 +126,38 @@ page_dir_ptr_t rsv_create_as(phys_addr_t pt_phys) {
   return RSV_SATP_MODE_SV39 | phys2ppn(pt_phys);
 }
 
-#define RSV_SV39_LEVELS 3
+static void rsv_free_page_table_entries(phys_addr_t pt_phys, int level) {
+  KASSERT(level > 0);
+  rsv_sv39_pte_t* entries = (rsv_sv39_pte_t*)phys2virt(pt_phys);
+  for (size_t i = 0; i < PAGE_SIZE / sizeof(rsv_sv39_pte_t); ++i) {
+    if (!(entries[i] & RSV_PTE_VALID)) continue;
+    // If it's a mapping entry, skip it.
+    if (entries[i] & (RSV_PTE_READ | RSV_PTE_WRITE | RSV_PTE_EXECUTE)) {
+      continue;
+    }
+    // If it's a global entry, skip it.
+    if (entries[i] & RSV_PTE_GLOBAL) {
+      continue;
+    }
+
+    // It points to another level of page table.  If we're at the second-to-last
+    // level, the last level must all be direct mappings, so don't bother
+    // recursing.
+    uint64_t next_pt_ppn =
+        (entries[i] & RSV_SV39_PTE_PPN_MASK) >> RSV_SV39_PTE_PPN_OFFSET;
+    phys_addr_t next_table_phys = ppn2phys(next_pt_ppn);
+    if (level > 2) {
+      rsv_free_page_table_entries(next_table_phys, level - 1);
+    }
+    page_frame_free(next_table_phys);
+  }
+}
+
+void rsv_free_as_tables(page_dir_ptr_t as) {
+  phys_addr_t ppn = RSV_SATP_PPN(as);
+  KASSERT_DBG(as == (ppn | RSV_SATP_MODE_SV39));  // No ASIDs today.
+  rsv_free_page_table_entries(ppn2phys(ppn), RSV_SV39_LEVELS);
+}
 
 // TODO(riscv): write tests for this for all possible combinations:
 //  - non-existing mapping (created all the way down)
