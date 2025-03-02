@@ -183,6 +183,7 @@ rsv_sv39_pte_t* rsv_get_pte(page_dir_ptr_t as, addr_t virt, rsv_mapsize_t* size,
       if (!create) return NULL;
 
       phys_addr_t new_pt = page_frame_alloc();
+      KASSERT(new_pt != 0);
       if (!new_pt) return NULL;
       rsv_init_page_table(new_pt);
       // Make the PTE point at the new page table.

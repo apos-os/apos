@@ -149,11 +149,12 @@ int vm_handle_page_fault(addr_t address, vm_fault_type_t type, vm_fault_op_t op,
         area->pages[area_page_offset] = 0x0;
       }
 
+      bc_entry_t* new_entry = NULL;
       const int result = area->memobj->ops->get_page(
           area->memobj,
           (area->memobj_base / PAGE_SIZE) + area_page_offset,
           op == VM_FAULT_WRITE,
-          &area->pages[area_page_offset]);
+          &new_entry);
       if (result) {
         switch (mode) {
           case VM_FAULT_KERNEL:
@@ -174,6 +175,16 @@ int vm_handle_page_fault(addr_t address, vm_fault_type_t type, vm_fault_op_t op,
             return result;
         }
       }
+      // Another thread could have filled in while we were blocked.
+      if (area->pages[area_page_offset] != NULL) {
+        // The entry from the other thread may not have been created with the
+        // correct permissions for this access (e.g. if it was for a read, and
+        // this is for a write).  Simply return here, and the system will
+        // re-fault if necessary.
+        area->memobj->ops->put_page(area->memobj, new_entry, BC_FLUSH_NONE);
+        return 0;
+      }
+      area->pages[area_page_offset] = new_entry;
     }
     KASSERT(area->pages[area_page_offset]);
     phys_addr = area->pages[area_page_offset]->block_phys;
