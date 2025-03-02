@@ -146,7 +146,7 @@ static void rsv_free_page_table_entries(phys_addr_t pt_phys, int level) {
     uint64_t next_pt_ppn =
         (entries[i] & RSV_SV39_PTE_PPN_MASK) >> RSV_SV39_PTE_PPN_OFFSET;
     phys_addr_t next_table_phys = ppn2phys(next_pt_ppn);
-    if (level > 2) {
+    if (level > 1) {
       rsv_free_page_table_entries(next_table_phys, level - 1);
     }
     page_frame_free(next_table_phys);
@@ -156,7 +156,7 @@ static void rsv_free_page_table_entries(phys_addr_t pt_phys, int level) {
 void rsv_free_as_tables(page_dir_ptr_t as) {
   phys_addr_t ppn = RSV_SATP_PPN(as);
   KASSERT_DBG(as == (ppn | RSV_SATP_MODE_SV39));  // No ASIDs today.
-  rsv_free_page_table_entries(ppn2phys(ppn), RSV_SV39_LEVELS);
+  rsv_free_page_table_entries(ppn2phys(ppn), RSV_SV39_LEVELS - 1);
 }
 
 // TODO(riscv): write tests for this for all possible combinations:
