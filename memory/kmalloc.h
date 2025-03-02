@@ -15,6 +15,7 @@
 #ifndef APOO_MEMORY_KMALLOC_H
 #define APOO_MEMORY_KMALLOC_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "memory/allocator.h"
@@ -25,7 +26,9 @@ void* kmalloc(size_t n);
 void* kmalloc_alloc(void* arg, size_t n, size_t alignment);
 #define kmalloc_aligned(n, alignment) kmalloc_alloc(NULL, (n), (alignment))
 void kmalloc_log_state(void);
-void kmalloc_log_heap_profile(void);
+
+// If inclue_pages is true, includes all page allocator data as well.
+void kmalloc_log_heap_profile(bool include_pages);
 
 // Enable test mode.  In test mode, certain components are not re-initialized in
 // kmalloc_init(), allowing it to be called more than once.

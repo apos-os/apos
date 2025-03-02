@@ -355,7 +355,7 @@ void kmalloc_log_state(void) {
   KLOG(INFO, "free memory: 0x%zx bytes (%zu MB)\n", free, free / 1024 / 1024);
 }
 
-void kmalloc_log_heap_profile(void) {
+void kmalloc_log_heap_profile(bool include_pages) {
   KMALLOC_LOCK();
   size_t total_objects = 0, total_bytes = 0;
 
@@ -370,8 +370,10 @@ void kmalloc_log_heap_profile(void) {
   // Note: this is racy, as other pages could be allocated or freed between here
   // and when we actually list all the pages below.
   size_t pages_allocated = page_frame_allocated_pages();
-  total_objects += pages_allocated;
-  total_bytes += pages_allocated * PAGE_SIZE;
+  if (include_pages) {
+    total_objects += pages_allocated;
+    total_bytes += pages_allocated * PAGE_SIZE;
+  }
 
   KLOG(INFO, "heap profile:  %zu:  %zu [  %zu:  %zu] @ heap/1\n",
        total_objects, total_bytes, total_objects, total_bytes);
@@ -397,9 +399,15 @@ void kmalloc_log_heap_profile(void) {
     cblock = cblock->next;
   }
 
-  page_frame_log_profile();
+  if (include_pages) {
+    page_frame_log_profile();
+  }
 
   KLOG(INFO, "#### heap profile end ####\n");
+
+  if (!include_pages) {
+    KLOG(INFO, "Total pages allocated: %zu\n", pages_allocated);
+  }
 
   KMALLOC_UNLOCK();
 }

@@ -154,10 +154,23 @@ static void meminfo_cmd(kshell_t* shell, int argc, char* argv[]) {
 }
 
 static void heap_profile_cmd(kshell_t* shell, int argc, char* argv[]) {
-  if (argc == 1) {
+  bool clear_unpinned = true, include_pages = false;
+  for (int i = 1; i < argc; ++i) {
+    if (kstrcmp(argv[i], "-a") == 0) {
+      include_pages = true;
+    } else if (kstrcmp(argv[i], "-n") == 0) {
+      clear_unpinned = false;
+    } else {
+      ksh_printf("Unknown flag '%s'.  Supported flags:\n", argv[i]);
+      ksh_printf(" -a: print all, including page allocator data\n");
+      ksh_printf(" -n: don't clear block cache unpinned first\n");
+      return;
+    }
+  }
+  if (clear_unpinned) {
     block_cache_clear_unpinned();
   }
-  kmalloc_log_heap_profile();
+  kmalloc_log_heap_profile(include_pages);
 }
 
 static void perf_child(void* arg) {
