@@ -15,21 +15,21 @@
 
 long rsv64_sbi_call(uint64_t eid, uint64_t fid, long* val_out, uint64_t arg0,
                     uint64_t arg1) {
-  long error, val;
-  asm volatile (
-      "mv a0, %[arg0]\n\t"
-      "mv a1, %[arg1]\n\t"
-      "mv a7, %[eid]\n\t"
-      "mv a6, %[fid]\n\t"
+  // Force arguments into specific registers.
+  register uint64_t a0 asm ("a0") = arg0;
+  register uint64_t a1 asm ("a1") = arg1;
+  register uint64_t a7 asm ("a7") = eid;
+  register uint64_t a6 asm ("a6") = fid;
+  (void)a0;
+  (void)a1;
+  (void)a7;
+  (void)a6;
+  asm volatile(
       "ecall\n\t"
-      "mv %[error], a0\n\t"
-      "mv %[val], a1\n\t"
-      : [error] "=r"(error),
-        [val] "=r"(val)
-      : [arg0] "r"(arg0),
-        [arg1] "r"(arg1),
-        [eid] "r"(eid),
-        [fid] "r"(fid));
+      : "+r"(a0), "+r"(a1)
+      : "r"(a7), "r"(a6));
+  long error = a0;
+  long val = a1;
   if (val_out) *val_out = val;
   return error;
 }
