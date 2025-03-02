@@ -133,7 +133,8 @@ page_dir_ptr_t rsv_create_as(phys_addr_t pt_phys) {
 //    "lower" than requested)
 //  - existing mappings of smaller, equal, and larger than requested sizes.
 rsv_sv39_pte_t* rsv_get_pte(page_dir_ptr_t as, addr_t virt, rsv_mapsize_t* size,
-                            bool create) {
+                            uint64_t flags, bool create) {
+  KASSERT((flags & ~RSV_GET_PTE_VALID_FLAGS) == 0);
   const uint64_t mapsize_bytes = get_mapsize(*size);
   KASSERT(virt % mapsize_bytes == 0);
 
@@ -155,10 +156,11 @@ rsv_sv39_pte_t* rsv_get_pte(page_dir_ptr_t as, addr_t virt, rsv_mapsize_t* size,
       *pte = 0;
       rsv_set_pte_addr(pte, new_pt, RSV_MAP_PAGE);
       *pte |= RSV_PTE_VALID;
+      *pte |= flags;
       // Leave DAU and RWX as zero since this is a non-leaf.
-      // TODO(aoates): support global mappings --- will require a bit to
-      // indicate whether the mapping should be global all the way down, or only
-      // on the final table.
+    } else {
+      // We must match flags all the way down.
+      KASSERT((*pte & RSV_GET_PTE_VALID_FLAGS) == flags);
     }
 
     level--;

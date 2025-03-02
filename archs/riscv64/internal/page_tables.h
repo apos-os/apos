@@ -100,11 +100,15 @@ page_dir_ptr_t rsv_create_as(phys_addr_t pt_phys);
 // create a mapping of that size, or a different size if the returned PTE is
 // empty.
 //
+// Any intermediate entries are created with the given flags (e.g. global) or,
+// if they already exist, asserted to match the given flags.
+//
 // If succesful, returns a pointer to the PTE.  If the necessary page tables.
 // don't exist and |create| is false, returns an error.  Likewise, if
 // intermediate page tables cannot be allocated, fails.
+#define RSV_GET_PTE_VALID_FLAGS (RSV_PTE_GLOBAL)
 rsv_sv39_pte_t* rsv_get_pte(page_dir_ptr_t as, addr_t virt, rsv_mapsize_t* size,
-                            bool create);
+                            uint64_t flags, bool create);
 
 // Similar to rsv_get_page(), but just returns the lowest available PTE for the
 // given address.  Will not create any entries.
