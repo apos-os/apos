@@ -51,11 +51,12 @@
 #if __APOS_BUILDING_KERNEL__
 #define SIGAPOSTEST 28  // Internal: test signal.
 #define SIGAPOSTKILL 29  // Internal: kill a thread.
+#define SIGAPOS_FORCE_CONT 30  // Internal: continue the process.
 #endif
 
 #define APOS_SIGNULL 0
 #define APOS_SIGMIN 1
-#define APOS_SIGMAX 29
+#define APOS_SIGMAX 30
 
 // sighandler_t constants.
 #define SIG_DFL ((ksighandler_t)0x0)

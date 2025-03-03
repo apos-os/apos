@@ -72,10 +72,17 @@ static signal_default_action_t kDefaultActions[APOS_SIGMAX + 1] = {
   SIGACT_IGNORE,        // SIGWINCH
   SIGACT_IGNORE,        // SIGAPOSTEST
   SIGACT_TERM_THREAD,   // SIGAPOSTKILL
+  SIGACT_CONTINUE,      // SIGAPOS_FORCE_CONT
 };
 
+// Signals that can't be blocked or have their handlers changed by userspace.
 static const ksigset_t kUnblockableSignals =
-    (1 << (SIGKILL - 1)) | (1 << (SIGSTOP - 1)) | (1 << (SIGAPOSTKILL - 1));
+    (1 << (SIGKILL - 1)) | (1 << (SIGSTOP - 1)) | (1 << (SIGAPOSTKILL - 1)) |
+    (1 << (SIGAPOS_FORCE_CONT - 1));
+
+// Signals that can't be sent by userspace.
+static const ksigset_t kUnsendableSignals =
+    (1 << (SIGAPOSTKILL - 1)) | (1 << (SIGAPOS_FORCE_CONT - 1));
 
 ksigset_t proc_pending_signals(process_t* proc) {
   kspin_lock(&proc->spin_mu);
@@ -578,6 +585,7 @@ static bool dispatch_signal(int signum, const user_context_t* context,
     KASSERT_DBG(signum != SIGKILL);
     KASSERT_DBG(signum != SIGSTOP);
     KASSERT_DBG(signum != SIGAPOSTKILL);
+    KASSERT_DBG(signum != SIGAPOS_FORCE_CONT);
     KASSERT_DBG(list_link_on_list(&proc->threads, &thread->proc_threads_link));
 
     if (proc->state == PROC_STOPPED)
@@ -729,8 +737,10 @@ _Static_assert(SYS_SIGRETURN == 21,
 
 int proc_signal_allowed(const process_t* A, const process_t* B, int signal) {
   // SIGAPOSTKILL is never allowed to be sent (except internally, to a specific
-  // thread, which bypasses this check).
-  if (signal == SIGAPOSTKILL) return 0;
+  // thread, which bypasses this check).  Likewise with the other unsendables.
+  if (signal != 0 && ksigismember(&kUnsendableSignals, signal)) {
+    return false;
+  }
   kspin_lock(&g_proc_table_lock);
   int result = (proc_is_superuser_locked(A) ||
                 A->ruid == B->ruid ||

@@ -214,6 +214,26 @@ static void cont_masked_test(void) {
   }
   cont_masked_test_parent(child);
   KEXPECT_EQ(false, file_exists("got_signal"));
+
+
+  KTEST_BEGIN("SIGAPOS_FORCE_CONT cannot be sent");
+  child = fork();
+  if (child == 0) {
+    struct sigaction act = {&file_handler, 0, 0};
+    sigaction(30 /* SIGAPOS_FORCE_CONT */, &act, NULL);
+    sigset_t mask = make_sigset(30);
+    sigprocmask(SIG_BLOCK, &mask, NULL);
+    kill(getpid(), SIGSTOP);
+    create_file("child_continued");
+    sleep_ms(SLEEP_MS);
+    exit(0);
+  }
+  KEXPECT_ERRNO(EPERM, kill(child, 30 /* SIGAPOS_FORCE_CONT */));
+  sleep_ms(SLEEP_MS_SMALL);
+  kill(child, SIGKILL);
+  KEXPECT_EQ(child, waitpid(child, NULL, 0));
+  KEXPECT_EQ(false, file_exists("child_continued"));
+  KEXPECT_EQ(false, file_exists("got_signal"));
 }
 
 static void repeat_signals_test(void) {
