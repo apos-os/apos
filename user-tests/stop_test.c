@@ -188,7 +188,7 @@ static void cont_masked_test(void) {
   KTEST_BEGIN("SIGCONT continues even if handled");
   child = fork();
   if (child == 0) {
-    struct sigaction act = {&null_handler, 0, 0};
+    struct sigaction act = {&file_handler, 0, 0};
     sigaction(SIGCONT, &act, NULL);
     kill(getpid(), SIGSTOP);
     create_file("child_continued");
@@ -196,6 +196,8 @@ static void cont_masked_test(void) {
     exit(0);
   }
   cont_masked_test_parent(child);
+  KEXPECT_EQ(true, file_exists("got_signal"));
+  KEXPECT_EQ(0, unlink("got_signal"));
 
 
   KTEST_BEGIN("SIGCONT continues but doesn't run masked handled");
