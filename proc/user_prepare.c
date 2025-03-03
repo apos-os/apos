@@ -27,32 +27,8 @@ void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg,
   kthread_t me = kthread_current_thread();
   kthread_lock_proc_spin(me);
   do {
-    if (ksigismember(&me->process->pending_signals, SIGCONT) ||
-        ksigismember(&me->assigned_signals, SIGCONT)) {
-      klogfm(KL_PROC, DEBUG, "continuing process %d", proc_current()->id);
-      proc_current()->state = PROC_RUNNING;
-      proc_current()->exit_status = 0x200;
-
-      // TODO(aoates): test for this when we support multiple threads per
-      // process:
-      scheduler_wake_all(&proc_current()->stopped_queue);
-      kthread_unlock_proc_spin(me);
-
-      // We now need to signal our parent who might be waiting for us to
-      // continue.  We must relock.  It's possible a parent process thread
-      // already came through and collected our continued status, in which case
-      // this is harmlessly spurious.
-      // TODO(aoates): would be nice to have a test for that race.
-      process_t* parent = proc_get_and_lock_parent(me->process);
-      pmutex_assert_is_held(&parent->mu);
-      scheduler_wake_all(&parent->wait_queue);
-      pmutex_unlock(&me->process->mu);
-      pmutex_unlock(&parent->mu);
-      proc_put(parent);
-    } else {
-      // Unlock to assign signals.
-      kthread_unlock_proc_spin(me);
-    }
+    // Unlock to assign signals.
+    kthread_unlock_proc_spin(me);
 
     if (proc_assign_pending_signals()) {
       user_context_t context = context_fn(arg);

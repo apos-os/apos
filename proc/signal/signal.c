@@ -217,6 +217,8 @@ int proc_force_signal_locked(process_t* proc, int sig) {
   // Wake up a stopped victim at random to handle the SIGCONT (it will update
   // the process's state, wake up the rest of the threads, etc).
   if (sig == SIGCONT) {
+    KASSERT(ksigaddset(&proc->pending_signals, SIGAPOS_FORCE_CONT) == 0);
+    proc_try_assign_signal(proc, SIGAPOS_FORCE_CONT);
     scheduler_wake_one(&proc->stopped_queue);
   }
 
@@ -555,13 +557,20 @@ static bool dispatch_signal(int signum, const user_context_t* context,
         klogfm(KL_PROC, DEBUG, "stopping process %d", proc->id);
         proc->state = PROC_STOPPED;
         proc->exit_status = 0x100 | signum;
+        // TODO(SMP): interrupt other cores running threads from this process.
         *caller_action |= DISPATCH_WAKE_PARENT;  // Wake parent later.
         break;
 
       case SIGACT_CONTINUE:
         KASSERT_DBG(proc_thread_signal_deliverable(thread, signum));
-        // We should have already been continued before calling this.
-        KASSERT_DBG(proc->state == PROC_RUNNING);
+        klogfm(KL_PROC, DEBUG, "continuing process %d", proc->id);
+        proc->state = PROC_RUNNING;
+        proc->exit_status = 0x200;
+
+        // TODO(aoates): test for this when we support multiple threads per
+        // process:
+        scheduler_wake_all(&proc->stopped_queue);
+        *caller_action |= DISPATCH_WAKE_PARENT;  // Wake parent later.
         break;
 
       case SIGACT_IGNORE:
@@ -670,9 +679,6 @@ void proc_dispatch_pending_signals(const user_context_t* context,
   kthread_unlock_proc_spin(thread);
 
   // Perform any asynchronous followup actions.
-  // TODO(aoates): can we combine STOP and CONTINUE handling in one place so we
-  // don't repeat this awkward locking/unlocking/signalling logic both here and
-  // in user_prepare?
   if (action & DISPATCH_WAKE_PARENT) {
     // It's safe to do this racily with the actual stop handling --- worst case
     // scenario a parent thread already claimed us in waitpid(), and this will

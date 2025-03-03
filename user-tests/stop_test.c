@@ -26,11 +26,10 @@
 
 #include "ktest.h"
 #include "all_tests.h"
+#include "user/include/apos/wait.h"
 
 #define SLEEP_MS 50
 #define SLEEP_MS_SMALL 20
-
-static void null_handler(int sig) {}
 
 static const char* get_proc_state(pid_t pid, char* state_buf) {
   const size_t kBufSize = 1024;
@@ -246,7 +245,8 @@ static void repeat_signals_test(void) {
     sigprocmask(SIG_BLOCK, &mask, NULL);
     kill(getpid(), SIGSTOP);
     create_file("child_continued");
-    sleep_ms(SLEEP_MS * 100);
+    // TODO(aoates): fix signal behavior so that sleep_ms() isn't interrupted.
+    while (1) { sleep_ms(SLEEP_MS * 100); }
     exit(1);
   }
 
@@ -268,7 +268,107 @@ static void repeat_signals_test(void) {
   KEXPECT_EQ(0, unlink("child_continued"));
 
   KEXPECT_EQ(0, kill(child, SIGKILL));
-  KEXPECT_EQ(child, wait(NULL));
+  int status;
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+  KEXPECT_EQ(SIGKILL, WTERMSIG(status));
+}
+
+// Note: the behavior tested below is not actually correct --- SIGCONT shouldn't
+// interrupt blocking threads.  This test exercises the scenarios, at least.
+static void sigcont_sleeping_test(void) {
+  char state_buf[20];
+  KTEST_BEGIN("SIGCONT sleeping process thread (SIGCONT unmasked)");
+
+  pid_t child = fork();
+  if (child == 0) {
+    exit(sleep_ms(SLEEP_MS * 100));
+  }
+
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("RUNNING", get_proc_state(child, state_buf));
+  kill(child, SIGSTOP);
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+
+  // TODO(aoates): fix this behavior --- the sleep above should finish, not be
+  // interrupted.
+  int status;
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_GE(status, SLEEP_MS);
+  KEXPECT_LE(status, SLEEP_MS * 100);
+
+
+  KTEST_BEGIN("SIGCONT sleeping process thread (SIGCONT masked)");
+
+  child = fork();
+  if (child == 0) {
+    sigset_t mask = make_sigset(SIGCONT);
+    sigprocmask(SIG_BLOCK, &mask, NULL);
+    exit(sleep_ms(SLEEP_MS * 100));
+  }
+
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("RUNNING", get_proc_state(child, state_buf));
+  kill(child, SIGSTOP);
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+
+  // TODO(aoates): fix this behavior --- the sleep above should finish, not be
+  // interrupted.
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_GE(status, SLEEP_MS);
+  KEXPECT_LE(status, SLEEP_MS * 100);
+
+
+  KTEST_BEGIN("SIGCONT sleeping process thread (SIGCONT handled)");
+
+  child = fork();
+  if (child == 0) {
+    struct sigaction act = {&file_handler, 0, 0};
+    sigaction(SIGCONT, &act, NULL);
+    exit(sleep_ms(SLEEP_MS * 100));
+  }
+
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("RUNNING", get_proc_state(child, state_buf));
+  kill(child, SIGSTOP);
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+
+  // This one is correct --- the sleep should be interrupted.
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_GE(status, SLEEP_MS);
+  KEXPECT_LE(status, SLEEP_MS * 100);
+  KEXPECT_TRUE(file_exists("got_signal"));
+  KEXPECT_EQ(0, unlink("got_signal"));
+
+
+  KTEST_BEGIN("SIGCONT sleeping process thread (SIGCONT ignored)");
+
+  child = fork();
+  if (child == 0) {
+    struct sigaction act = {SIG_IGN, 0, 0};
+    sigaction(SIGCONT, &act, NULL);
+    exit(sleep_ms(SLEEP_MS * 100));
+  }
+
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("RUNNING", get_proc_state(child, state_buf));
+  kill(child, SIGSTOP);
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+
+  // TODO(aoates): fix this behavior --- the sleep above should finish, not be
+  // interrupted.
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_GE(status, SLEEP_MS);
+  KEXPECT_LE(status, SLEEP_MS * 100);
+  KEXPECT_FALSE(file_exists("got_signal"));
 }
 
 static void signal_interaction_test(void) {
@@ -492,6 +592,7 @@ void stop_test(void) {
   basic_stop_test();
   cont_masked_test();
   repeat_signals_test();
+  sigcont_sleeping_test();
   signal_interaction_test();
   alarm_stop_test();
 }
