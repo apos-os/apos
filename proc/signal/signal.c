@@ -525,13 +525,6 @@ void proc_suppress_signal(process_t* proc, int sig) {
   kspin_unlock(&proc->spin_mu);
 }
 
-// Bitfield of asynchronous actions the caller should take after dispatching the
-// signals.
-typedef enum {
-  DISPATCH_NONE = 0,
-  DISPATCH_WAKE_PARENT = 1,
-} dispatch_action_t;
-
 // Dispatch a particular signal in the current process.  May not return.
 // Returns true if the signal was dispatched (which includes being ignored), or
 // false if it couldn't be (because the process is stopped).
@@ -634,30 +627,36 @@ int proc_assign_pending_signals(void) {
   kthread_data_t* thread = kthread_current_thread();
   KASSERT(thread->process == proc_current());
   kthread_lock_proc_spin(thread);
-  KASSERT_DBG(
-      list_link_on_list(&proc_current()->threads, &thread->proc_threads_link));
 
-  signal_assign_pending(thread->process);
-  int result = !ksigisemptyset(thread->assigned_signals);
+  int result = proc_assign_pending_signals_locked();
 
   kthread_unlock_proc_spin(thread);
   return result;
 }
 
-void proc_dispatch_pending_signals(const user_context_t* context,
-                                   syscall_context_t* syscall_ctx) {
+int proc_assign_pending_signals_locked(void) {
+  kthread_data_t* thread = kthread_current_thread();
+  kthread_assert_proc_spin_held(thread);
+  KASSERT_DBG(
+      list_link_on_list(&proc_current()->threads, &thread->proc_threads_link));
+
+  signal_assign_pending(thread->process);
+  return !ksigisemptyset(thread->assigned_signals);
+}
+
+dispatch_action_t proc_dispatch_pending_signals(
+    const user_context_t* context, syscall_context_t* syscall_ctx) {
   process_t* proc = proc_current();
   const kthread_t thread = kthread_current_thread();
   KASSERT_DBG(thread->process == proc);
 
-  kthread_lock_proc_spin(thread);
+  kthread_assert_proc_spin_held(thread);
 
   KASSERT_DBG(
       list_link_on_list(&proc_current()->threads, &thread->proc_threads_link));
 
   if (ksigisemptyset(thread->assigned_signals)) {
-    kthread_unlock_proc_spin(thread);
-    return;
+    return DISPATCH_NONE;
   }
 
   dispatch_action_t action = DISPATCH_NONE;
@@ -676,13 +675,19 @@ void proc_dispatch_pending_signals(const user_context_t* context,
     }
   }
 
-  kthread_unlock_proc_spin(thread);
+  return action;
+}
 
-  // Perform any asynchronous followup actions.
+void proc_do_dispatch_actions(dispatch_action_t action) {
+  process_t* const proc = proc_current();
+  KASSERT_DBG(kthread_current_thread()->process == proc);
+  KASSERT_DBG(!kspin_is_held(&proc->spin_mu));
+  KASSERT_DBG((action & ~DISPATCH_WAKE_PARENT) == 0);
+
   if (action & DISPATCH_WAKE_PARENT) {
-    // It's safe to do this racily with the actual stop handling --- worst case
-    // scenario a parent thread already claimed us in waitpid(), and this will
-    // be harmlessly spurious.
+    // It's safe to do this racily with the actual stop/continue handling ---
+    // worst case scenario a parent thread already claimed us in waitpid(), and
+    // this will be harmlessly spurious.
     process_t* const parent = proc_get_and_lock_parent(proc);
     pmutex_assert_is_held(&parent->mu);
     scheduler_wake_all(&parent->wait_queue);

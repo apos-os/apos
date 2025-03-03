@@ -116,7 +116,15 @@ void proc_suppress_signal(process_t* proc, int sig);
 // NOTE: proc_dispatch_pending_signals() may not dispatch any signals, even if
 // proc_assign_pending_signals() returns 1, for example if the signals are
 // masked.
-int proc_assign_pending_signals(void);
+int proc_assign_pending_signals(void); // EXCLUDES(proc->spin_mu)
+int proc_assign_pending_signals_locked(void); //  REQUIRES(proc->spin_mu)
+
+// Bitfield of asynchronous actions the caller must do after unlocking the
+// process signal lock.
+typedef enum {
+  DISPATCH_NONE = 0,
+  DISPATCH_WAKE_PARENT = 1,
+} dispatch_action_t;
 
 // Dispatch any pending signals in the current process.  If there are any
 // signals that aren't blocked by the current thread's signal mask, it
@@ -127,9 +135,21 @@ int proc_assign_pending_signals(void);
 // returned.  A copy will be made if necessary (the caller doesn't have to
 // ensure it outlives the call).
 //
-// Will not return if any signal handlers need to be invoked.
-void proc_dispatch_pending_signals(const user_context_t* context,
-                                   syscall_context_t* syscall_ctx);
+// There will be one of three outcomes:
+//  1) signals dispatched to userspace handlers --> will not return!
+//  2) signals handled by kernel, we're done --> returns DISPATCH_NONE
+//  3) signals handled but action require --> returns action(s)
+//
+// If this returns anything other than DISPATCH_NONE, the caller MUST (a) unlock
+// the process lock, (b) do the requested actions, then (c) retry the
+// assign/dispatch calls to catch any new signals.
+//
+// REQUIRES: proc_current()->spin_mu
+dispatch_action_t proc_dispatch_pending_signals(const user_context_t* context,
+                                                syscall_context_t* syscall_ctx);
+
+// Processes any actions in the dispatch_action_t.
+void proc_do_dispatch_actions(dispatch_action_t action);
 
 // Return from a signal handling routine, via the trampoline.
 // Frees old_mask and context.

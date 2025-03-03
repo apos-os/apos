@@ -42,7 +42,9 @@ static void* sleep_and_be_killed(void* x) {
   // Sleep should be interrupted early.
   KEXPECT_GE(ksleep(10000), 9000);
   KEXPECT_EQ(true, has_sigtkill());
-  proc_dispatch_pending_signals(NULL, NULL);
+  kspin_lock(&proc_current()->spin_mu);
+  KEXPECT_EQ(DISPATCH_NONE, proc_dispatch_pending_signals(NULL, NULL));
+  kspin_unlock(&proc_current()->spin_mu);
   KEXPECT_EQ(false, true);  // Should be unreachable.
   return 0x0;
 }

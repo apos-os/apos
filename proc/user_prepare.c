@@ -25,18 +25,29 @@
 void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg,
                            syscall_context_t* syscall_ctx) {
   kthread_t me = kthread_current_thread();
+  bool got_context = false;
+  user_context_t context;
+
   kthread_lock_proc_spin(me);
   do {
-    // Unlock to assign signals.
-    kthread_unlock_proc_spin(me);
+    dispatch_action_t action;
+    do {
+      action = DISPATCH_NONE;
+      if (proc_assign_pending_signals_locked()) {
+        if (!got_context) {
+          context = context_fn(arg);
+          got_context = true;
+        }
+        action = proc_dispatch_pending_signals(&context, syscall_ctx);
 
-    if (proc_assign_pending_signals()) {
-      user_context_t context = context_fn(arg);
-      proc_dispatch_pending_signals(&context, syscall_ctx);
-    }
-    // TODO(smp): this is racy --- a signal could come in just before we re-lock
-    // here, and due to SWAIT_NO_SIGNAL_CHECK, we'd miss it.  Fix and test.
-    kthread_lock_proc_spin(me);
+        if (action != DISPATCH_NONE) {
+          kthread_unlock_proc_spin(me);
+          proc_do_dispatch_actions(action);
+          kthread_lock_proc_spin(me);
+          // New signals could be assigned!
+        }
+      }
+    } while (action != DISPATCH_NONE);
 
     if (me->process->state == PROC_STOPPED) {
       // We don't want scheduler_wait() to re-check signals (which would require
