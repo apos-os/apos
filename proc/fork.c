@@ -60,6 +60,8 @@ int proc_fork(proc_func_t start, void* arg) {
   vfs_fork_fds(parent, new_process);
   new_process->cwd = parent->cwd;
   vfs_ref(new_process->cwd);
+
+  new_process->umask = parent->umask;
   pmutex_unlock(&parent->mu);
 
   // Fork the address space.
@@ -79,8 +81,6 @@ int proc_fork(proc_func_t start, void* arg) {
   }
 
   // Don't duplicate the alarm; pending alarms are cleared in the child.
-
-  new_process->umask = parent->umask;
 
   // Propagate identity.
   kspin_lock(&g_proc_table_lock);

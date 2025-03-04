@@ -101,7 +101,7 @@ typedef struct process {
   list_link_t pgroup_link GUARDED_BY(g_proc_table_lock);
 
   // The process's umask.
-  kmode_t umask;
+  kmode_t umask GUARDED_BY(&mu);
 
   // Has this process exec()'d since it was created.
   bool execed;
