@@ -12536,7 +12536,7 @@ static void connect_sockets_tests(void) {
   KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
   KEXPECT_EQ(0, do_connect(c2, LO_DST_IP, SERVER_PORT));
 
-  char addr1[INET_PRETTY_LEN], addr2[INET_PRETTY_LEN];
+  char addr1[SOCKADDR_PRETTY_LEN], addr2[SOCKADDR_PRETTY_LEN];
   s1 = do_accept(server, addr1);
   KEXPECT_GE(s1, 0);
   s2 = do_accept(server, addr2);
@@ -12912,8 +12912,8 @@ static void sockmap_find_tests(void) {
 
 
   KTEST_BEGIN("TCP: sockmap 5-tuple lookup");
-  socket_tcp_t s1, s2, s3;
-  char local[INET_PRETTY_LEN];
+  socket_tcp_t s1, s2;
+  char local[SOCKADDR_PRETTY_LEN];
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s1, local));
   KEXPECT_STREQ("1.2.3.4:80", local);
 
@@ -12999,8 +12999,16 @@ static void sockmap_find_tests(void) {
   KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, NULL, 0, &s1));
   KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
 
+  tcpsm_cleanup(&sm);
+}
 
+static void sockmap_find_tests2(void) {
   KTEST_BEGIN("TCP: sockmap 5-to-3 tuple fallback (any-address)");
+  tcp_sockmap_t sm;
+  tcpsm_init(&sm, AF_INET, 5, 7);
+  socket_tcp_t s1, s2, s3;
+  char local[SOCKADDR_PRETTY_LEN];
+
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 80, NULL, 0, &s1, local));
   KEXPECT_STREQ("0.0.0.0:80", local);
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2, local));
@@ -13060,7 +13068,7 @@ static void sockmap_bind_tests(void) {
   tcpsm_init(&sm, AF_INET, 5, 7);
 
   socket_tcp_t s1, s2;
-  char local[INET_PRETTY_LEN];
+  char local[SOCKADDR_PRETTY_LEN];
   KEXPECT_EQ(-EINVAL,
              tcpsm_do_bind(&sm, "1.2.3.4", 80, "0.0.0.0", 90, &s1, local));
   KEXPECT_EQ(-EINVAL,
@@ -13143,7 +13151,7 @@ static void sockmap_bind_tests2(void) {
   tcpsm_init(&sm, AF_INET, 5, 7);
 
   socket_tcp_t s1, s2, s3, s4;
-  char local[INET_PRETTY_LEN];
+  char local[SOCKADDR_PRETTY_LEN];
 
   KTEST_BEGIN("TCP: port assignment");
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s1, local));
@@ -13224,7 +13232,7 @@ static void sockmap_bind_tests2(void) {
 static void sockmap_bind_tests3(void) {
   tcp_sockmap_t sm;
   socket_tcp_t s1, s2, s3;
-  char local[INET_PRETTY_LEN];
+  char local[SOCKADDR_PRETTY_LEN];
 
   KTEST_BEGIN("TCP: port assignment (5-tuple)");
   tcpsm_init(&sm, AF_INET, 5, 7);
@@ -13295,7 +13303,7 @@ static void sockmap_reuseaddr_tests(void) {
   tcpsm_init(&sm, AF_INET, 5, 7);
 
   socket_tcp_t s1, s2, s3, s4;
-  char local[INET_PRETTY_LEN];
+  char local[SOCKADDR_PRETTY_LEN];
   KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90,
                                TCPSM_REUSEADDR, &s1, local));
   KEXPECT_STREQ("1.2.3.4:80", local);
@@ -13511,7 +13519,7 @@ static void sockmap_find_ipv6_tests(void) {
 
   KTEST_BEGIN("TCP: sockmap 5-tuple lookup (IPv6)");
   socket_tcp_t s1, s2;
-  char local[INET6_PRETTY_LEN];
+  char local[SOCKADDR_PRETTY_LEN];
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s1, local));
   KEXPECT_STREQ("[::1]:80", local);
 
@@ -13604,7 +13612,7 @@ static void sockmap_find_ipv6_tests2(void) {
   tcp_sockmap_t sm;
   tcpsm_init(&sm, AF_INET6, 5, 7);
   socket_tcp_t s1, s2, s3;
-  char local[INET6_PRETTY_LEN];
+  char local[SOCKADDR_PRETTY_LEN];
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::]:80", local);
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
@@ -13680,7 +13688,7 @@ static void sockmap_bind_ipv6_tests(void) {
   tcpsm_init(&sm, AF_INET6, 5, 7);
 
   socket_tcp_t s1, s2;
-  char local[INET6_PRETTY_LEN];
+  char local[SOCKADDR_PRETTY_LEN];
   KEXPECT_EQ(-EINVAL,
              tcpsm_do_bind(&sm, "::1", 80, "::", 90, &s1, local));
   KEXPECT_EQ(-EINVAL,
@@ -13763,7 +13771,7 @@ static void sockmap_bind_ipv6_tests2(void) {
   tcpsm_init(&sm, AF_INET6, 5, 7);
 
   socket_tcp_t s1, s2, s3, s4;
-  char local[INET6_PRETTY_LEN];
+  char local[SOCKADDR_PRETTY_LEN];
 
   KTEST_BEGIN("TCP: port assignment (IPv6)");
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s1, local));
@@ -13844,7 +13852,7 @@ static void sockmap_bind_ipv6_tests2(void) {
 static void sockmap_bind_ipv6_tests3(void) {
   tcp_sockmap_t sm;
   socket_tcp_t s1, s2, s3;
-  char local[INET6_PRETTY_LEN];
+  char local[SOCKADDR_PRETTY_LEN];
 
   KTEST_BEGIN("TCP: port assignment (5-tuple) (IPv6)");
   tcpsm_init(&sm, AF_INET6, 5, 7);
@@ -13915,7 +13923,7 @@ static void sockmap_reuseaddr_ipv6_tests(void) {
   tcpsm_init(&sm, AF_INET6, 5, 7);
 
   socket_tcp_t s1, s2, s3, s4;
-  char local[INET6_PRETTY_LEN];
+  char local[SOCKADDR_PRETTY_LEN];
   KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
                                TCPSM_REUSEADDR, &s1, local));
   KEXPECT_STREQ("[::1]:80", local);
@@ -14122,6 +14130,7 @@ static void sockmap_reuseaddr_ipv6_tests(void) {
 
 static void sockmap_tests(void) {
   sockmap_find_tests();
+  sockmap_find_tests2();
   sockmap_bind_tests();
   sockmap_bind_tests2();
   sockmap_bind_tests3();
