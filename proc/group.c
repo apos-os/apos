@@ -16,11 +16,13 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "common/list.h"
 #include "proc/process.h"
+#include "proc/spinlock.h"
 
 // Process groups.  Each element of the table is a list of processes in that
 // group.
-proc_group_t g_proc_group_table[PROC_MAX_PROCS];
+proc_group_t g_proc_group_table[PROC_MAX_PROCS] GUARDED_BY(g_proc_table_lock);
 
 kpid_t getpgid(kpid_t pid) {
   if (pid < 0 || pid >= PROC_MAX_PROCS) {
@@ -31,13 +33,16 @@ kpid_t getpgid(kpid_t pid) {
     return -ESRCH;
   }
 
+  kspin_lock(&g_proc_table_lock);
   if (proc_group_get(proc->pgroup)->session !=
       proc_group_get(proc_current()->pgroup)->session) {
+    kspin_unlock(&g_proc_table_lock);
     if (pid != 0) proc_put(proc);
     return -EPERM;
   }
 
   kpid_t result = proc->pgroup;
+  kspin_unlock(&g_proc_table_lock);
   if (pid != 0) proc_put(proc);
   return result;
 }
@@ -51,19 +56,46 @@ int setpgid(kpid_t pid, kpid_t pgid) {
   if (pgid == 0) pgid = pid;
 
   process_t* proc = proc_get_ref(pid);
-  if (!proc || (proc != proc_current() && proc->parent != proc_current())) {
-    if (proc) proc_put(proc);
+  if (!proc) {
     return -ESRCH;
   }
 
+  process_t* parent = proc_get_and_lock_parent(proc);
+  pmutex_assert_is_held(&parent->mu);
+  if (proc != proc_current() && parent != proc_current()) {
+    pmutex_unlock(&proc->mu);
+    pmutex_unlock(&parent->mu);
+    proc_put(proc);
+    proc_put(parent);
+    return -ESRCH;
+  }
+
+  if (parent == proc_current() && proc->execed) {
+    pmutex_unlock(&proc->mu);
+    pmutex_unlock(&parent->mu);
+    proc_put(proc);
+    proc_put(parent);
+    return -EACCES;
+  }
+
+  // Done with parent checks.
+  pmutex_unlock(&parent->mu);
+  proc_put(parent);
+  parent = NULL;
+
+  kspin_lock(&g_proc_table_lock);
   proc_group_t* cur_pgroup = proc_group_get(proc->pgroup);
   if (cur_pgroup->session == proc->id) {  // Is session leader?
+    kspin_unlock(&g_proc_table_lock);
+    pmutex_unlock(&proc->mu);
     proc_put(proc);
     return -EPERM;
   }
 
   proc_group_t* my_pgroup = proc_group_get(proc_current()->pgroup);
   if (cur_pgroup->session != my_pgroup->session) {
+    kspin_unlock(&g_proc_table_lock);
+    pmutex_unlock(&proc->mu);
     proc_put(proc);
     return -EPERM;  // Child, but in a different session.
   }
@@ -71,34 +103,76 @@ int setpgid(kpid_t pid, kpid_t pgid) {
   proc_group_t* pgroup = proc_group_get(pgid);
   if (pgid != pid &&
       (list_empty(&pgroup->procs) || pgroup->session != my_pgroup->session)) {
+    kspin_unlock(&g_proc_table_lock);
+    pmutex_unlock(&proc->mu);
     proc_put(proc);
     return -EPERM;
   }
 
-  if (proc->parent == proc_current() && proc->execed) {
-    proc_put(proc);
-    return -EACCES;
-  }
-
-  // If this is a newly-created process group, set its session to the same as
-  // the old process group.
-  if (list_empty(&pgroup->procs)) {
-    KASSERT_DBG(pid == pgid);
-    pgroup->session = proc_group_get(proc->pgroup)->session;
-  }
-
-  // Remove the process from its current group and add it to the new one.
-  list_remove(&proc_group_get(proc->pgroup)->procs, &proc->pgroup_link);
-  list_push(&pgroup->procs, &proc->pgroup_link);
-  proc->pgroup = pgid;
-
+  setpgid_force(proc, pgid, pgroup);
+  kspin_unlock(&g_proc_table_lock);
+  pmutex_unlock(&proc->mu);
   proc_put(proc);
   return 0;
 }
 
+void setpgid_force(process_t* proc, kpid_t pgid, proc_group_t* pgroup) {
+  KASSERT(proc_group_get(pgid) == pgroup);
+
+  // If this is a newly-created process group, set its session to the same as
+  // the old process group.
+  if (list_empty(&pgroup->procs)) {
+    KASSERT_DBG(proc->id == pgid);
+    pgroup->session = proc_group_get(proc->pgroup)->session;
+  }
+
+  // Remove the process from its current group and add it to the new one.
+  proc_group_remove(proc_group_get(proc->pgroup), proc);
+  proc_group_add(pgroup, proc);
+  proc->pgroup = pgid;
+}
+
 proc_group_t* proc_group_get(kpid_t gid) {
+  if (kthread_current_thread()) {
+    kspin_assert_is_held(&g_proc_table_lock);
+  }
   if (gid < 0 || gid >= PROC_MAX_PROCS)
     return NULL;
   else
     return &g_proc_group_table[gid];
+}
+
+void proc_group_add(proc_group_t* group, process_t* proc) {
+  KASSERT(group->num_procs >= 0);
+  // KASSERT_DBG(group->num_procs == list_size(&group->procs));
+  list_push(&group->procs, &proc->pgroup_link);
+  group->num_procs++;
+}
+
+void proc_group_remove(proc_group_t* group, process_t* proc) {
+  KASSERT(group->num_procs > 0);
+  // KASSERT_DBG(group->num_procs == list_size(&group->procs));
+  KASSERT_DBG(list_link_on_list(&group->procs, &proc->pgroup_link));
+  list_remove(&group->procs, &proc->pgroup_link);
+  group->num_procs--;
+}
+
+int proc_group_snapshot(const proc_group_t* group, process_t*** procs_out) {
+  if (group->num_procs == 0) {
+    *procs_out = NULL;
+    return 0;
+  }
+
+  process_t** procs =
+      (process_t**)kmalloc(sizeof(process_t*) * group->num_procs);
+  KASSERT(procs != NULL);
+  int i = 0;
+  FOR_EACH_LIST(iter, &group->procs) {
+    procs[i] = LIST_ENTRY(iter, process_t, pgroup_link);
+    refcount_inc(&procs[i]->refcount);
+    i++;
+  }
+  KASSERT(i == group->num_procs);
+  *procs_out = procs;
+  return group->num_procs;
 }

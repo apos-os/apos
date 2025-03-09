@@ -23,7 +23,10 @@
 #ifndef APOO_SCHEDULER_H
 #define APOO_SCHEDULER_H
 
+#include "proc/kmutex.h"
 #include "proc/kthread.h"
+#include "proc/kthread-queue.h"
+#include "proc/pmutex.h"
 #include "proc/spinlock.h"
 
 // Initialize the scheduler.
@@ -42,6 +45,22 @@ void scheduler_interrupt_thread(kthread_t thread);
 //
 // Equivalent (logically) to scheduler_wait_on(RUN_QUEUE).
 void scheduler_yield(void);
+
+// Flags to pass to scheduler_wait().  Default flags is zero.
+typedef enum {
+  SWAIT_DEFAULT = 0,
+  SWAIT_NO_INTERRUPT = 1,  // Wait can't be interrupted.
+
+  // Don't check for pending signals before waiting.  Generally
+  // SWAIT_NO_INTERRUPT should be used instead, unless the thread/process itself
+  // is locked.
+  SWAIT_NO_SIGNAL_CHECK = 2,
+} swait_flags_t;
+
+// Universal scheduler wait function.  Called by variants below.  At most one
+// lock type must be supplied.
+int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
+                   kmutex_t* mu, kspinlock_t* sp);
 
 // Wait on the given thread queue.
 //
@@ -68,14 +87,12 @@ int scheduler_wait_on_interruptable(kthread_queue_t* queue, long timeout_ms);
 // Always interruptable.  Returns as scheduler_wait_on_interruptable().
 int scheduler_wait_on_locked(kthread_queue_t* queue, long timeout_ms,
                              kmutex_t* mu);
+int scheduler_wait_on_plocked(kthread_queue_t* queue, long timeout_ms,
+                             pmutex_t* mu);
 
 // As above, but with a spinlock rather than a mutex.
 int scheduler_wait_on_splocked(kthread_queue_t* queue, long timeout_ms,
                                kspinlock_t* sp) REQUIRES(sp);
-
-// As above, but not interruptable.  Will be replaced post-cleanup.
-// TODO(aoates): make all callers of this able to handle and propagate signals.
-void scheduler_wait_on_locked_no_signals(kthread_queue_t* queue, kmutex_t* mu);
 
 // Wake one thread waiting on the given thread queue.
 void scheduler_wake_one(kthread_queue_t* queue);

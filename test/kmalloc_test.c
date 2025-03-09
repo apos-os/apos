@@ -421,7 +421,7 @@ static void multi_threaded_test(void) {
   kmalloc_log_state();
 }
 
-void kmalloc_test(void) {
+void kmalloc_unsafe_test(void) {
   KTEST_SUITE_BEGIN("kmalloc");
 
   // Must be first.
@@ -454,4 +454,22 @@ void kmalloc_test(void) {
   ktest_finish_all();
   KLOG("NOTE: kmalloc_test() ruins the kernel, so a reboot is needed.\n");
   while (1) {}
+}
+
+void kmalloc_basic_test(void) {
+  KTEST_SUITE_BEGIN("kmalloc (safe)");
+
+  // Test allocating a large (multi-page) block.
+  KTEST_BEGIN("kmalloc: large block allocation");
+  const int kNumPages = 10;
+  uint8_t* block = kmalloc(PAGE_SIZE * kNumPages);
+  for (int i = 0; i < kNumPages; ++i) {
+    KEXPECT_EQ(0xaa, block[i * kNumPages]);
+    KEXPECT_EQ(0xaa, block[i * kNumPages + 1]);
+    block[i * kNumPages] = 1;
+    block[i * kNumPages + 1] = 2;
+    KEXPECT_EQ(1, block[i * kNumPages]);
+    KEXPECT_EQ(2, block[i * kNumPages + 1]);
+  }
+  kfree(block);
 }

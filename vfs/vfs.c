@@ -32,6 +32,7 @@
 #include "proc/process.h"
 #include "proc/session.h"
 #include "proc/signal/signal.h"
+#include "proc/spinlock.h"
 #include "proc/user.h"
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/anonfs.h"
@@ -200,8 +201,12 @@ void vfs_init(void) {
     g_file_table[i] = 0x0;
   }
 
-  KASSERT(proc_current()->cwd == 0x0);
-  proc_current()->cwd = vfs_get_root_vnode();
+  process_t* const root_proc = proc_current();
+  pmutex_lock(&root_proc->mu);
+  KASSERT(root_proc->id == 0);
+  KASSERT(root_proc->cwd == 0x0);
+  root_proc->cwd = vfs_get_root_vnode();
+  pmutex_unlock(&root_proc->mu);
 }
 
 fs_t* vfs_get_root_fs(void) {
@@ -520,7 +525,9 @@ int vfs_get_vnode_dir_path(vnode_t* vnode, char* path_out, int size) {
 static void vfs_set_created_metadata(vnode_t* vnode, kmode_t mode) {
   vnode->uid = geteuid();
   vnode->gid = getegid();
+  pmutex_lock(&proc_current()->mu);
   vnode->mode = (mode & ~proc_current()->umask) & ~VFS_S_IFMT;
+  pmutex_unlock(&proc_current()->mu);
 }
 
 static int vfs_open_fifo(vnode_t* vnode, kmode_t mode, bool block) {
@@ -604,7 +611,9 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
       KLOG(DFATAL, "tty_get() failed in vnode open\n");
       return -EIO;
     }
-    const ksid_t sid = proc_getsid(0);
+
+    kspin_lock(&g_proc_table_lock);
+    const ksid_t sid = proc_getsid_locked(proc_current());
     proc_session_t* const session = proc_session_get(sid);
     if (sid == proc_current()->id &&
         session->ctty == PROC_SESSION_NO_CTTY && tty->session < 0) {
@@ -613,6 +622,7 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
       session->ctty = kminor(child->dev);
       tty->session = sid;
     }
+    kspin_unlock(&g_proc_table_lock);
   }
 
   // Find the next free file descriptor.
@@ -777,7 +787,7 @@ int vfs_open(const char* path, int flags, ...) {
   return result;
 }
 
-void vfs_close_locked(int fd, file_t* file) {
+void vfs_close_file(int fd, file_t* file) {
   process_t* proc = proc_current();
   pmutex_assert_is_held(&proc->mu);
   KASSERT(fd >= 0 && fd < PROC_MAX_FDS);
@@ -790,21 +800,27 @@ void vfs_close_locked(int fd, file_t* file) {
   file_unref(file);
 }
 
-int vfs_close(int fd) {
+int vfs_close_locked(int fd) {
   process_t* proc = proc_current();
-  pmutex_lock(&proc->mu);
+  pmutex_assert_is_held(&proc->mu);
   file_t* file = NULL;
   int result = lookup_fd_locked(fd, &file);
   if (result) {
-    pmutex_unlock(&proc->mu);
     return result;
   }
-  vfs_close_locked(fd, file);
-  pmutex_unlock(&proc->mu);
+  vfs_close_file(fd, file);
 
   // Unref our local ref (vfs_close_locked takes care of the FD table ref).
   file_unref(file);
   return 0;
+}
+
+int vfs_close(int fd) {
+  process_t* proc = proc_current();
+  pmutex_lock(&proc->mu);
+  int result = vfs_close_locked(fd);
+  pmutex_unlock(&proc->mu);
+  return result;
 }
 
 int vfs_dup(int orig_fd) {
@@ -831,13 +847,15 @@ int vfs_dup2(int fd1, int fd2) {
   file_t* file1 = 0x0, *file2 = 0x0;
 
   if (!is_valid_fd(fd2)) return -EBADF;
-  if (proc_current()->limits[APOS_RLIMIT_NOFILE].rlim_cur !=
-          APOS_RLIM_INFINITY &&
-      (apos_rlim_t)fd2 >= proc_current()->limits[APOS_RLIMIT_NOFILE].rlim_cur)
-    return -EMFILE;
 
   process_t* proc = proc_current();
   pmutex_lock(&proc->mu);
+  if (proc->limits[APOS_RLIMIT_NOFILE].rlim_cur != APOS_RLIM_INFINITY &&
+      (apos_rlim_t)fd2 >= proc->limits[APOS_RLIMIT_NOFILE].rlim_cur) {
+    pmutex_unlock(&proc->mu);
+    return -EMFILE;
+  }
+
   // TODO(aoates): write a test that catches races in this function.
   int result = lookup_fd_locked(fd1, &file1);
   if (result) {
@@ -854,7 +872,7 @@ int vfs_dup2(int fd1, int fd2) {
   // Close fd2 if it already exists.
   result = lookup_fd_locked(fd2, &file2);
   if (result == 0) {
-    vfs_close_locked(fd2, file2);
+    vfs_close_file(fd2, file2);
     file_unref(file2);
   }
 
@@ -1426,11 +1444,14 @@ ssize_t vfs_write(int fd, const void* buf, size_t count) {
     result = special_device_write(file->vnode->type, file->vnode->dev,
                                   file->pos, buf, count, file->flags);
   } else {
+    pmutex_lock(&proc_current()->mu);
+    const apos_rlim_t limit =
+        proc_current()->limits[APOS_RLIMIT_FSIZE].rlim_cur;
+    pmutex_unlock(&proc_current()->mu);
+
     kmutex_lock(&file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
       if (file->flags & VFS_O_APPEND) file->pos = file->vnode->len;
-      const apos_rlim_t limit =
-          proc_current()->limits[APOS_RLIMIT_FSIZE].rlim_cur;
       if (limit != APOS_RLIM_INFINITY) {
         koff_t new_len = max(file->vnode->len, file->pos + (koff_t)count);
         if (new_len > file->vnode->len && (apos_rlim_t)new_len > limit) {
@@ -1552,7 +1573,14 @@ int vfs_getdents(int fd, kdirent_t* buf, int count) {
 
 int vfs_getcwd(char* path_out, size_t size) {
   // TODO(aoates): size_t all the way down.
-  return vfs_get_vnode_dir_path(proc_current()->cwd, path_out, size);
+  process_t* const me = proc_current();
+  pmutex_lock(&me->mu);
+  vnode_t* cwd = VFS_COPY_REF(me->cwd);
+  pmutex_unlock(&me->mu);
+
+  int result = vfs_get_vnode_dir_path(cwd, path_out, size);
+  VFS_PUT_AND_CLEAR(cwd);
+  return result;
 }
 
 int vfs_chdir(const char* path) {
@@ -1573,15 +1601,27 @@ int vfs_chdir(const char* path) {
   }
 
   // Set new cwd.
-  VFS_PUT_AND_CLEAR(proc_current()->cwd);
-  proc_current()->cwd = VFS_MOVE_REF(new_cwd);
+  process_t* const me = proc_current();
+  pmutex_lock(&me->mu);
+  VFS_PUT_AND_CLEAR(me->cwd);
+  me->cwd = VFS_MOVE_REF(new_cwd);
+  pmutex_unlock(&me->mu);
   return 0;
 }
 
 int vfs_get_memobj(int fd, kmode_t mode, memobj_t** memobj_out) {
+  process_t* proc = proc_current();
+  pmutex_lock(&proc->mu);
+  int result = vfs_get_memobj_locked(fd, mode, memobj_out);
+  pmutex_unlock(&proc->mu);
+  return result;
+}
+
+int vfs_get_memobj_locked(int fd, kmode_t mode, memobj_t** memobj_out) {
+  pmutex_assert_is_held(&proc_current()->mu);
   *memobj_out = 0x0;
   file_t* file = 0x0;
-  int result = lookup_fd(fd, &file);
+  int result = lookup_fd_locked(fd, &file);
   if (result) return result;
 
   if (file->vnode->type == VNODE_DIRECTORY) {
@@ -1603,7 +1643,6 @@ int vfs_get_memobj(int fd, kmode_t mode, memobj_t** memobj_out) {
 }
 
 void vfs_fork_fds(process_t* procA, process_t* procB) {
-  pmutex_lock(&procA->mu);
   if (ENABLE_KERNEL_SAFETY_NETS) {
     for (int i = 0; i < PROC_MAX_FDS; ++i) {
       KASSERT(procB->fds[i].file == PROC_UNUSED_FD);
@@ -1616,7 +1655,6 @@ void vfs_fork_fds(process_t* procA, process_t* procB) {
       file_ref(g_file_table[procA->fds[i].file]);
     }
   }
-  pmutex_unlock(&procA->mu);
 }
 
 // TODO(aoates): add a unit test for this.
@@ -1935,7 +1973,9 @@ int vfs_ftruncate(int fd, koff_t length) {
     file_unref(file);
     return 0;
   }
+  pmutex_lock(&proc_current()->mu);
   const apos_rlim_t limit = proc_current()->limits[APOS_RLIMIT_FSIZE].rlim_cur;
+  pmutex_unlock(&proc_current()->mu);
   if (limit != APOS_RLIM_INFINITY && (apos_rlim_t)length > limit) {
     proc_force_signal(proc_current(), SIGXFSZ);
     file_unref(file);
@@ -1972,7 +2012,9 @@ int vfs_truncate(const char* path, koff_t length) {
     return 0;
   }
 
+  pmutex_lock(&proc_current()->mu);
   const apos_rlim_t limit = proc_current()->limits[APOS_RLIMIT_FSIZE].rlim_cur;
+  pmutex_unlock(&proc_current()->mu);
   if (limit != APOS_RLIM_INFINITY && (apos_rlim_t)length > limit) {
     VFS_PUT_AND_CLEAR(vnode);
     proc_force_signal(proc_current(), SIGXFSZ);

@@ -47,4 +47,13 @@ void page_frame_free_nocheck(phys_addr_t frame);
 // this natively.
 phys_addr_t page_frame_dma_alloc(size_t pages);
 
+// Functions to dump the current page allocator state as part of the kmalloc
+// heap tracing.
+
+// Returns the total number of allocated pages currently.
+size_t page_frame_allocated_pages(void);
+
+// Prints the current allocated pages in the heap profile format.
+void page_frame_log_profile(void);
+
 #endif

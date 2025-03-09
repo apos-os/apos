@@ -26,6 +26,7 @@
 #include "memory/kmalloc.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"
+#include "proc/spinlock.h"
 #include "proc/user.h"
 #include "vfs/cbfs.h"
 #include "vfs/vfs.h"
@@ -100,6 +101,7 @@ static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
 
   char* tbuf = kmalloc(1024);
 
+  pmutex_lock(&proc->mu);
   list_link_t* link = proc->vm_area_list.head;
   while (link && offset < buflen) {
     vm_area_t* area = container_of(link, vm_area_t, vm_proc_list);
@@ -110,6 +112,7 @@ static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
     offset += kstrlen(tbuf);
     link = link->next;
   }
+  pmutex_unlock(&proc->mu);
 
   proc_put(proc);
   kfree(tbuf);
@@ -127,6 +130,7 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   if (!proc) return -EINVAL;
 
   char* cwd = kmalloc(VFS_MAX_PATH_LENGTH);
+  pmutex_lock(&proc->mu);
   if (proc->cwd) {
     int result = vfs_get_vnode_dir_path(proc->cwd, cwd, VFS_MAX_PATH_LENGTH);
     if (result < 0)
@@ -136,6 +140,17 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   }
 
   char* tbuf = kmalloc(1024);
+  kspin_lock(&g_proc_table_lock);
+  int pgroup = proc->pgroup;
+  kuid_t ruid = proc->ruid;
+  kgid_t rgid = proc->rgid;
+  kuid_t euid = proc->euid;
+  kgid_t egid = proc->egid;
+  kuid_t suid = proc->suid;
+  kgid_t sgid = proc->sgid;
+  kspin_unlock(&g_proc_table_lock);
+
+  kspin_lock(&proc->spin_mu);
   ksprintf(tbuf,
            "pid: %d\n"
            "state: %s\n"
@@ -150,21 +165,24 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
            "children:\n"
            "",
            pid, proc_state_to_string(proc->state),
-           proc->parent ? proc->parent->id : -1, cwd, proc->ruid, proc->rgid,
-           proc->euid, proc->egid, proc->suid, proc->sgid, proc->pgroup,
-           proc->execed, proc->user_arch);
+           proc->parent ? proc->parent->id : -1, cwd, ruid, rgid, euid, egid,
+           suid, sgid, pgroup, proc->execed, proc->user_arch);
   char* buf_ptr = tbuf + kstrlen(tbuf);
   for (list_link_t* link = proc->children_list.head;
        link != 0x0;
        link = link->next) {
-    const process_t* const child = container_of(link, process_t, children_link);
+    process_t* const child = container_of(link, process_t, children_link);
+    kspin_lock(&child->spin_mu);
     ksprintf(buf_ptr, "  %5d (%s)\n", child->id,
              proc_state_to_string(child->state));
+    kspin_unlock(&child->spin_mu);
     buf_ptr += kstrlen(buf_ptr);
   }
+  kspin_unlock(&proc->spin_mu);
   kstrncpy(buf, tbuf, buflen);
   ((char*)buf)[buflen - 1] = '\0';
 
+  pmutex_unlock(&proc->mu);
   proc_put(proc);
   kfree(tbuf);
   kfree(cwd);
@@ -179,8 +197,10 @@ static int cwd_readlink(fs_t* fs, void* arg, int vnode, void* buf, int buflen) {
   if (!proc) return -EINVAL;
 
   char* cwd = kmalloc(VFS_MAX_PATH_LENGTH);
+  pmutex_lock(&proc->mu);
   int result = vfs_get_vnode_dir_path(proc->cwd, cwd, VFS_MAX_PATH_LENGTH);
   if (result >= 0) kstrncpy(buf, cwd, result);
+  pmutex_unlock(&proc->mu);
 
   proc_put(proc);
   kfree(cwd);

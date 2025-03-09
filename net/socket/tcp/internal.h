@@ -25,8 +25,8 @@ typedef struct {
   kspinlock_t lock;
 
   // Socket map.  Every socket in the map has a reference held on it.
-  tcp_sockmap_t sockets_v4 GUARDED_BY(lock);
-  tcp_sockmap_t sockets_v6 GUARDED_BY(lock);
+  tcp_sockmap_t sockets_v4 GUARDED_BY(&lock);
+  tcp_sockmap_t sockets_v6 GUARDED_BY(&lock);
 } tcp_state_t;
 
 extern tcp_state_t g_tcp;

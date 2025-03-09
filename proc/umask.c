@@ -13,10 +13,14 @@
 // limitations under the License.
 
 #include "proc/umask.h"
+#include "proc/pmutex.h"
 #include "proc/process.h"
 
 kmode_t proc_umask(kmode_t cmask) {
-  const kmode_t orig_mode = proc_current()->umask;
-  proc_current()->umask = cmask;
+  process_t* const me = proc_current();
+  pmutex_lock(&me->mu);
+  const kmode_t orig_mode = me->umask;
+  me->umask = cmask;
+  pmutex_unlock(&me->mu);
   return orig_mode;
 }

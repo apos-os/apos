@@ -16,6 +16,7 @@
 #include "common/errno.h"
 #include "dev/tty.h"
 #include "proc/group.h"
+#include "proc/kthread.h"
 #include "proc/session.h"
 #include "proc/signal/signal.h"
 #include "vfs/vfs.h"
@@ -41,19 +42,46 @@ int tty_get_fd(int fd, bool require_ctty, tty_t** tty) {
   return 0;
 }
 
+int tty_check_read(const tty_t* tty) {
+  const process_t* me = proc_current();
+  kspin_lock(&g_proc_table_lock);
+  const proc_group_t* my_pgroup = proc_group_get(me->pgroup);
+  const proc_session_t* tty_session = proc_session_get(tty->session);
+  int result = 0;
+  if (tty->session == my_pgroup->session && me->pgroup != tty_session->fggrp) {
+    result = -EIO;
+    if (proc_signal_deliverable(proc_current(), SIGTTIN)) {
+      proc_force_signal_group_locked(my_pgroup, SIGTTIN);
+      result = -EINTR;
+    }
+  }
+  kspin_unlock(&g_proc_table_lock);
+
+  return result;
+}
+
 int tty_check_write(const tty_t* tty) {
-  ksid_t sid = proc_getsid(0);
-  if (tty->session != sid) {
+  kspin_lock(&g_proc_table_lock);
+  int result = tty_check_write_locked(tty);
+  kspin_unlock(&g_proc_table_lock);
+  return result;
+}
+
+int tty_check_write_locked(const tty_t* tty) {
+  const process_t* me = proc_current();
+  const proc_group_t* my_pgroup = proc_group_get(me->pgroup);
+
+  if (tty->session != my_pgroup->session) {
     return 0;
   }
+  const proc_session_t* session = proc_session_get(tty->session);
 
   // TODO(aoates): check if the process group is orphaned and SIGTTOU isn't
   // blocked or ignored, and return EIO.
 
-  const kpid_t my_pgid = getpgid(0);
-  if (my_pgid != proc_session_get(sid)->fggrp) {
-    if (proc_signal_deliverable(kthread_current_thread(), SIGTTOU)) {
-      proc_force_signal_group(my_pgid, SIGTTOU);
+  if (me->pgroup != session->fggrp) {
+    if (proc_signal_deliverable(proc_current(), SIGTTOU)) {
+      proc_force_signal_group_locked(my_pgroup, SIGTTOU);
       return -EINTR;
     }
   }

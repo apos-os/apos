@@ -44,4 +44,8 @@ typedef enum {
 int vm_handle_page_fault(addr_t address, vm_fault_type_t type, vm_fault_op_t op,
                          vm_fault_mode_t mode);
 
+// As above, but called with the current process already locked.
+int vm_handle_page_fault_locked(addr_t address, vm_fault_type_t type,
+                                vm_fault_op_t op, vm_fault_mode_t mode);
+
 #endif

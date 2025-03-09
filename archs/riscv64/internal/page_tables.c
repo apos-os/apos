@@ -41,6 +41,8 @@
 #define RSV_SATP_MODE_SV39 (8ull << 60)
 #define RSV_SATP_PPN(satp) ((satp) & 0xFFFFFFFFFFF)
 
+#define RSV_SV39_LEVELS 3
+
 // We use the same indexing scheme as the virtual address breakdown --- pte2 is
 // the top-level PTE (corresponding to VPN2), etc.
 
@@ -124,7 +126,38 @@ page_dir_ptr_t rsv_create_as(phys_addr_t pt_phys) {
   return RSV_SATP_MODE_SV39 | phys2ppn(pt_phys);
 }
 
-#define RSV_SV39_LEVELS 3
+static void rsv_free_page_table_entries(phys_addr_t pt_phys, int level) {
+  KASSERT(level > 0);
+  rsv_sv39_pte_t* entries = (rsv_sv39_pte_t*)phys2virt(pt_phys);
+  for (size_t i = 0; i < PAGE_SIZE / sizeof(rsv_sv39_pte_t); ++i) {
+    if (!(entries[i] & RSV_PTE_VALID)) continue;
+    // If it's a mapping entry, skip it.
+    if (entries[i] & (RSV_PTE_READ | RSV_PTE_WRITE | RSV_PTE_EXECUTE)) {
+      continue;
+    }
+    // If it's a global entry, skip it.
+    if (entries[i] & RSV_PTE_GLOBAL) {
+      continue;
+    }
+
+    // It points to another level of page table.  If we're at the second-to-last
+    // level, the last level must all be direct mappings, so don't bother
+    // recursing.
+    uint64_t next_pt_ppn =
+        (entries[i] & RSV_SV39_PTE_PPN_MASK) >> RSV_SV39_PTE_PPN_OFFSET;
+    phys_addr_t next_table_phys = ppn2phys(next_pt_ppn);
+    if (level > 1) {
+      rsv_free_page_table_entries(next_table_phys, level - 1);
+    }
+    page_frame_free(next_table_phys);
+  }
+}
+
+void rsv_free_as_tables(page_dir_ptr_t as) {
+  phys_addr_t ppn = RSV_SATP_PPN(as);
+  KASSERT_DBG(as == (ppn | RSV_SATP_MODE_SV39));  // No ASIDs today.
+  rsv_free_page_table_entries(ppn2phys(ppn), RSV_SV39_LEVELS - 1);
+}
 
 // TODO(riscv): write tests for this for all possible combinations:
 //  - non-existing mapping (created all the way down)
@@ -133,7 +166,8 @@ page_dir_ptr_t rsv_create_as(phys_addr_t pt_phys) {
 //    "lower" than requested)
 //  - existing mappings of smaller, equal, and larger than requested sizes.
 rsv_sv39_pte_t* rsv_get_pte(page_dir_ptr_t as, addr_t virt, rsv_mapsize_t* size,
-                            bool create) {
+                            uint64_t flags, bool create) {
+  KASSERT((flags & ~RSV_GET_PTE_VALID_FLAGS) == 0);
   const uint64_t mapsize_bytes = get_mapsize(*size);
   KASSERT(virt % mapsize_bytes == 0);
 
@@ -149,16 +183,18 @@ rsv_sv39_pte_t* rsv_get_pte(page_dir_ptr_t as, addr_t virt, rsv_mapsize_t* size,
       if (!create) return NULL;
 
       phys_addr_t new_pt = page_frame_alloc();
+      KASSERT(new_pt != 0);
       if (!new_pt) return NULL;
       rsv_init_page_table(new_pt);
       // Make the PTE point at the new page table.
       *pte = 0;
       rsv_set_pte_addr(pte, new_pt, RSV_MAP_PAGE);
       *pte |= RSV_PTE_VALID;
+      *pte |= flags;
       // Leave DAU and RWX as zero since this is a non-leaf.
-      // TODO(aoates): support global mappings --- will require a bit to
-      // indicate whether the mapping should be global all the way down, or only
-      // on the final table.
+    } else {
+      // We must match flags all the way down.
+      KASSERT((*pte & RSV_GET_PTE_VALID_FLAGS) == flags);
     }
 
     level--;

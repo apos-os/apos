@@ -84,9 +84,16 @@ void test_alloc_all(void) {
 void test_basic(void) {
   KTEST_BEGIN("basic test");
 
-  phys_addr_t page1 = page_frame_alloc();
-  phys_addr_t page2 = page_frame_alloc();
-  phys_addr_t page3 = page_frame_alloc();
+  phys_addr_t page1, page2, page3;
+  {
+    PUSH_AND_DISABLE_INTERRUPTS();
+    size_t init = page_frame_allocated_pages();
+    page1 = page_frame_alloc();
+    page2 = page_frame_alloc();
+    page3 = page_frame_alloc();
+    KEXPECT_EQ(init + 3, page_frame_allocated_pages());
+    POP_INTERRUPTS();
+  }
 
   // Make sure we got physical, not virtual, page addresses.
   KEXPECT_LT(page1, 0xC0000000);
@@ -138,9 +145,15 @@ void test_basic(void) {
   KEXPECT_EQ(page2, page5);
   KEXPECT_EQ(page3, page4);
 
-  page_frame_free(page4);
-  page_frame_free(page5);
-  page_frame_free(page6);
+  {
+    PUSH_AND_DISABLE_INTERRUPTS();
+    size_t init = page_frame_allocated_pages();
+    page_frame_free(page4);
+    page_frame_free(page5);
+    page_frame_free(page6);
+    KEXPECT_EQ(init - 3, page_frame_allocated_pages());
+    POP_INTERRUPTS();
+  }
 
   // TODO(aoates): allow expectations of kasserts (as with expected page faults)
   // so we can test this.

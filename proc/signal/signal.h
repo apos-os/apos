@@ -30,6 +30,8 @@
 
 #include "arch/proc/user_context.h"
 #include "common/types.h"
+#include "proc/group.h"
+#include "proc/kthread-internal.h"
 #include "proc/process.h"
 #include "syscall/context.h"
 #include "user/include/apos/posix_signal.h"
@@ -47,31 +49,39 @@ static inline ksigset_t ksigsubtractset(ksigset_t A, ksigset_t B) {
 }
 
 // Returns all the pending or assigned signals on the given process.
-ksigset_t proc_pending_signals(const process_t* proc);
+ksigset_t proc_pending_signals(process_t* proc);
 
 // Returns all the signals that are assigned, unmasked, and not ignored in the
 // current thread (i.e., ones that will be dispatched next).
 ksigset_t proc_dispatchable_signals(void);
 
-// Returns true if the given signal can be delivered to the thread (i.e. it's
-// not blocked or ignored [explicitly or by default]).
-bool proc_signal_deliverable(kthread_t thread, int signum);
+// Returns true if the given signal can be delivered to the process (i.e. it's
+// neither blocked in all threads, nor ignored process-wide [explicitly or by
+// default]).
+bool proc_signal_deliverable(process_t* proc, int signum)
+    EXCLUDES(proc->spin_mu);
 
 // Force send a signal to the given process, without any permission checks or
 // the like.  Returns 0 on success, or -errno on error.
-int proc_force_signal(process_t* proc, int sig);
+int proc_force_signal(process_t* proc, int sig) EXCLUDES(proc->spin_mu);
+int proc_force_signal_locked(process_t* proc, int sig) REQUIRES(proc->spin_mu);
 
 // As above, but sends a signal to every process in the given group.
-int proc_force_signal_group(kpid_t pgid, int sig);
+int proc_force_signal_group(kpid_t pgid, int sig) EXCLUDES(g_proc_table_lock);
+int proc_force_signal_group_locked(const proc_group_t* pgroup, int sig)
+    REQUIRES(g_proc_table_lock);
 
 // As above, but forces the signal to be handled on the given thread.  Returns 0
 // on success, or -errno on error.
-int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig);
+int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig)
+    EXCLUDES(proc->spin_mu);
+int proc_force_signal_on_thread_locked(process_t* proc, kthread_t thread, int sig)
+    REQUIRES(proc->spin_mu);
 
 // Send a signal to the given process, as per kill(2).  Returns 0 on success, or
 // -errno on error.
-int proc_kill(kpid_t pid, int sig);
-int proc_kill_thread(kthread_t thread, int sig);
+int proc_kill(kpid_t pid, int sig) EXCLUDES(g_proc_table_lock);
+int proc_kill_thread(kthread_t thread, int sig) EXCLUDES(g_proc_table_lock);
 
 // Examine and/or change a signal action, as per sigaction(2).  Returns 0 on
 // success, or -errno on error.
@@ -106,7 +116,15 @@ void proc_suppress_signal(process_t* proc, int sig);
 // NOTE: proc_dispatch_pending_signals() may not dispatch any signals, even if
 // proc_assign_pending_signals() returns 1, for example if the signals are
 // masked.
-int proc_assign_pending_signals(void);
+int proc_assign_pending_signals(void); // EXCLUDES(proc->spin_mu)
+int proc_assign_pending_signals_locked(void); //  REQUIRES(proc->spin_mu)
+
+// Bitfield of asynchronous actions the caller must do after unlocking the
+// process signal lock.
+typedef enum {
+  DISPATCH_NONE = 0,
+  DISPATCH_WAKE_PARENT = 1,
+} dispatch_action_t;
 
 // Dispatch any pending signals in the current process.  If there are any
 // signals that aren't blocked by the current thread's signal mask, it
@@ -117,9 +135,21 @@ int proc_assign_pending_signals(void);
 // returned.  A copy will be made if necessary (the caller doesn't have to
 // ensure it outlives the call).
 //
-// Will not return if any signal handlers need to be invoked.
-void proc_dispatch_pending_signals(const user_context_t* context,
-                                   syscall_context_t* syscall_ctx);
+// There will be one of three outcomes:
+//  1) signals dispatched to userspace handlers --> will not return!
+//  2) signals handled by kernel, we're done --> returns DISPATCH_NONE
+//  3) signals handled but action require --> returns action(s)
+//
+// If this returns anything other than DISPATCH_NONE, the caller MUST (a) unlock
+// the process lock, (b) do the requested actions, then (c) retry the
+// assign/dispatch calls to catch any new signals.
+//
+// REQUIRES: proc_current()->spin_mu
+dispatch_action_t proc_dispatch_pending_signals(const user_context_t* context,
+                                                syscall_context_t* syscall_ctx);
+
+// Processes any actions in the dispatch_action_t.
+void proc_do_dispatch_actions(dispatch_action_t action);
 
 // Return from a signal handling routine, via the trampoline.
 // Frees old_mask and context.
@@ -127,6 +157,7 @@ int proc_sigreturn(const ksigset_t* old_mask, const user_context_t* context,
                    const syscall_context_t* syscall_ctx);
 
 // Returns 1 if process A can send the given signal to process C.
-int proc_signal_allowed(const process_t* A, const process_t* B, int signal);
+int proc_signal_allowed(const process_t* A, const process_t* B, int signal)
+  EXCLUDES(g_proc_table_lock);
 
 #endif

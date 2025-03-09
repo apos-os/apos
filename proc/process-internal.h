@@ -16,7 +16,10 @@
 #ifndef APOO_PROC_PROCESS_INTERNAL_H
 #define APOO_PROC_PROCESS_INTERNAL_H
 
+#include "common/atomic.h"
 #include "proc/process.h"
+
+extern atomic_flag_t g_forked;
 
 // Allocate and initialize a process, and assign it a free process ID.
 // Returns NULL if the kernel is out of memory or process IDs.
@@ -28,5 +31,8 @@ void proc_destroy(process_t* process);
 
 // Change the current process.
 void proc_set_current(process_t* process);
+
+// Cancel the existing alarm, if any, for the process (internal proc helper).
+void proc_alarm_cancel(process_t* proc) REQUIRES(proc->spin_mu);
 
 #endif

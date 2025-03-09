@@ -85,4 +85,7 @@
 #define NO_THREAD_SAFETY_ANALYSIS \
   THREAD_ANNOTATION_ATTRIBUTE__(no_thread_safety_analysis)
 
+// A fake empty lock that can be used just for static analysis.
+typedef CAPABILITY("artificial-lock") struct {} analysis_lock_t;
+
 #endif

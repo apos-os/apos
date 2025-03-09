@@ -17,8 +17,10 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "proc/exit.h"
 #include "proc/fork.h"
 #include "proc/group.h"
+#include "proc/notification.h"
 #include "proc/process.h"
 #include "proc/sleep.h"
 #include "proc/user.h"
@@ -55,21 +57,54 @@ static void loop_until_done(void* arg) {
   }
 }
 
+static void do_nothing(void* arg) {
+  proc_exit(0);
+}
+
+static void become_leader_wait(void* arg) {
+  KEXPECT_EQ(0, setpgid(0, 0));
+  KEXPECT_TRUE(ntfn_await_with_timeout((notification_t*)arg, 1000));
+}
+
+static bool wait_for_zombie(kpid_t pid) {
+  process_t* proc = proc_get_ref(pid);
+  KEXPECT_NE(NULL, proc);
+  apos_ms_t timeout = get_time_ms() + 1000;
+  kspin_lock(&proc->spin_mu);
+  while (proc->state != PROC_ZOMBIE && get_time_ms() < timeout) {
+    kspin_unlock(&proc->spin_mu);
+    ksleep(10);
+    kspin_lock(&proc->spin_mu);
+  }
+  bool result = (proc->state == PROC_ZOMBIE);
+  kspin_unlock(&proc->spin_mu);
+  proc_put(proc);
+  return result;
+}
+
 static int group_contains(kpid_t pgid, kpid_t pid) {
+  int result = 0;
+  kspin_lock(&g_proc_table_lock);
   for (list_link_t* link = proc_group_get(pgid)->procs.head;
        link != 0x0;
        link = link->next) {
     process_t* proc = container_of(link, process_t, pgroup_link);
-    if (proc->id == pid) return 1;
+    if (proc->id == pid) {
+      result = 1;
+      break;
+    }
   }
-  return 0;
+  kspin_unlock(&g_proc_table_lock);
+  return result;
 }
 
 static void basic_setgpid_test(void* arg) {
   const kpid_t group = (intptr_t)arg;
 
   // To ensure it's not looked at or carried to children.
+  pmutex_lock(&proc_current()->mu);
   proc_current()->execed = true;
+  pmutex_unlock(&proc_current()->mu);
 
   KTEST_BEGIN("setgpid() create new group");
   KEXPECT_NE(proc_current()->id, getpgid(0));
@@ -144,7 +179,9 @@ static void child_setgpid_test(void* arg) {
   int test_done = 0;
 
   // To ensure it's not looked at or carried to children.
+  pmutex_lock(&proc_current()->mu);
   proc_current()->execed = true;
+  pmutex_unlock(&proc_current()->mu);
 
   KTEST_BEGIN("setpgid(): set pgid of child");
   int child = proc_fork(&loop_until_done, &test_done);
@@ -166,10 +203,20 @@ static void child_setgpid_test(void* arg) {
   KTEST_BEGIN("setpgid(): set pgid of child that has exec()'d");
   test_done = 0;
   child = proc_fork(&loop_until_done, &test_done);
+  pmutex_lock(&proc_get(child)->mu);
   KEXPECT_EQ(false, proc_get(child)->execed);
   proc_get(child)->execed = true;
+  pmutex_unlock(&proc_get(child)->mu);
+
   KEXPECT_EQ(-EACCES, setpgid(child, 0));
-  KEXPECT_EQ(proc_current()->pgroup, getpgid(child));
+  KEXPECT_EQ(getpgid(0), getpgid(child));
+
+  // Double check the raw values.
+  process_t* child_proc = proc_get_ref(child);
+  kspin_lock(&g_proc_table_lock);
+  KEXPECT_EQ(proc_current()->pgroup, child_proc->pgroup);
+  kspin_unlock(&g_proc_table_lock);
+  proc_put(child_proc);
 
   test_done = 1;
   KEXPECT_EQ(child, proc_wait(0x0));
@@ -222,6 +269,73 @@ static void dont_reuse_pid_of_group_test(void) {
   }
 }
 
+static void setpgid_zombie_test(void* arg) {
+  const kpid_t group = (intptr_t)arg;
+
+  // To ensure it's not looked at or carried to children.
+  pmutex_lock(&proc_current()->mu);
+  proc_current()->execed = true;
+  pmutex_unlock(&proc_current()->mu);
+
+  KTEST_BEGIN("setgpid() on zombie child (process leader)");
+  kpid_t child = proc_fork(&do_nothing, NULL);
+  KEXPECT_TRUE(wait_for_zombie(child));
+  KEXPECT_EQ(0, setpgid(child, child));  // Could also be an error.
+  KEXPECT_EQ(child, getpgid(child));
+  KEXPECT_EQ(0, group_contains(proc_current()->id, child));
+  KEXPECT_EQ(0, group_contains(group, child));
+  KEXPECT_EQ(1, group_contains(child, child));
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+
+
+  KTEST_BEGIN("setgpid() on zombie child (not process leader)");
+  notification_t done;
+  ntfn_init(&done);
+  child = proc_fork(&do_nothing, NULL);
+  kpid_t child2 = proc_fork(&become_leader_wait, &done);
+  KEXPECT_TRUE(wait_for_zombie(child));
+  KEXPECT_EQ(0, setpgid(child, child2));  // Could also be an error.
+  KEXPECT_EQ(child2, getpgid(child));
+  KEXPECT_EQ(0, group_contains(proc_current()->id, child));
+  KEXPECT_EQ(0, group_contains(group, child));
+  KEXPECT_EQ(0, group_contains(child, child));
+  KEXPECT_EQ(1, group_contains(child2, child));
+  ntfn_notify(&done);
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+  KEXPECT_EQ(child2, proc_waitpid(child2, NULL, 0));
+
+
+  KTEST_BEGIN("setgpid_force() on zombie child (process leader)");
+  child = proc_fork(&do_nothing, NULL);
+  KEXPECT_TRUE(wait_for_zombie(child));
+  kspin_lock(&g_proc_table_lock);
+  setpgid_force(proc_get_locked(child), child, proc_group_get(child));
+  kspin_unlock(&g_proc_table_lock);
+  KEXPECT_EQ(child, getpgid(child));
+  KEXPECT_EQ(0, group_contains(proc_current()->id, child));
+  KEXPECT_EQ(0, group_contains(group, child));
+  KEXPECT_EQ(1, group_contains(child, child));
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+
+
+  KTEST_BEGIN("setgpid_force() on zombie child (not process leader)");
+  ntfn_init(&done);
+  child = proc_fork(&do_nothing, NULL);
+  child2 = proc_fork(&become_leader_wait, &done);
+  KEXPECT_TRUE(wait_for_zombie(child));
+  kspin_lock(&g_proc_table_lock);
+  setpgid_force(proc_get_locked(child), child2, proc_group_get(child2));
+  kspin_unlock(&g_proc_table_lock);
+  KEXPECT_EQ(child2, getpgid(child));
+  KEXPECT_EQ(0, group_contains(proc_current()->id, child));
+  KEXPECT_EQ(0, group_contains(group, child));
+  KEXPECT_EQ(0, group_contains(child, child));
+  KEXPECT_EQ(1, group_contains(child2, child));
+  ntfn_notify(&done);
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+  KEXPECT_EQ(child2, proc_waitpid(child2, NULL, 0));
+}
+
 void proc_group_test(void) {
   KTEST_SUITE_BEGIN("Process group tests");
 
@@ -236,6 +350,7 @@ void proc_group_test(void) {
   fork_and_run(&invalid_params_setgpid_test, pgroup_leader_pid);
   fork_and_run(&child_setgpid_test, pgroup_leader_pid);
   dont_reuse_pid_of_group_test();
+  fork_and_run(&setpgid_zombie_test, pgroup_leader_pid);
 
   test_done = 1;
   int child = proc_wait(0x0);

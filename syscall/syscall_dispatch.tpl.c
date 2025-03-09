@@ -23,6 +23,7 @@
 #include "proc/alarm.h"
 #include "proc/futex.h"
 #include "proc/group.h"
+#include "proc/kthread-internal.h"
 #include "proc/limit.h"
 #include "proc/process.h"
 #include "proc/session.h"

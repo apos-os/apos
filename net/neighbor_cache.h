@@ -18,7 +18,7 @@
 #include "common/hashtable.h"
 #include "dev/timer.h"
 #include "net/mac.h"
-#include "proc/kthread.h"
+#include "proc/kthread-queue.h"
 
 typedef struct {
   htbl_t cache;

@@ -25,6 +25,7 @@
 tcp_state_t g_tcp;
 
 void tcp_init(void) {
+  kspin_constructor(&g_tcp.lock);
   tcpsm_init(&g_tcp.sockets_v4, AF_INET, INET_PORT_EPHMIN, INET_PORT_EPHMAX);
   tcpsm_init(&g_tcp.sockets_v6, AF_INET6, INET_PORT_EPHMIN, INET_PORT_EPHMAX);
   g_tcp.lock = KSPINLOCK_NORMAL_INIT;

@@ -209,8 +209,11 @@ void vfs_assert_locked(vnode_t* A, vnode_t* B)
 void vfs_lock_vnodes2(vnode_t** nodes, size_t n);
 void vfs_unlock_vnodes2(vnode_t** nodes, size_t n);
 
-// Close an open FD with the process locked.  Succeeds unconditionally --- the
-// FD must already have been resolved to the given file.
-void vfs_close_locked(int fd, file_t* file);
+// Close an open FD with the current process locked.
+int vfs_close_locked(int fd);
+
+// As above, but with an FD that has already been resolved to the given file.
+// Succeeds unconditionally.
+void vfs_close_file(int fd, file_t* file);
 
 #endif

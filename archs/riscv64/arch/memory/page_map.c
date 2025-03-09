@@ -26,6 +26,13 @@ void paging_init(void) {
   // Nothing to do.
 }
 
+// Convert arch-agnostic page map flags into riscv PTE flags.
+static uint64_t make_rsv_flags(int flags) {
+  uint64_t rsv_flags = 0;
+  if (flags & MEM_GLOBAL) rsv_flags |= RSV_PTE_GLOBAL;
+  return rsv_flags;
+}
+
 void page_frame_map_virtual(addr_t virt, phys_addr_t phys, int prot,
                             mem_access_t access, int flags) {
   KASSERT(virt % PAGE_SIZE == 0);
@@ -35,8 +42,9 @@ void page_frame_map_virtual(addr_t virt, phys_addr_t phys, int prot,
   KASSERT(flags == 0 || flags == MEM_GLOBAL);
 
   rsv_mapsize_t size = RSV_MAP_PAGE;
+  uint64_t rsv_flags = make_rsv_flags(flags);
   rsv_sv39_pte_t* pte = rsv_get_pte(rsv_get_hart_as(), virt, &size,
-                                    /* create= */ true);
+                                    /* flags= */ rsv_flags, /* create= */ true);
   KASSERT(pte != NULL);
   KASSERT(size == RSV_MAP_PAGE);  // We never create large mappings today.
   if (access == MEM_ACCESS_KERNEL_ONLY && *pte & RSV_PTE_VALID) {
@@ -50,7 +58,7 @@ void page_frame_map_virtual(addr_t virt, phys_addr_t phys, int prot,
   if (prot & MEM_PROT_WRITE) *pte |= RSV_PTE_WRITE;
   if (prot & MEM_PROT_EXEC) *pte |= RSV_PTE_EXECUTE;
   if (access == MEM_ACCESS_KERNEL_AND_USER) *pte |= RSV_PTE_USER;
-  if (flags & MEM_GLOBAL) *pte |= RSV_PTE_GLOBAL;
+  *pte |= rsv_flags;
   *pte |= RSV_PTE_VALID;
   rsv_sfence();
 }
@@ -63,8 +71,9 @@ void page_frame_remap_virtual(addr_t virt, int prot, mem_access_t access,
   KASSERT(flags == 0 || flags == MEM_GLOBAL);
 
   rsv_mapsize_t size = RSV_MAP_PAGE;
+  uint64_t rsv_flags = make_rsv_flags(flags);
   rsv_sv39_pte_t* pte = rsv_get_pte(rsv_get_hart_as(), virt, &size,
-                                    /* create= */ false);
+                                    /* flags= */ rsv_flags, /* create= */ false);
   KASSERT(pte != NULL);
   KASSERT(*pte & RSV_PTE_VALID);
   KASSERT(size == RSV_MAP_PAGE);  // Cannot remap larger sizes.
@@ -74,7 +83,7 @@ void page_frame_remap_virtual(addr_t virt, int prot, mem_access_t access,
   if (prot & MEM_PROT_WRITE) *pte |= RSV_PTE_WRITE;
   if (prot & MEM_PROT_EXEC) *pte |= RSV_PTE_EXECUTE;
   if (access == MEM_ACCESS_KERNEL_AND_USER) *pte |= RSV_PTE_USER;
-  if (flags & MEM_GLOBAL) *pte |= RSV_PTE_GLOBAL;
+  *pte |= rsv_flags;
   rsv_sfence();
 }
 
@@ -88,11 +97,12 @@ void page_frame_unmap_virtual_range(addr_t virt, addrdiff_t length) {
   for (size_t i = 0; i < length / PAGE_SIZE; ++i) {
     // TODO(aoates): this will crash for large mappings; that can't currently
     // happen since this is only called on private mmaps, and we only use large
-    // mappings for public kernel areas.
+    // mappings for public kernel areas.  It also will fail if flags are
+    // non-zero.
     rsv_mapsize_t size = RSV_MAP_PAGE;
     rsv_sv39_pte_t* pte =
         rsv_get_pte(rsv_get_hart_as(), virt + i * PAGE_SIZE, &size,
-                    /* create= */ false);
+                    /* flags= */ 0, /* create= */ false);
     KASSERT(size == RSV_MAP_PAGE);
     if (pte) {
       // Mark the page as non-present.
@@ -110,10 +120,13 @@ page_dir_ptr_t page_frame_alloc_directory(void) {
 }
 
 void page_frame_free_directory(page_dir_ptr_t as) {
+  // Reclaim mid-level tables.
+  rsv_free_as_tables(as);
+
+  // Free the top level.
   phys_addr_t pt_phys = rsv_get_top_page_table(as);
   KASSERT(pt_phys);
   KASSERT(pt_phys % PAGE_SIZE == 0);
-  // TODO(aoates): reclaim mid-level tables.
   page_frame_free(pt_phys);
 }
 
@@ -131,8 +144,10 @@ void page_frame_init_global_mapping(addr_t addr, addr_t length) {
     rsv_mapsize_t size = RSV_MAP_BIGGEST - 1;
     rsv_sv39_pte_t* pte = rsv_get_pte(rsv_get_hart_as(),
                                       addr + i * MIN_GLOBAL_MAPPING_SIZE, &size,
+                                      /* flags= */ RSV_PTE_GLOBAL,
                                       /* create= */ true);
     KASSERT(pte != NULL);
+    *pte |= RSV_PTE_GLOBAL;
   }
 }
 
@@ -149,12 +164,15 @@ void page_frame_link_global_mapping(page_dir_ptr_t target_as,
     const addr_t addr = base + i * MIN_GLOBAL_MAPPING_SIZE;
     // TODO(aoates): do we want to to check or reset any of the PTE flags?
     rsv_mapsize_t size = RSV_MAP_BIGGEST;
-    rsv_sv39_pte_t* source = rsv_get_pte(src_as, addr, &size, false);
+    rsv_sv39_pte_t* source =
+        rsv_get_pte(src_as, addr, &size, RSV_PTE_GLOBAL, false);
     KASSERT(source != NULL);
     KASSERT(*source & RSV_PTE_VALID);
+    KASSERT(*source & RSV_PTE_GLOBAL);
     KASSERT(*source != 0);
     KASSERT_DBG(size == RSV_MAP_BIGGEST);
-    rsv_sv39_pte_t* dest = rsv_get_pte(target_as, addr, &size, false);
+    rsv_sv39_pte_t* dest =
+        rsv_get_pte(target_as, addr, &size, RSV_PTE_GLOBAL, false);
     KASSERT(dest != NULL);
     KASSERT(*dest == 0);
     KASSERT_DBG(size == RSV_MAP_BIGGEST);

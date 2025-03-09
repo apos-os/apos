@@ -79,7 +79,7 @@ static void setup_vnode(vnode_t* vnode, kuid_t owner, kgid_t group,
   vnode->mode = str_to_mode(mode);
 }
 
-static void check_mode_test(void) {
+static void check_mode_test(void) NO_THREAD_SAFETY_ANALYSIS {
   process_t test_proc;
   test_proc.ruid = kUserB;
   test_proc.euid = kUserA;
@@ -147,7 +147,7 @@ static void check_mode_test(void) {
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 }
 
-static void check_mode_testB(void) {
+static void check_mode_testB(void) NO_THREAD_SAFETY_ANALYSIS {
   process_t test_proc;
   test_proc.ruid = kUserB;
   test_proc.euid = kUserA;

@@ -23,8 +23,7 @@
 #include "common/types.h"
 #include "dev/interrupts.h"
 #include "proc/defint.h"
-#include "proc/process.h"
-#include "proc/signal/signal.h"
+#include "proc/kthread-internal.h"
 #include "proc/user_prepare.h"
 
 static uint16_t idt_entries = 0;

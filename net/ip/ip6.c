@@ -38,6 +38,7 @@
 #include "net/socket/udp.h"
 #include "net/util.h"
 #include "proc/defint.h"
+#include "proc/kthread.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
 
@@ -66,6 +67,7 @@ static void do_delete(void* arg, htbl_key_t key, void* val) {
 }
 
 void ipv6_cleanup(nic_t* nic) {
+  kspin_destructor(&nic->lock);
   htbl_clear(&nic->ipv6.multicast, &do_delete, NULL);
   htbl_cleanup(&nic->ipv6.multicast);
 }
@@ -255,9 +257,9 @@ void ipv6_enable(nic_t* nic, const nic_ipv6_options_t* opts) {
   nic->ipv6.iface_id.s6_addr[13] = nic->mac.addr[3];
   nic->ipv6.iface_id.s6_addr[14] = nic->mac.addr[4];
   nic->ipv6.iface_id.s6_addr[15] = nic->mac.addr[5];
-  kspin_unlock(&nic->lock);
 
   if (!opts->autoconfigure) {
+    kspin_unlock(&nic->lock);
     return;
   }
 
@@ -268,6 +270,7 @@ void ipv6_enable(nic_t* nic, const nic_ipv6_options_t* opts) {
   ip6_addr_merge(&link_local.addr.a.ip6, &nic->ipv6.iface_id,
                  128 - iface_id_len);
   link_local.prefix_len = 64;
+  kspin_unlock(&nic->lock);
 
   if (ipv6_configure_addr(nic, &link_local) != 0) {
     KLOG(WARNING, "ipv6: unable to configure link-local address on NIC %s\n",

@@ -21,6 +21,7 @@
 
 typedef struct {
   // The session that this is the controlling terminal for, or -1.
+  // TODO(SMP): guard access to this
   ksid_t session;
 
   // The underlying line discipline.

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "arch/memory/page_map.h"
+#include "common/atomic.h"
 #include "common/kassert.h"
 #include "common/errno.h"
 #include "memory/kmalloc.h"
@@ -21,9 +22,12 @@
 #include "proc/fork.h"
 #include "proc/group.h"
 #include "proc/kthread.h"
+#include "proc/kthread-internal.h"
+#include "proc/pmutex.h"
 #include "proc/process.h"
 #include "proc/process-internal.h"
 #include "proc/scheduler.h"
+#include "proc/spinlock.h"
 #include "vfs/vfs.h"
 
 typedef struct {
@@ -46,19 +50,29 @@ static void* proc_fork_trampoline(void* arg) {
 }
 
 int proc_fork(proc_func_t start, void* arg) {
+  atomic_flag_set(&g_forked);
   process_t* new_process = proc_alloc();
   if (!new_process) return -ENOMEM;
 
-  new_process->user_arch = proc_current()->user_arch;
+  process_t* const parent = proc_current();
+  new_process->user_arch = parent->user_arch;
 
   // Fork VFS handles.
-  vfs_fork_fds(proc_current(), new_process);
-  new_process->cwd = proc_current()->cwd;
+  pmutex_lock(&parent->mu);
+  vfs_fork_fds(parent, new_process);
+  new_process->cwd = parent->cwd;
   vfs_ref(new_process->cwd);
+
+  new_process->umask = parent->umask;
+
+  for (int i = 0; i < APOS_RLIMIT_NUM_RESOURCES; ++i) {
+    new_process->limits[i] = parent->limits[i];
+  }
 
   // Fork the address space.
   new_process->page_directory = page_frame_alloc_directory();
-  int result = vm_fork_address_space_into(new_process);
+  int result = vm_fork_address_space_into(parent, new_process);
+  pmutex_unlock(&parent->mu);
   if (result) {
     // TODO(aoates): clean up partial proc on failure.
     return result;
@@ -66,30 +80,23 @@ int proc_fork(proc_func_t start, void* arg) {
 
   // Duplicate any signal handlers.  The set of pending signals in the child
   // is set to empty, however.
+  kspin_constructor(&new_process->spin_mu);
   for (int signo = APOS_SIGMIN; signo <= APOS_SIGMAX; ++signo) {
     new_process->signal_dispositions[signo] =
-        proc_current()->signal_dispositions[signo];
+        parent->signal_dispositions[signo];
   }
 
   // Don't duplicate the alarm; pending alarms are cleared in the child.
 
   // Propagate identity.
-  new_process->ruid = proc_current()->ruid;
-  new_process->rgid = proc_current()->rgid;
-  new_process->euid = proc_current()->euid;
-  new_process->egid = proc_current()->egid;
-  new_process->suid = proc_current()->suid;
-  new_process->sgid = proc_current()->sgid;
-
-  new_process->umask = proc_current()->umask;
-
-  new_process->pgroup = proc_current()->pgroup;
-  list_push(&proc_group_get(new_process->pgroup)->procs,
-            &new_process->pgroup_link);
-
-  for (int i = 0; i < APOS_RLIMIT_NUM_RESOURCES; ++i) {
-    new_process->limits[i] = proc_current()->limits[i];
-  }
+  kspin_lock(&g_proc_table_lock);
+  new_process->ruid = parent->ruid;
+  new_process->rgid = parent->rgid;
+  new_process->euid = parent->euid;
+  new_process->egid = parent->egid;
+  new_process->suid = parent->suid;
+  new_process->sgid = parent->sgid;
+  kspin_unlock(&g_proc_table_lock);
 
   // Create the kthread.
   proc_start_args_t* trampoline_args =
@@ -114,12 +121,21 @@ int proc_fork(proc_func_t start, void* arg) {
   list_push(&new_process->threads, &new_thread->proc_threads_link);
   kthread_detach(new_thread);
 
-  scheduler_make_runnable(new_thread);
+  new_process->state = PROC_RUNNING;
 
-  new_process->parent = proc_current();
-  list_push(&proc_current()->children_list,
+  // Make the child visible via the parent's children_list and process group.
+  pmutex_lock(&parent->mu);
+  new_process->parent = parent;
+  list_push(&parent->children_list,
             &new_process->children_link);
 
-  new_process->state = PROC_RUNNING;
+  kspin_lock(&g_proc_table_lock);
+  new_process->pgroup = parent->pgroup;
+  proc_group_add(proc_group_get(new_process->pgroup), new_process);
+  kspin_unlock(&g_proc_table_lock);
+  pmutex_unlock(&parent->mu);
+
+  scheduler_make_runnable(new_thread);
+
   return new_process->id;
 }

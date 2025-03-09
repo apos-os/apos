@@ -224,3 +224,9 @@ int vfs_poll(struct apos_pollfd fds[], apos_nfds_t nfds, int timeout_ms) {
 
   return result;
 }
+
+void poll_assert_empty_event(const pollable_t* poll_event) {
+  kspin_lock(&g_poll_lock);
+  KASSERT(list_empty(&poll_event->refs));
+  kspin_unlock(&g_poll_lock);
+}

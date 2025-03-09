@@ -80,7 +80,7 @@ bool test_ttap_mc_subscribed_str(const test_ttap_t* t, const char* mac_str) {
 }
 
 static nic_addr_t* alloc_addr(nic_t* nic, int prefix_len,
-                              nic_addr_state_t state) {
+                              nic_addr_state_t state) REQUIRES(nic->lock) {
   kspin_assert_is_held(&nic->lock);
   for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
     if (nic->addrs[i].state == NIC_ADDR_NONE) {

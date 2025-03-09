@@ -15,6 +15,8 @@
 #define APOO_DEV_TTY_UTIL_H
 
 #include "dev/tty.h"
+#include "proc/process.h"
+#include "proc/thread_annotations.h"
 
 // Get the TTY associated with the given file descriptor, or return NULL.
 //
@@ -22,10 +24,15 @@
 // of the calling process; if it isn't, -ENOTTY is returned.
 int tty_get_fd(int fd, bool require_ctty, tty_t** tty);
 
+// Returns 0 if the current process can read the given TTY, or raises a signal
+// and returns -error.
+int tty_check_read(const tty_t* tty) EXCLUDES(g_proc_table_lock);
+
 // Returns 0 if the current process can write or modify the given TTY (i.e.
 // either the TTY is not the controlling terminal of the process, or it is and
 // the process is in the fg pgroup and SIGTTOU is not blocked).  Otherwise,
 // returns -error and possibly raises SIGTTOU.
-int tty_check_write(const tty_t* tty);
+int tty_check_write(const tty_t* tty) EXCLUDES(g_proc_table_lock);
+int tty_check_write_locked(const tty_t* tty) REQUIRES(g_proc_table_lock);
 
 #endif

@@ -38,7 +38,7 @@ static htbl_t gtp_entries;
 
 static bool gtp_init;
 
-static void maybe_init(void) {
+static void maybe_init(void) REQUIRES(gtp_lock) {
   if (gtp_init) {
     return;
   }

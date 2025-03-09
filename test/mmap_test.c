@@ -83,6 +83,7 @@ typedef struct {
 static void EXPECT_MMAP(int num_entries, emmap_t expected[]) {
   process_t* proc = proc_current();
   int idx = 0;
+  pmutex_lock(&proc->mu);
   list_link_t* link = proc->vm_area_list.head;
   while (link && idx < num_entries) {
     vm_area_t* area = container_of(link, vm_area_t, vm_proc_list);
@@ -93,7 +94,8 @@ static void EXPECT_MMAP(int num_entries, emmap_t expected[]) {
 
     memobj_t* memobj = 0x0;
     if (expected[idx].fd >= 0) {
-      KASSERT(vfs_get_memobj(expected[idx].fd, VFS_O_RDONLY, &memobj) == 0);
+      KASSERT(vfs_get_memobj_locked(
+              expected[idx].fd, VFS_O_RDONLY, &memobj) == 0);
       memobj->ops->unref(memobj);  // Not really correct, but meh in a test.
     }
     if (area->vm_base != expected[idx].base ||
@@ -108,6 +110,7 @@ static void EXPECT_MMAP(int num_entries, emmap_t expected[]) {
            (void*)expected[idx].base, (void*)expected[idx].length, memobj);
       KLOG(" found:    <base: %p  len: %p  memobj: %p>\n",
            (void*)area->vm_base, (void*)area->vm_length, area->memobj);
+      pmutex_unlock(&proc->mu);
       return;
     }
     link = link->next;
@@ -128,6 +131,7 @@ static void EXPECT_MMAP(int num_entries, emmap_t expected[]) {
   // list.
   KEXPECT_EQ(idx, num_entries);
   KEXPECT_EQ((list_link_t*)0x0, link);
+  pmutex_unlock(&proc->mu);
 }
 
 // Flush all page mappings in the given range.

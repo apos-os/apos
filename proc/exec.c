@@ -20,14 +20,18 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "common/list.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/mmap.h"
 #include "proc/exec.h"
+#include "proc/kthread-internal.h"
 #include "proc/load/load.h"
 #include "proc/pmutex.h"
+#include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_internal.h"
 
 #define KLOG(...) klogfm(KL_PROC, __VA_ARGS__)
 
@@ -62,13 +66,30 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
   process_t* const p = proc_current();
   kthread_t thread = kthread_current_thread();
   KASSERT(thread->process == p);
+  kspin_lock(&p->spin_mu);
+  // Set exiting to prevent new thread creation.
+  p->exiting = true;
+
   FOR_EACH_LIST(iter_link, &p->threads) {
     kthread_data_t* thread_iter =
         LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
     if (thread_iter == thread) continue;
 
-    proc_force_signal_on_thread(p, thread_iter, SIGAPOSTKILL);
+    proc_force_signal_on_thread_locked(p, thread_iter, SIGAPOSTKILL);
   }
+  // Wait until all other threads actually terminate.
+  while (p->threads.head != p->threads.tail) {
+    // We don't want scheduler_wait() to re-check signals (which would require
+    // re-taking me->process->spin_mu).
+    scheduler_wait(&p->thread_change_queue, SWAIT_NO_SIGNAL_CHECK, -1, NULL,
+                   &p->spin_mu);
+  }
+  KASSERT_DBG(list_size(&p->threads) == 1);
+  KASSERT_DBG(p->threads.head == &thread->proc_threads_link);
+
+  // Threads can now be created again (in the exec'd process).
+  p->exiting = false;
+  kspin_unlock(&p->spin_mu);
 
   // Unmap the current user address space.
   result = do_munmap((void*)MEM_FIRST_MAPPABLE_ADDR,
@@ -101,8 +122,10 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
   }
 
   // TODO(aoates): handle set-user-ID/set-group-ID bits.
+  kspin_lock(&g_proc_table_lock);
   proc_current()->suid = proc_current()->euid;
   proc_current()->sgid = proc_current()->egid;
+  kspin_unlock(&g_proc_table_lock);
 
   user_context_t ctx;
   result = arch_prep_exec(binary, argv, envp, &ctx);
@@ -111,27 +134,25 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
     return result;
   }
 
-  // TODO(aoates): similar to exit(), figure out how to deal with locking these.
-  // No threads can be concurrently modifying the process FD table.
-  {
-    pmutex_destructor(&p->mu);
-    for (int fd = 0; fd < PROC_MAX_FDS; ++fd) {
-      if (p->fds[fd].flags & VFS_O_CLOEXEC) {
-        if (vfs_close(fd) != 0) {
-          KLOG(WARNING, "exec error: unable to close O_CLOEXEC fd %d\n", fd);
-        }
+  pmutex_lock(&p->mu);
+  for (int fd = 0; fd < PROC_MAX_FDS; ++fd) {
+    if (p->fds[fd].flags & VFS_O_CLOEXEC) {
+      if (vfs_close_locked(fd) != 0) {
+        KLOG(WARNING, "exec error: unable to close O_CLOEXEC fd %d\n", fd);
       }
     }
   }
 
   p->user_arch = binary->arch;
+  proc_current()->execed = true;
+  pmutex_unlock(&p->mu);
+
   if (cleanup) {
     (*cleanup)(path, argv, envp, cleanup_arg);
   }
 
   // Jump to the entry point.
   kfree(binary);
-  proc_current()->execed = true;
   user_context_apply(&ctx);
 
   // We shouldn't ever get here, since we can't return from user space.

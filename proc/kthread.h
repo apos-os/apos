@@ -40,6 +40,9 @@ typedef struct kthread_data* kthread_t;
 // Initialize the kthreads package.
 void kthread_init(void);
 
+// Return a handle to the currently running thread.
+kthread_t kthread_current_thread(void);
+
 // Create a new thread.  The new thread will start in start_routine, with arg
 // passed.  The new thread is NOT automatically made runnable --- you must call
 // scheduler_make_runnable(...) on it after creation if you want it to run.
@@ -99,92 +102,5 @@ typedef enum {
 
 // Returns the current execution context we're running in.
 ktctx_type_t kthread_execution_context(void);
-
-/******************************* Thread Queues ********************************/
-
-// Thread queues are simple linked lists of threads, which can be pushed on the
-// back and popped from the front.  A given thread can only be on a single
-// thread queue (or no thread queues) at once --- trying to enqueue a thread on
-// multiple queues will result in a panic.
-typedef struct {
-  kthread_t head;
-  kthread_t tail;
-} kthread_queue_t;
-
-// Initialze a thread queue.
-void kthread_queue_init(kthread_queue_t* queue);
-
-// Returns 1 if the given thread queue is empty.
-int kthread_queue_empty(kthread_queue_t* queue);
-
-// Enqueue a thread on the back of the given thread queue.
-void kthread_queue_push(kthread_queue_t* queue, kthread_t thread);
-
-// Pops a thread off the front of the thread queue.
-kthread_t kthread_queue_pop(kthread_queue_t* queue);
-
-// Removes the given thread from the list its on.
-void kthread_queue_remove(kthread_t thread);
-
-/********************************* Mutexes ************************************/
-
-// How many locked mutexes to track for deadlock detection.
-#define KMUTEX_DEADLOCK_LRU_SIZE 10
-
-typedef uint32_t kmutex_id_t;
-typedef struct {
-  kmutex_id_t id;
-  apos_ms_t lru;
-} kmutex_prior_t;
-
-struct CAPABILITY("mutex") kmutex {
-  int locked;
-  kthread_t holder; // For debugging.
-  kthread_queue_t wait_queue;
-
-#if ENABLE_KMUTEX_DEADLOCK_DETECTION
-  kmutex_id_t id;
-  list_link_t link;  // On holder list, for deadlock detection.
-  // Mutexes that have been held when this was locked.
-  kmutex_prior_t priors[KMUTEX_DEADLOCK_LRU_SIZE];
-#endif
-
-#if ENABLE_TSAN
-  tsan_lock_data_t tsan;
-#endif
-};
-typedef struct kmutex kmutex_t;
-
-// Initialize the given mutex.  It is also valid to zero-init the mutex (in
-// which case some portions might be lazy-initialized the first time the mutex
-// is locked).  Zero-initialization should only be used for static global
-// mutexes, not dynamically allocated ones.
-void kmutex_init(kmutex_t* m);
-
-// Lock the given mutex, blocking until the lock is acquired.
-void kmutex_lock(kmutex_t* m) ACQUIRE(m);
-
-// Unlock the mutex.
-void kmutex_unlock(kmutex_t* m) RELEASE(m);
-
-// As above, but will never yield.  Only used internally to kthread and the
-// scheduler.
-void kmutex_unlock_no_yield(kmutex_t* m) RELEASE(m);
-
-// Returns non-zero if the mutex is currently locked.
-bool kmutex_is_locked(const kmutex_t* m);
-
-// Asserts that the mutex is currently held by this thread.
-// Note: may have false negatives in non-debug builds, where we don't track
-// which thread is holding a mutex.
-void kmutex_assert_is_held(const kmutex_t* m) ASSERT_CAPABILITY(m);
-void kmutex_assert_is_not_held(const kmutex_t* m);
-
-// Claim the given mutex is locked for the purposes of construction or
-// destruction of the protected data (and lock).
-static inline ALWAYS_INLINE
-void kmutex_constructor(const kmutex_t* l) ASSERT_CAPABILITY(l) {}
-static inline ALWAYS_INLINE
-void kmutex_destructor(const kmutex_t* l) ASSERT_CAPABILITY(l) {}
 
 #endif

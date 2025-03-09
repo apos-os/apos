@@ -15,25 +15,30 @@
 #ifndef APOO_PROC_SESSION_H
 #define APOO_PROC_SESSION_H
 
+#include "proc/process.h"
+#include "proc/thread_annotations.h"
 #include "user/include/apos/posix_types.h"
 
 #define PROC_SESSION_NO_CTTY -1
 
 typedef struct {
   // The ID of the session's controlling terminal, or -1 if none.
-  int ctty;
+  int ctty GUARDED_BY(g_proc_table_lock);
 
   // The foreground process group of the session, or -1 if none.
-  kpid_t fggrp;
+  kpid_t fggrp GUARDED_BY(g_proc_table_lock);
 } proc_session_t;
 
 // Create a new session, as per setsid(2).
-kpid_t proc_setsid(void);
+kpid_t proc_setsid(void) EXCLUDES(g_proc_table_lock);
 
 // Return the process group ID of the session leader of the given process.
-kpid_t proc_getsid(kpid_t pid);
+kpid_t proc_getsid(kpid_t pid) EXCLUDES(g_proc_table_lock);
+
+// Returns the session of the given process.
+kpid_t proc_getsid_locked(process_t* p) REQUIRES(g_proc_table_lock);
 
 // Return the given session, or NULL if it doesn't exist.
-proc_session_t* proc_session_get(ksid_t sid);
+proc_session_t* proc_session_get(ksid_t sid) REQUIRES(g_proc_table_lock);
 
 #endif

@@ -18,9 +18,9 @@
 #include "common/circbuf.h"
 #include "common/list.h"
 #include "common/refcount.h"
-#include "dev/timer.h"
 #include "net/socket/socket.h"
 #include "net/socket/tcp/congestion.h"
+#include "proc/defint_timer.h"
 #include "proc/kthread.h"
 #include "vfs/vnode.h"
 
@@ -123,7 +123,7 @@ typedef struct socket_tcp {
   // Guards complex compound user-driven socket operations.
   kmutex_t mu;
 
-  timer_handle_t timer;
+  defint_timer_t timer;
   apos_ms_t timer_deadline;
 
   // For listening sockets, we store the connecting and established child

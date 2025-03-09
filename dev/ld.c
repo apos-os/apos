@@ -62,7 +62,7 @@ struct ld {
   apos_dev_t tty;
   struct ktermios termios GUARDED_BY(&lock);
 
-  pollable_t poll_event GUARDED_BY(&lock);
+  pollable_t poll_event;
 };
 
 // Note: keep this in sync with the version in getty.c.
@@ -289,14 +289,18 @@ void ld_provide(ld_t* l, char c) {
     if (signal != APOS_SIGNULL) {
       const tty_t* tty = tty_get(l->tty);
       KASSERT_DBG(tty != NULL);
+      kspin_lock(&g_proc_table_lock);
       if (tty->session >= 0) {
         const proc_session_t* session = proc_session_get(tty->session);
         KASSERT_DBG(session->ctty == (int)kminor(l->tty));
+
         if (session->fggrp >= 0) {
-          int result = proc_force_signal_group(session->fggrp, signal);
+          proc_group_t* pgroup = proc_group_get(session->fggrp);
+          int result = proc_force_signal_group_locked(pgroup, signal);
           KASSERT_DBG(result == 0);
         }
       }
+      kspin_unlock(&g_proc_table_lock);
     }
   }
   ktcflag_t lflag = l->termios.c_lflag;
@@ -394,14 +398,8 @@ int ld_read(ld_t* l, char* buf, int n, int flags) {
 
   if (kminor(l->tty) != DEVICE_ID_UNKNOWN) {
     tty_t* tty = tty_get(l->tty);
-    if (tty->session == proc_getsid(0) &&
-        getpgid(0) != proc_session_get(tty->session)->fggrp) {
-      int result = -EIO;
-      if (proc_signal_deliverable(kthread_current_thread(), SIGTTIN)) {
-        proc_force_signal_group(getpgid(0), SIGTTIN);
-        result = -EINTR;
-      }
-
+    int result = tty_check_read(tty);
+    if (result) {
       kspin_unlock(&l->lock);
       return result;
     }

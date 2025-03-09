@@ -20,12 +20,14 @@
 #include <stdint.h>
 
 #include "arch/proc/kthread-context.h"
-#include "arch/proc/kthread-stack.h"
 #include "common/atomic.h"
+#include "common/kassert.h"
 #include "common/list.h"
 #include "common/types.h"
-#include "memory/memory.h"
-#include "proc/kthread.h"
+#include "proc/kthread-queue.h"
+#include "proc/process.h"
+#include "proc/spinlock.h"
+#include "proc/thread_annotations.h"
 #include "user/include/apos/posix_signal.h"
 #include "syscall/context.h"
 
@@ -39,9 +41,6 @@ typedef enum {
   KTHREAD_DONE = 2,       // Finished.
   KTHREAD_DESTROYED = 3,  // Destroyed.  Should never be seen.
 } kthread_state_t;
-
-struct process;
-typedef struct process process_t;
 
 struct kthread_data {
   kthread_id_t id;
@@ -61,12 +60,13 @@ struct kthread_data {
   // but not yet scheduled (and therefore still blocking in kthread_join).
   int join_list_pending;
   process_t* process;  // The process owning this thread.
+  analysis_lock_t process_spin_mu;  // Shadows process->spin_mu
 
   // The current signal mask (i.e. the signals blocked in this thread).
-  ksigset_t signal_mask;
+  ksigset_t signal_mask GUARDED_BY(&process_spin_mu);
 
   // The set of signals assigned to this thread for handling.
-  ksigset_t assigned_signals;
+  ksigset_t assigned_signals GUARDED_BY(&process_spin_mu);
 
   // Context for the currently-executing syscall, if any.
   syscall_context_t syscall_ctx;
@@ -122,9 +122,6 @@ typedef struct kthread_data kthread_data_t;
 // cleaned up when they exit.
 void kthread_destroy(kthread_t thread);
 
-// Return a handle to the currently running thread.
-kthread_t kthread_current_thread(void);
-
 // Explicitly switch execution to another thread.
 void kthread_switch(kthread_t new_thread);
 
@@ -138,5 +135,24 @@ void scheduler_yield_no_reschedule(void);
 
 // Helper function to reset current interrupt level to zero.
 void kthread_reset_interrupt_level(void);
+
+// Locks/unlocks the given thread's process's spin_mu.
+static inline void kthread_lock_proc_spin(kthread_t thread)
+    ACQUIRE(thread->process->spin_mu)
+        ACQUIRE(thread->process_spin_mu) NO_THREAD_SAFETY_ANALYSIS {
+  kspin_lock(&thread->process->spin_mu);
+}
+
+static inline void kthread_unlock_proc_spin(kthread_t thread)
+    RELEASE(thread->process->spin_mu)
+        RELEASE(thread->process_spin_mu) NO_THREAD_SAFETY_ANALYSIS {
+  kspin_unlock(&thread->process->spin_mu);
+}
+
+static inline void kthread_assert_proc_spin_held(const kthread_data_t* thread)
+    ASSERT_CAPABILITY(thread->process->spin_mu)
+        ASSERT_CAPABILITY(thread->process_spin_mu) {
+  kspin_assert_is_held(&thread->process->spin_mu);
+}
 
 #endif

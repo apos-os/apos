@@ -452,8 +452,10 @@ int cbfs_create_file(fs_t* fs, const char* path,
   inode->read_cb = read_cb;
   inode->arg = arg;
   inode->mode = mode;
+  kspin_lock(&g_proc_table_lock);
   inode->uid = proc_current()->euid;
   inode->gid = proc_current()->egid;
+  kspin_unlock(&g_proc_table_lock);
   add_inode_to_vnode_table(cfs, inode);
 
   cbfs_entry_t* entry = create_entry(inode->num, name_start, NULL);
@@ -487,8 +489,10 @@ int cbfs_create_directory(fs_t* fs, const char* path,
   inode->getdents_cb = getdents_cb;
   inode->arg = arg;
   inode->mode = mode;
+  kspin_lock(&g_proc_table_lock);
   inode->uid = proc_current()->euid;
   inode->gid = proc_current()->egid;
+  kspin_unlock(&g_proc_table_lock);
   add_inode_to_vnode_table(cfs, inode);
 
   create_directory_entries(parent->num, inode);
@@ -523,8 +527,10 @@ int cbfs_create_symlink(fs_t* fs, const char* path, cbfs_readlink_t readlink_cb,
   inode->readlink_cb = readlink_cb;
   inode->arg = arg;
   inode->mode = VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO;
+  kspin_lock(&g_proc_table_lock);
   inode->uid = proc_current()->euid;
   inode->gid = proc_current()->egid;
+  kspin_unlock(&g_proc_table_lock);
   add_inode_to_vnode_table(cfs, inode);
 
   cbfs_entry_t* entry = create_entry(inode->num, name_start, NULL);

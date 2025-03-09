@@ -18,6 +18,7 @@
 #include "proc/fork.h"
 #include "proc/group.h"
 #include "proc/notification.h"
+#include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
@@ -124,14 +125,14 @@ static void wait_for_specific_pid_test(void) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   KEXPECT_NE(NULL, proc_get(grandchild));
-  KEXPECT_EQ(PROC_RUNNING, proc_get(grandchild)->state);
+  KEXPECT_EQ(PROC_RUNNING, proc_state(grandchild));
   KEXPECT_EQ(-ECHILD, proc_waitpid(grandchild, NULL, 0));
   cleanup_grandchild(grandchild);
 
 
   KTEST_BEGIN("waitpid(): pid is child (already stopped)");
   child = proc_fork(&do_nothing, NULL);
-  for (int i = 0; i < 5 && proc_get(child)->state == PROC_RUNNING; ++i)
+  for (int i = 0; i < 5 && proc_state(child) == PROC_RUNNING; ++i)
     scheduler_yield();
   int status = 5;
   KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
@@ -153,7 +154,7 @@ static void wait_for_specific_pid_test(void) {
   kpid_t childB = proc_fork(&do_nothing, NULL);
   kpid_t childC = proc_fork(&do_nothing, NULL);
   kpid_t childD = proc_fork(&sleep_func, (void*)50);
-  for (int i = 0; i < 5 && proc_get(childC)->state == PROC_RUNNING; ++i)
+  for (int i = 0; i < 5 && proc_state(childC) == PROC_RUNNING; ++i)
     scheduler_yield();
   status = 5;
   KEXPECT_EQ(childC, proc_waitpid(childC, &status, 0));
@@ -167,7 +168,7 @@ static void wait_for_specific_pid_test(void) {
   childB = proc_fork(&do_nothing, NULL);
   childC = proc_fork(&sleep_func, (void*)50);
   childD = proc_fork(&do_nothing, NULL);
-  for (int i = 0; i < 5 && proc_get(childC)->state == PROC_RUNNING; ++i)
+  for (int i = 0; i < 5 && proc_state(childC) == PROC_RUNNING; ++i)
     scheduler_yield();
   status = 5;
   start_ms = get_time_ms();
@@ -186,6 +187,7 @@ static void create_children_in_group(void* arg) {
   *(kpid_t*)arg = child;
 }
 
+static void do_proc_change_pgroup_test(void* arg);
 static void wait_for_pgroup_test(void) {
   KTEST_BEGIN("waitpid(): wait for non-existant process group");
   kpid_t child = proc_fork(&do_nothing, NULL);
@@ -214,14 +216,16 @@ static void wait_for_pgroup_test(void) {
   KEXPECT_EQ(0, setpgid(child, grandchild));
   KEXPECT_EQ(0, setpgid(childB, grandchild));
   KEXPECT_EQ(0, setpgid(childC, grandchild));
-  while (proc_get(child)->state == PROC_RUNNING &&
-         proc_get(childB)->state == PROC_RUNNING)
+  while (proc_state(child) == PROC_RUNNING &&
+         proc_state(childB) == PROC_RUNNING)
     scheduler_yield();
-  KEXPECT_EQ(PROC_RUNNING, proc_get(childC)->state);
+  KEXPECT_EQ(PROC_RUNNING, proc_state(childC));
   apos_ms_t start_ms = get_time_ms();
   kpid_t waitres1 = proc_waitpid(-grandchild, NULL, 0);
   kpid_t waitres2 = proc_waitpid(-grandchild, NULL, 0);
   apos_ms_t end_ms = get_time_ms();
+  KEXPECT_GE(waitres1, 0);
+  KEXPECT_GE(waitres2, 0);
   KEXPECT_EQ(1, waitres1 == child || waitres1 == childB);
   KEXPECT_EQ(1, waitres2 == child || waitres2 == childB);
   KEXPECT_LE(end_ms - start_ms, 50);
@@ -252,20 +256,84 @@ static void wait_for_pgroup_test(void) {
   child = proc_fork(&do_nothing, NULL);
   childB = proc_fork(&do_nothing, NULL);
   childC = proc_fork(&sleep_func, (void*)20);
-  KEXPECT_EQ(0, setpgid(child, proc_current()->pgroup));
-  KEXPECT_EQ(0, setpgid(childB, proc_current()->pgroup));
-  KEXPECT_EQ(0, setpgid(childC, proc_current()->pgroup));
+  kpid_t childD = proc_fork(&sleep_func, (void*)20);
+  KEXPECT_EQ(getpgid(0), getpgid(child));
+  KEXPECT_EQ(getpgid(0), getpgid(childB));
+  KEXPECT_EQ(getpgid(0), getpgid(childC));
+  KEXPECT_EQ(0, setpgid(childD, childD));
   waitres1 = proc_waitpid(0, NULL, 0);
   waitres2 = proc_waitpid(0, NULL, 0);
   KEXPECT_EQ(1, waitres1 == child || waitres1 == childB);
   KEXPECT_EQ(1, waitres2 == child || waitres2 == childB);
+  KEXPECT_EQ(0, proc_waitpid(0, NULL, WNOHANG));
   KEXPECT_EQ(childC, proc_waitpid(0, NULL, 0));
+  KEXPECT_EQ(-ECHILD, proc_waitpid(0, NULL, 0));
+  KEXPECT_EQ(childD, proc_waitpid(childD, NULL, 0));
+
+
+  KTEST_BEGIN("waitpid(): waitpid(0) current process group changes while blocking");
+  child = proc_fork(&do_proc_change_pgroup_test, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+}
+
+typedef struct {
+  notification_t proc1_go;
+  notification_t proc2_go;
+  notification_t proc3_go;
+  kpid_t target_group;
+} proc_change_test_state_t;
+
+static void* proc_group_change_test_thread(void* arg) {
+  proc_change_test_state_t* state = (proc_change_test_state_t*)arg;
+  ksleep(10);  // Wait for the main thread to get into its blocking call.
+  KEXPECT_EQ(0, setpgid(0, state->target_group));
+  ntfn_notify(&state->proc1_go);
+  ksleep(10);  // Give the first thread a chance to (erroneously) wake up.
+  ntfn_notify(&state->proc2_go);  // waitpid() should now return the second.
+  ksleep(10);
+  ntfn_notify(&state->proc3_go);  // waitpid() should now return the second.
+  return NULL;
 }
 
 static void exit_after_nftn(void* arg) {
   notification_t* ntfn = (notification_t*)arg;
   KEXPECT_TRUE(ntfn_await_with_timeout(ntfn, 5000));
   proc_exit(0);
+}
+
+static void do_proc_change_pgroup_test(void* arg) {
+  // Launch three children.  The first stays in our process group.  The second,
+  // make a process group leader.  The third goes in the second's process group.
+  // They should all sleep.  We go into a blocking waitpid() call.  While we
+  // block, another thread in our process changes our process group to the
+  // second process's group, then wakes up the first thread.  Our waitpid()
+  // should continue to block.  Once once we wake up the second and third
+  // threads should waitpid return.
+  proc_change_test_state_t state;
+  ntfn_init(&state.proc1_go);
+  ntfn_init(&state.proc2_go);
+  ntfn_init(&state.proc3_go);
+  kpid_t child = proc_fork(&exit_after_nftn, &state.proc1_go);
+  kpid_t childB = proc_fork(&exit_after_nftn, &state.proc2_go);
+  kpid_t childC = proc_fork(&exit_after_nftn, &state.proc3_go);
+  KEXPECT_EQ(0, setpgid(childB, childB));
+  KEXPECT_EQ(0, setpgid(childC, childB));
+  state.target_group = childB;
+
+  // Launch the disruptor thread.
+  kthread_t thread;
+  KEXPECT_EQ(
+      0, proc_thread_create(&thread, &proc_group_change_test_thread, &state));
+
+  // This call will start with our pgroup == original_pgroup (same as child),
+  // but should go to sleep, and then wake up with our pgroup == childB.  It
+  // should only return childB or childC.
+  KEXPECT_EQ(childB, proc_waitpid(0, NULL, 0));
+  KEXPECT_EQ(childC, proc_waitpid(0, NULL, 0));
+  KEXPECT_EQ(-ECHILD, proc_waitpid(0, NULL, 0));
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+
+  KEXPECT_EQ(NULL, kthread_join(thread));
 }
 
 static void wait_guid_test(void) {
@@ -319,11 +387,28 @@ static void wait_guid_test(void) {
   KEXPECT_EQ(child, proc_wait(NULL));
 }
 
-void wait_test(void) {
-  KTEST_SUITE_BEGIN("wait() and waitpid() tests");
+void do_wait_test(void* arg) {
   basic_waitpid_test();
   interruptable_waitpid_test();
   wait_for_specific_pid_test();
   wait_for_pgroup_test();
   wait_guid_test();
+}
+
+void do_wait_test_outer(void* arg) {
+  KEXPECT_EQ(0, setpgid(0, 0));  // Make ourselves the process group leader.
+  kpid_t child = proc_fork(&do_wait_test, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+}
+
+void wait_test(void) {
+  KTEST_SUITE_BEGIN("wait() and waitpid() tests");
+  // We fork twice to do the actual tests.  This lets us ensure,
+  // 1) we have a process group ID that is not 1 (otherwise passing -1 to
+  //    waitpid is ambiguous), and
+  // 2) we (the process running the tests) are not the process group leader, to
+  //    test that we're looking for process with the same process group as us,
+  //    not _in_ our process group.
+  kpid_t child = proc_fork(&do_wait_test_outer, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
 }

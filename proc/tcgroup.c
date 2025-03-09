@@ -28,21 +28,28 @@ int proc_tcsetpgrp(int fd, kpid_t pgid) {
   int result = tty_get_fd(fd, true, &tty);
   if (result) return result;
 
+  kspin_lock(&g_proc_table_lock);
   proc_group_t* pgroup = proc_group_get(pgid);
   if (!pgroup) {
+    kspin_unlock(&g_proc_table_lock);
     return -EINVAL;
   }
 
-  ksid_t sid = proc_getsid(0);
+  ksid_t sid = proc_getsid_locked(proc_current());
   if (list_empty(&pgroup->procs) || pgroup->session != sid) {
+    kspin_unlock(&g_proc_table_lock);
     return -EPERM;
   }
 
-  result = tty_check_write(tty);
-  if (result) return result;
+  result = tty_check_write_locked(tty);
+  if (result) {
+    kspin_unlock(&g_proc_table_lock);
+    return result;
+  }
 
   proc_session_t* session = proc_session_get(sid);
   session->fggrp = pgid;
+  kspin_unlock(&g_proc_table_lock);
   return 0;
 }
 
@@ -51,11 +58,14 @@ int proc_tcgetpgrp(int fd) {
   int result = tty_get_fd(fd, true, &tty);
   if (result) return result;
 
+  kspin_lock(&g_proc_table_lock);
   proc_session_t* session = proc_session_get(tty->session);
-  if (session->fggrp < 0)
+  int fggrp = session->fggrp;
+  kspin_unlock(&g_proc_table_lock);
+  if (fggrp < 0)
     return PROC_NO_FGGRP;
   else
-    return session->fggrp;
+    return fggrp;
 }
 
 kpid_t proc_tcgetsid(int fd) {

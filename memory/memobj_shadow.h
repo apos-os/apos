@@ -25,8 +25,8 @@
 #include <stdbool.h>
 
 #include "common/hashtable.h"
-#include "common/list.h"
 #include "memory/memobj.h"
+#include "proc/kmutex.h"
 
 // Public for testing.
 typedef struct {

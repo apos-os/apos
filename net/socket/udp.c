@@ -287,7 +287,7 @@ static void sock_udp_cleanup(socket_t* socket_base) {
   // retain a reference to the file containing this socket (and other pollables)
   // to ensure the file isn't destroyed while someone is polling it?
   poll_trigger_event(&socket->poll_event, KPOLLNVAL);
-  KASSERT(list_empty(&socket->poll_event.refs));
+  poll_assert_empty_event(&socket->poll_event);
   kfree(socket);
 }
 

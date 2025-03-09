@@ -49,6 +49,7 @@ case {{ common.syscall_constant(syscall) }}:
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "proc/kthread-internal.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
 #include "proc/user_prepare.h"

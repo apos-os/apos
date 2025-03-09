@@ -29,11 +29,12 @@ kpid_t getpid_wrapper(void) {
 }
 
 kpid_t getppid_wrapper(void) {
-  if (proc_current()->parent) {
-    return proc_current()->parent->id;
-  } else {
-    return proc_current()->id;
-  }
+  process_t* const me = proc_current();
+  pmutex_lock(&me->mu);
+  // Safe to read without the parent's mutex held.
+  kpid_t result = me->parent->id;
+  pmutex_unlock(&me->mu);
+  return result;
 }
 
 _Static_assert(sizeof(apos_off_t) <= sizeof(addr_t),

@@ -115,9 +115,12 @@ int vfs_chdir(const char* path);
 // TODO(aoates): how do we handle executable?
 int vfs_get_memobj(int fd, kmode_t mode, memobj_t** memobj_out);
 
+// Requires proc_current()->mu to be held.
+int vfs_get_memobj_locked(int fd, kmode_t mode, memobj_t** memobj_out);
+
 // Duplicate (as for fork()) procA's fds into procB.  procB must not be
 // concurrently accessed.
-void vfs_fork_fds(process_t* procA, process_t* procB);
+void vfs_fork_fds(process_t* procA, process_t* procB) REQUIRES(procA->mu);
 
 // Returns 1 if the given fd refers to a TTY device, 0 otherwise.
 int vfs_isatty(int fd);
