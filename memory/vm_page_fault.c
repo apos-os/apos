@@ -123,72 +123,59 @@ int vm_handle_page_fault(addr_t address, vm_fault_type_t type, vm_fault_op_t op,
   phys_addr_t phys_addr = 0x0;
   const addr_t virt_page = addr2page(address);
 
-  // Some kernel mappings (such as the heap) don't have a backing memobj.
-  if (!area->memobj) {
-    KASSERT(area->access == MEM_ACCESS_KERNEL_ONLY);
-    KASSERT(mode == VM_FAULT_KERNEL);
-
-    // Always make it writable --- no need to force a double fault on these.
-    // Note that a read of this memory is undefined, but GCC at least generates
-    // extraneous reads before initializing allocated memory.
-    op = VM_FAULT_WRITE;
-
-    // TODO(aoates): if no pages are available, force a swap.
-    phys_addr = page_frame_alloc();
-    KASSERT(phys_addr);
-  } else {
-    KASSERT_DBG(virt_page >= area->vm_base &&
-                virt_page < area->vm_base + area->vm_length);
-    const addr_t area_page_offset = (virt_page - area->vm_base) / PAGE_SIZE;
-    if (type == VM_FAULT_ACCESS || area->pages[area_page_offset] == 0x0) {
-      if (area->pages[area_page_offset] != 0x0) {
-        // TODO(aoates): verify the page isn't dirty.
-        // ASSERT(current_mapping not writable)
-        area->memobj->ops->put_page(area->memobj, area->pages[area_page_offset],
-                                    BC_FLUSH_NONE);
-        area->pages[area_page_offset] = 0x0;
-      }
-
-      bc_entry_t* new_entry = NULL;
-      const int result = area->memobj->ops->get_page(
-          area->memobj,
-          (area->memobj_base / PAGE_SIZE) + area_page_offset,
-          op == VM_FAULT_WRITE,
-          &new_entry);
-      if (result) {
-        switch (mode) {
-          case VM_FAULT_KERNEL:
-            KLOG(ERROR, "kernel mode SIGBUS: addr: 0x%" PRIxADDR " error: %s\n",
-                 address, errorname(-result));
-            die("failed kernel page fault");
-            break;
-
-          case VM_FAULT_USER:
-            KLOG(INFO,
-                 "SIGBUS: unable to access address %#" PRIxADDR
-                 " (pid %d, error=%s)\n",
-                 address, proc->id, errorname(-result));
-            KASSERT(proc_force_signal_on_thread(
-                        proc_current(), kthread_current_thread(), SIGBUS) == 0);
-            // TODO(aoates): write a test that catches if this unmap is missing.
-            page_frame_unmap_virtual(virt_page);
-            return result;
-        }
-      }
-      // Another thread could have filled in while we were blocked.
-      if (area->pages[area_page_offset] != NULL) {
-        // The entry from the other thread may not have been created with the
-        // correct permissions for this access (e.g. if it was for a read, and
-        // this is for a write).  Simply return here, and the system will
-        // re-fault if necessary.
-        area->memobj->ops->put_page(area->memobj, new_entry, BC_FLUSH_NONE);
-        return 0;
-      }
-      area->pages[area_page_offset] = new_entry;
+  // Kernel mappings without a backing memobj should never fault.
+  KASSERT(area->memobj);
+  KASSERT_DBG(virt_page >= area->vm_base &&
+              virt_page < area->vm_base + area->vm_length);
+  const addr_t area_page_offset = (virt_page - area->vm_base) / PAGE_SIZE;
+  if (type == VM_FAULT_ACCESS || area->pages[area_page_offset] == 0x0) {
+    if (area->pages[area_page_offset] != 0x0) {
+      // TODO(aoates): verify the page isn't dirty.
+      // ASSERT(current_mapping not writable)
+      area->memobj->ops->put_page(area->memobj, area->pages[area_page_offset],
+                                  BC_FLUSH_NONE);
+      area->pages[area_page_offset] = 0x0;
     }
-    KASSERT(area->pages[area_page_offset]);
-    phys_addr = area->pages[area_page_offset]->block_phys;
+
+    bc_entry_t* new_entry = NULL;
+    const int result = area->memobj->ops->get_page(
+        area->memobj,
+        (area->memobj_base / PAGE_SIZE) + area_page_offset,
+        op == VM_FAULT_WRITE,
+        &new_entry);
+    if (result) {
+      switch (mode) {
+        case VM_FAULT_KERNEL:
+          KLOG(ERROR, "kernel mode SIGBUS: addr: 0x%" PRIxADDR " error: %s\n",
+               address, errorname(-result));
+          die("failed kernel page fault");
+          break;
+
+        case VM_FAULT_USER:
+          KLOG(INFO,
+               "SIGBUS: unable to access address %#" PRIxADDR
+               " (pid %d, error=%s)\n",
+               address, proc->id, errorname(-result));
+          KASSERT(proc_force_signal_on_thread(
+                      proc_current(), kthread_current_thread(), SIGBUS) == 0);
+          // TODO(aoates): write a test that catches if this unmap is missing.
+          page_frame_unmap_virtual(virt_page);
+          return result;
+      }
+    }
+    // Another thread could have filled in while we were blocked.
+    if (area->pages[area_page_offset] != NULL) {
+      // The entry from the other thread may not have been created with the
+      // correct permissions for this access (e.g. if it was for a read, and
+      // this is for a write).  Simply return here, and the system will
+      // re-fault if necessary.
+      area->memobj->ops->put_page(area->memobj, new_entry, BC_FLUSH_NONE);
+      return 0;
+    }
+    area->pages[area_page_offset] = new_entry;
   }
+  KASSERT(area->pages[area_page_offset]);
+  phys_addr = area->pages[area_page_offset]->block_phys;
 
   // Only create a writable mapping if the operation is a write (so that we can
   // do copy-on-write).

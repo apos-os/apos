@@ -20,7 +20,8 @@
 
 void interrupt_clobber_test(void);
 void interrupt_save_test(void);
-void kmalloc_test(void);
+void kmalloc_unsafe_test(void);
+void kmalloc_basic_test(void);
 void kprintf_test(void);
 void kstring_test(void);
 void ktest_test(void);

@@ -40,7 +40,11 @@ static const test_entry_t TESTS[] = {
   { "ktest", &ktest_test, 0 },
 
   // Running kmalloc test ruins everything else since it resets malloc state.
-  { "kmalloc", &kmalloc_test, 0 },
+  { "kmalloc_unsafe", &kmalloc_unsafe_test, 0 },
+
+  // Run the basic allocation test early, before other tests allocate (and free)
+  // a bunch of memory.
+  { "kmalloc", &kmalloc_basic_test, 1 },
 
   { "ld", &ld_test, 1 },
   { "kassert", &kassert_test, 1 },

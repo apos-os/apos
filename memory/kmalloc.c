@@ -54,6 +54,9 @@ static kspinlock_intsafe_t g_kmalloc_mu =
 // Global block list.
 static block_t* g_block_list GUARDED_BY(g_kmalloc_mu) = 0;
 
+// The first address that has not had a page allocated to it (ala brk()).
+static addr_t g_kmalloc_top GUARDED_BY(g_kmalloc_mu);
+
 // Root process vm_area_t for the heap.
 static vm_area_t g_root_heap_vm_area;
 
@@ -81,23 +84,25 @@ static inline ALWAYS_INLINE void _kmalloc_unlock(interrupt_state_t s)
 #define KMALLOC_LOCK() interrupt_state_t _SAVED_INTERRUPTS = _kmalloc_lock()
 #define KMALLOC_UNLOCK() _kmalloc_unlock(_SAVED_INTERRUPTS);
 
-static void init_block(block_t* b) {
+// Ensure all addresses in the range [ptr, ptr + len) are backed by pages.
+static void preallocate_block(void* ptr, size_t len) REQUIRES(g_kmalloc_mu) {
+  addr_t end = (addr_t)ptr + len;
+  while (end > g_kmalloc_top) {
+    phys_addr_t phys_addr = page_frame_alloc();
+    page_frame_map_virtual(g_kmalloc_top, phys_addr, MEM_PROT_ALL,
+                           MEM_ACCESS_KERNEL_ONLY, MEM_GLOBAL);
+    g_kmalloc_top += PAGE_SIZE;
+  }
+}
+
+static void init_block(block_t* b) REQUIRES(g_kmalloc_mu) {
+  preallocate_block(b, sizeof(block_t));
   b->magic = KALLOC_MAGIC;
   b->free = true;
   b->length = 0;
   b->prev = 0;
   b->next = 0;
   kmemset(b->_buf, 0xAA, KMALLOC_SAFE_BUFFER);
-}
-
-static void preallocate_heap_pages(const memory_info_t* meminfo) {
-  addr_t addr = meminfo->heap.base;
-  for (int i = 0; i < KMALLOC_PRE_ALLOC_PAGES; ++i) {
-    phys_addr_t phys_addr = page_frame_alloc();
-    page_frame_map_virtual(addr, phys_addr, MEM_PROT_ALL,
-                           MEM_ACCESS_KERNEL_ONLY, MEM_GLOBAL);
-    addr += PAGE_SIZE;
-  }
 }
 
 void kmalloc_init(void) {
@@ -113,20 +118,17 @@ void kmalloc_init(void) {
     // the page fault handler not to bork.
     vm_create_kernel_mapping(&g_root_heap_vm_area, meminfo->heap.base,
                              meminfo->heap.len, true /* allow_allocation */);
-
-    // Pre-allocate the first N pages of the heap.  This will prevent page
-    // faults during early kernel initialization (before stage 2 of proc init).
-    preallocate_heap_pages(meminfo);
   }
 
   // Initialize the free list to one giant block consisting of the entire heap.
   KASSERT(meminfo->heap_size_max <= meminfo->heap.len);
   KASSERT(meminfo->heap_size_max % PAGE_SIZE == 0);
   KASSERT(meminfo->heap_size_max >= 1024 * 1024);
+  KMALLOC_LOCK();
+  g_kmalloc_top = meminfo->heap.base;
   block_t* head = (block_t*)meminfo->heap.base;
   init_block(head);
   head->length = meminfo->heap_size_max - sizeof(block_t);
-  KMALLOC_LOCK();
   g_block_list = head;
   KMALLOC_UNLOCK();
   g_initialized = 1;
@@ -153,7 +155,7 @@ static void fill_block(block_t* b, uint32_t pattern) {
 
 // Takes a block and a required size, and (if it's large enough), splits the
 // block into two blocks, adding them both to the block list as needed.
-static block_t* split_block(block_t* b, size_t n) {
+static block_t* split_block(block_t* b, size_t n) REQUIRES(g_kmalloc_mu) {
   KASSERT(b->length >= n);
   if (b->length < n + sizeof(block_t) + KALLOC_MIN_BLOCK_SIZE) {
     return b;
@@ -176,7 +178,8 @@ static block_t* split_block(block_t* b, size_t n) {
 }
 
 // Given two adjacent blocks, merge them, returning the new (unified) block.
-static inline block_t* merge_adjancent_blocks(block_t* a, block_t* b) {
+static inline block_t* merge_adjancent_blocks(block_t* a, block_t* b)
+    REQUIRES(g_kmalloc_mu) {
   KASSERT(a->free);
   KASSERT(b->free);
   KASSERT(BLOCK_END(a) == BLOCK_START(b));
@@ -198,7 +201,7 @@ static inline block_t* merge_adjancent_blocks(block_t* a, block_t* b) {
 
 // Given a (free) block, merge it with the previous and/or next blocks in the
 // block list, if they're also free.  Returns a pointer to the new block.
-static block_t* merge_block(block_t* b) {
+static block_t* merge_block(block_t* b) REQUIRES(g_kmalloc_mu) {
   KASSERT(b->free);
 
   if (b->prev && b->prev->free) {
@@ -286,6 +289,8 @@ void* kmalloc_alloc(void* arg, size_t n, size_t alignment) {
   cblock->stack_trace = stack_trace_id;
 #endif
 
+  // No need to preallocate here --- split_block() calls preallocate_block() on
+  // the next block, ensuring this entire block is itself preallocated as well.
   KMALLOC_UNLOCK();
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
