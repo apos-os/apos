@@ -102,7 +102,9 @@ static void basic_setgpid_test(void* arg) {
   const kpid_t group = (intptr_t)arg;
 
   // To ensure it's not looked at or carried to children.
+  pmutex_lock(&proc_current()->mu);
   proc_current()->execed = true;
+  pmutex_unlock(&proc_current()->mu);
 
   KTEST_BEGIN("setgpid() create new group");
   KEXPECT_NE(proc_current()->id, getpgid(0));
@@ -177,7 +179,9 @@ static void child_setgpid_test(void* arg) {
   int test_done = 0;
 
   // To ensure it's not looked at or carried to children.
+  pmutex_lock(&proc_current()->mu);
   proc_current()->execed = true;
+  pmutex_unlock(&proc_current()->mu);
 
   KTEST_BEGIN("setpgid(): set pgid of child");
   int child = proc_fork(&loop_until_done, &test_done);
@@ -199,8 +203,11 @@ static void child_setgpid_test(void* arg) {
   KTEST_BEGIN("setpgid(): set pgid of child that has exec()'d");
   test_done = 0;
   child = proc_fork(&loop_until_done, &test_done);
+  pmutex_lock(&proc_get(child)->mu);
   KEXPECT_EQ(false, proc_get(child)->execed);
   proc_get(child)->execed = true;
+  pmutex_unlock(&proc_get(child)->mu);
+
   KEXPECT_EQ(-EACCES, setpgid(child, 0));
   KEXPECT_EQ(getpgid(0), getpgid(child));
 
@@ -266,7 +273,9 @@ static void setpgid_zombie_test(void* arg) {
   const kpid_t group = (intptr_t)arg;
 
   // To ensure it's not looked at or carried to children.
+  pmutex_lock(&proc_current()->mu);
   proc_current()->execed = true;
+  pmutex_unlock(&proc_current()->mu);
 
   KTEST_BEGIN("setgpid() on zombie child (process leader)");
   kpid_t child = proc_fork(&do_nothing, NULL);

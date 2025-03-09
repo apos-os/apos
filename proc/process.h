@@ -104,7 +104,7 @@ typedef struct process {
   kmode_t umask GUARDED_BY(&mu);
 
   // Has this process exec()'d since it was created.
-  bool execed;
+  bool execed GUARDED_BY(&mu);
 
   // User-mode architecture, once determined (e.g. by exec()).
   bin_arch_t user_arch;
