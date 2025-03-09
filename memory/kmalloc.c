@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "arch/dev/interrupts.h"
+#include "arch/memory/page_map.h"
 #include "arch/proc/stack_trace.h"
 #include "common/attributes.h"
 #include "common/debug.h"
@@ -42,6 +43,8 @@
 #endif
 
 #define KLOG(...) klogfm(KL_KMALLOC, __VA_ARGS__)
+
+#define KMALLOC_PRE_ALLOC_PAGES 5
 
 static bool g_initialized = false;
 
@@ -87,6 +90,16 @@ static void init_block(block_t* b) {
   kmemset(b->_buf, 0xAA, KMALLOC_SAFE_BUFFER);
 }
 
+static void preallocate_heap_pages(const memory_info_t* meminfo) {
+  addr_t addr = meminfo->heap.base;
+  for (int i = 0; i < KMALLOC_PRE_ALLOC_PAGES; ++i) {
+    phys_addr_t phys_addr = page_frame_alloc();
+    page_frame_map_virtual(addr, phys_addr, MEM_PROT_ALL,
+                           MEM_ACCESS_KERNEL_ONLY, MEM_GLOBAL);
+    addr += PAGE_SIZE;
+  }
+}
+
 void kmalloc_init(void) {
   const memory_info_t* meminfo = get_global_meminfo();
   KASSERT(proc_current() != 0x0);
@@ -100,6 +113,10 @@ void kmalloc_init(void) {
     // the page fault handler not to bork.
     vm_create_kernel_mapping(&g_root_heap_vm_area, meminfo->heap.base,
                              meminfo->heap.len, true /* allow_allocation */);
+
+    // Pre-allocate the first N pages of the heap.  This will prevent page
+    // faults during early kernel initialization (before stage 2 of proc init).
+    preallocate_heap_pages(meminfo);
   }
 
   // Initialize the free list to one giant block consisting of the entire heap.
