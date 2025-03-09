@@ -65,6 +65,10 @@ int proc_fork(proc_func_t start, void* arg) {
 
   new_process->umask = parent->umask;
 
+  for (int i = 0; i < APOS_RLIMIT_NUM_RESOURCES; ++i) {
+    new_process->limits[i] = parent->limits[i];
+  }
+
   // Fork the address space.
   new_process->page_directory = page_frame_alloc_directory();
   int result = vm_fork_address_space_into(parent, new_process);
@@ -93,10 +97,6 @@ int proc_fork(proc_func_t start, void* arg) {
   new_process->suid = parent->suid;
   new_process->sgid = parent->sgid;
   kspin_unlock(&g_proc_table_lock);
-
-  for (int i = 0; i < APOS_RLIMIT_NUM_RESOURCES; ++i) {
-    new_process->limits[i] = parent->limits[i];
-  }
 
   // Create the kthread.
   proc_start_args_t* trampoline_args =

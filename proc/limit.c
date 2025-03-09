@@ -22,7 +22,9 @@ int proc_getrlimit(int resource, struct apos_rlimit* lim) {
   if (resource < 0 || resource >= APOS_RLIMIT_NUM_RESOURCES)
     return -EINVAL;
 
+  pmutex_lock(&proc_current()->mu);
   *lim = proc_current()->limits[resource];
+  pmutex_unlock(&proc_current()->mu);
   return 0;
 }
 
@@ -33,12 +35,17 @@ int proc_setrlimit(int resource, const struct apos_rlimit* lim) {
   if (lim->rlim_cur > lim->rlim_max)
     return -EINVAL;
 
+  pmutex_lock(&proc_current()->mu);
   if (lim->rlim_max > proc_current()->limits[resource].rlim_max &&
-      !proc_is_superuser(proc_current()))
+      !proc_is_superuser(proc_current())) {
+    pmutex_unlock(&proc_current()->mu);
     return -EPERM;
+  }
 
   // TODO(aoates): check if new limit is above current usage.
 
   proc_current()->limits[resource] = *lim;
+
+  pmutex_unlock(&proc_current()->mu);
   return 0;
 }

@@ -131,7 +131,7 @@ typedef struct process {
   kthread_queue_t thread_change_queue;
 
   // Resource limits.
-  struct apos_rlimit limits[APOS_RLIMIT_NUM_RESOURCES];
+  struct apos_rlimit limits[APOS_RLIMIT_NUM_RESOURCES] GUARDED_BY(&mu);
 
   refcount_t refcount;
 } process_t;

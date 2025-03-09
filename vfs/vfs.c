@@ -847,13 +847,15 @@ int vfs_dup2(int fd1, int fd2) {
   file_t* file1 = 0x0, *file2 = 0x0;
 
   if (!is_valid_fd(fd2)) return -EBADF;
-  if (proc_current()->limits[APOS_RLIMIT_NOFILE].rlim_cur !=
-          APOS_RLIM_INFINITY &&
-      (apos_rlim_t)fd2 >= proc_current()->limits[APOS_RLIMIT_NOFILE].rlim_cur)
-    return -EMFILE;
 
   process_t* proc = proc_current();
   pmutex_lock(&proc->mu);
+  if (proc->limits[APOS_RLIMIT_NOFILE].rlim_cur != APOS_RLIM_INFINITY &&
+      (apos_rlim_t)fd2 >= proc->limits[APOS_RLIMIT_NOFILE].rlim_cur) {
+    pmutex_unlock(&proc->mu);
+    return -EMFILE;
+  }
+
   // TODO(aoates): write a test that catches races in this function.
   int result = lookup_fd_locked(fd1, &file1);
   if (result) {
@@ -1442,11 +1444,14 @@ ssize_t vfs_write(int fd, const void* buf, size_t count) {
     result = special_device_write(file->vnode->type, file->vnode->dev,
                                   file->pos, buf, count, file->flags);
   } else {
+    pmutex_lock(&proc_current()->mu);
+    const apos_rlim_t limit =
+        proc_current()->limits[APOS_RLIMIT_FSIZE].rlim_cur;
+    pmutex_unlock(&proc_current()->mu);
+
     kmutex_lock(&file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
       if (file->flags & VFS_O_APPEND) file->pos = file->vnode->len;
-      const apos_rlim_t limit =
-          proc_current()->limits[APOS_RLIMIT_FSIZE].rlim_cur;
       if (limit != APOS_RLIM_INFINITY) {
         koff_t new_len = max(file->vnode->len, file->pos + (koff_t)count);
         if (new_len > file->vnode->len && (apos_rlim_t)new_len > limit) {
@@ -1968,7 +1973,9 @@ int vfs_ftruncate(int fd, koff_t length) {
     file_unref(file);
     return 0;
   }
+  pmutex_lock(&proc_current()->mu);
   const apos_rlim_t limit = proc_current()->limits[APOS_RLIMIT_FSIZE].rlim_cur;
+  pmutex_unlock(&proc_current()->mu);
   if (limit != APOS_RLIM_INFINITY && (apos_rlim_t)length > limit) {
     proc_force_signal(proc_current(), SIGXFSZ);
     file_unref(file);
@@ -2005,7 +2012,9 @@ int vfs_truncate(const char* path, koff_t length) {
     return 0;
   }
 
+  pmutex_lock(&proc_current()->mu);
   const apos_rlim_t limit = proc_current()->limits[APOS_RLIMIT_FSIZE].rlim_cur;
+  pmutex_unlock(&proc_current()->mu);
   if (limit != APOS_RLIM_INFINITY && (apos_rlim_t)length > limit) {
     VFS_PUT_AND_CLEAR(vnode);
     proc_force_signal(proc_current(), SIGXFSZ);
