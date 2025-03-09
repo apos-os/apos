@@ -25,17 +25,17 @@
 // requested size, between start_addr and end_addr.  If no such holes are
 // available, returns  0.
 addr_t vm_find_hole(process_t* proc, addr_t start_addr, addr_t end_addr,
-                    addr_t length);
+                    addr_t length) REQUIRES(proc->mu);
 
 // Insert the given vm_area_t into the process's memory map.  The new area MUST
 // NOT overlap with any existing area.
-void vm_insert_area(process_t* proc, vm_area_t* area);
+void vm_insert_area(process_t* proc, vm_area_t* area) REQUIRES(proc->mu);
 
 // Verify that accesses of the given type are valid for the entire region
 // [start, end).  Returns 0 if the access is valid, -EFAULT if not.
 // TODO(aoates): should we use vm_fault_op_t, etc here?
 int vm_verify_region(process_t* proc, addr_t start, addr_t end, bool is_write,
-                     bool is_user);
+                     bool is_user) EXCLUDES(proc->mu);
 
 // Verifies that an access to the given address is valid, as for
 // vm_verify_region.  Returns (in end_out) the next *invalid* address after this
@@ -46,7 +46,7 @@ int vm_verify_region(process_t* proc, addr_t start, addr_t end, bool is_write,
 //
 // Returns 0 if the access is valid, -EFAULT (and sets *end_out to addr) if not.
 int vm_verify_address(process_t* proc, addr_t addr, bool is_write, bool is_user,
-                      addr_t* end_out);
+                      addr_t* end_out) EXCLUDES(proc->mu);
 
 // Resolves the given address to a physical address.  Verifies that the access
 // is valid (as for vm_verify_region), is aligned, and doesn't cross a page
@@ -74,11 +74,11 @@ int vm_resolve_address_noblock(process_t* proc, addr_t start, size_t size,
 // be fatal.  It is the callers responsibility to create the needed mappings by
 // calling page_frame_map_virtual() directly.
 //
-// REQUIRES: proc_current() is the root process.
+// REQUIRES: proc_current() is the root process, and fork() has not been called.
 void vm_create_kernel_mapping(vm_area_t* area, addr_t base, addr_t length,
                               bool allow_allocation);
 
-// Fork the current process's address space and mappings into another process.
+// Fork the given process's address space and mappings into another process.
 // Each vm_area_t in the current process will be copied to the new process.  If
 // the area represents a private mapping, shadow objects will be created for
 // both the current process and new process to ensure they don't share
@@ -88,6 +88,7 @@ void vm_create_kernel_mapping(vm_area_t* area, addr_t base, addr_t length,
 //
 // Returns 0 on success, or -errno on error (in which case the target's
 // vm_area_list is left in an indeterminate state).
-int vm_fork_address_space_into(process_t* target);
+int vm_fork_address_space_into(process_t* source, process_t* target)
+    REQUIRES(source->mu);
 
 #endif

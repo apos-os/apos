@@ -101,6 +101,7 @@ static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
 
   char* tbuf = kmalloc(1024);
 
+  pmutex_lock(&proc->mu);
   list_link_t* link = proc->vm_area_list.head;
   while (link && offset < buflen) {
     vm_area_t* area = container_of(link, vm_area_t, vm_proc_list);
@@ -111,6 +112,7 @@ static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
     offset += kstrlen(tbuf);
     link = link->next;
   }
+  pmutex_unlock(&proc->mu);
 
   proc_put(proc);
   kfree(tbuf);

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "arch/memory/page_map.h"
+#include "common/atomic.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
@@ -22,6 +23,8 @@
 #include "memory/vm.h"
 #include "memory/vm_area.h"
 #include "memory/vm_page_fault.h"
+#include "proc/pmutex.h"
+#include "proc/process-internal.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
 
@@ -71,6 +74,7 @@ void vm_insert_area(process_t* proc, vm_area_t* area) {
 // Check if access is allowed to the given region.
 // TODO(aoates): unify this with fault_allowed() in vm_page_fault.c
 static int verify_access(const vm_area_t* area, bool is_write, bool is_user) {
+  pmutex_assert_is_held(&area->proc->mu);
   if (is_write && (!(area->prot & MEM_PROT_WRITE)))
     return -EFAULT;
   if (is_user && (area->access != MEM_ACCESS_KERNEL_AND_USER))
@@ -84,6 +88,7 @@ int vm_verify_region(process_t* proc, addr_t start, addr_t end,
     return -EINVAL;
   }
 
+  pmutex_lock(&proc->mu);
   list_link_t* link = proc->vm_area_list.head;
   while (link && start < end) {
     vm_area_t* const area = container_of(link, vm_area_t, vm_proc_list);
@@ -93,14 +98,19 @@ int vm_verify_region(process_t* proc, addr_t start, addr_t end,
     if (area->vm_base > end) {
       break;
     } else if (area->vm_base > start) {
+      pmutex_unlock(&proc->mu);
       return -EFAULT;
     } else if (overlap_start < overlap_end) {
       const int result = verify_access(area, is_write, is_user);
-      if (result) return result;
+      if (result) {
+        pmutex_unlock(&proc->mu);
+        return result;
+      }
     }
     start = overlap_end;
     link = link->next;
   }
+  pmutex_unlock(&proc->mu);
 
   if (start < end) {
     return -EFAULT;
@@ -116,6 +126,7 @@ int vm_verify_address(process_t* proc, addr_t addr, bool is_write,
   }
   *end_out = addr;
 
+  pmutex_lock(&proc->mu);
   // First, find the region containing addr.
   vm_area_t* addr_area = NULL;
   list_link_t* link = proc->vm_area_list.head;
@@ -129,12 +140,14 @@ int vm_verify_address(process_t* proc, addr_t addr, bool is_write,
   }
 
   if (!addr_area) {
+    pmutex_unlock(&proc->mu);
     return -EFAULT;
   }
 
   // Check if the access is valid.
   int access_valid = verify_access(addr_area, is_write, is_user);
   if (access_valid != 0) {
+    pmutex_unlock(&proc->mu);
     return access_valid;
   }
 
@@ -150,6 +163,7 @@ int vm_verify_address(process_t* proc, addr_t addr, bool is_write,
   } while (link &&
            contig_area->vm_base == prev_area->vm_base + prev_area->vm_length &&
            verify_access(contig_area, is_write, is_user) == 0);
+  pmutex_unlock(&proc->mu);
   return 0;
 }
 
@@ -157,7 +171,7 @@ static int vm_resolve_address_internal(process_t* proc, addr_t start,
                                        size_t size, bool is_write, bool is_user,
                                        bc_entry_t** entry_out,
                                        phys_addr_t* resolved_out,
-                                       bool blocking) {
+                                       bool blocking) REQUIRES(proc->mu) {
   if (!proc || !resolved_out) {
     return -EINVAL;
   }
@@ -224,9 +238,10 @@ static int vm_resolve_address_internal(process_t* proc, addr_t start,
     // Attempt to page it in (blocks!).
     // TODO(aoates): there is a fair amount of duplicated logic between the
     // checks above and the checks in vm_handle_page_fault().
-    result = vm_handle_page_fault(start, /* type= */ VM_FAULT_NOT_PRESENT,
-                                  is_write ? VM_FAULT_WRITE : VM_FAULT_READ,
-                                  is_user ? VM_FAULT_USER : VM_FAULT_KERNEL);
+    result =
+        vm_handle_page_fault_locked(start, /* type= */ VM_FAULT_NOT_PRESENT,
+                                    is_write ? VM_FAULT_WRITE : VM_FAULT_READ,
+                                    is_user ? VM_FAULT_USER : VM_FAULT_KERNEL);
     if (result) return result;
     // TODO(swap): will need a way to ensure that the paged-in page stays pinned
     // between the above call and when we add a pin below.
@@ -243,24 +258,35 @@ static int vm_resolve_address_internal(process_t* proc, addr_t start,
 int vm_resolve_address(process_t* proc, addr_t start, size_t size,
                        bool is_write, bool is_user, bc_entry_t** entry_out,
                        phys_addr_t* resolved_out) {
-  return vm_resolve_address_internal(proc, start, size, is_write, is_user,
-                                     entry_out, resolved_out,
-                                     /* blocking= */ true);
+  if (!proc) return -EINVAL;
+
+  pmutex_lock(&proc->mu);
+  int result = vm_resolve_address_internal(proc, start, size, is_write, is_user,
+                                           entry_out, resolved_out,
+                                           /* blocking= */ true);
+  pmutex_unlock(&proc->mu);
+  return result;
 }
 
 int vm_resolve_address_noblock(process_t* proc, addr_t start, size_t size,
                                bool is_write, bool is_user,
                                bc_entry_t** entry_out,
                                phys_addr_t* resolved_out) {
-  return vm_resolve_address_internal(proc, start, size, is_write, is_user,
-                                     entry_out, resolved_out,
-                                     /* blocking= */ false);
+  if (!proc) return -EINVAL;
+
+  pmutex_lock(&proc->mu);
+  int result = vm_resolve_address_internal(proc, start, size, is_write, is_user,
+                                           entry_out, resolved_out,
+                                           /* blocking= */ false);
+  pmutex_unlock(&proc->mu);
+  return result;
 }
 
 void vm_create_kernel_mapping(vm_area_t* area, addr_t base, addr_t length,
                               bool allow_allocation) {
   KASSERT(proc_current() != 0x0);
   KASSERT(proc_current()->id == 0);
+  KASSERT(atomic_flag_get(&g_forked) == false);
 
   kmemset(area, 0, sizeof(vm_area_t));
   area->memobj = 0x0;
@@ -274,15 +300,17 @@ void vm_create_kernel_mapping(vm_area_t* area, addr_t base, addr_t length,
   area->proc = proc_current();
   area->vm_proc_list = LIST_LINK_INIT;
 
+  pmutex_constructor(&proc_current()->mu);
   vm_insert_area(proc_current(), area);
 
   page_frame_init_global_mapping(base, length);
 }
 
-int vm_fork_address_space_into(process_t* target_proc) {
+int vm_fork_address_space_into(process_t* source, process_t* target_proc) {
+  pmutex_constructor(&target_proc->mu);
   KASSERT(list_empty(&target_proc->vm_area_list));
 
-  list_link_t* link = proc_current()->vm_area_list.head;
+  list_link_t* link = source->vm_area_list.head;
   while (link) {
     vm_area_t* const source_area = container_of(link, vm_area_t, vm_proc_list);
     vm_area_t* target_area = NULL;

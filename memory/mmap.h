@@ -34,5 +34,6 @@ int do_munmap(void* addr, addr_t length);
 
 // Return current mmap usage (as limited by RLIMIT_AS).
 size_t mmap_get_usage(void);
+size_t mmap_get_usage_locked(void);  // REQUIRES(proc_current()->mu)
 
 #endif

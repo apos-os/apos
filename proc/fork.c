@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "arch/memory/page_map.h"
+#include "common/atomic.h"
 #include "common/kassert.h"
 #include "common/errno.h"
 #include "memory/kmalloc.h"
@@ -49,6 +50,7 @@ static void* proc_fork_trampoline(void* arg) {
 }
 
 int proc_fork(proc_func_t start, void* arg) {
+  atomic_flag_set(&g_forked);
   process_t* new_process = proc_alloc();
   if (!new_process) return -ENOMEM;
 
@@ -62,11 +64,11 @@ int proc_fork(proc_func_t start, void* arg) {
   vfs_ref(new_process->cwd);
 
   new_process->umask = parent->umask;
-  pmutex_unlock(&parent->mu);
 
   // Fork the address space.
   new_process->page_directory = page_frame_alloc_directory();
-  int result = vm_fork_address_space_into(new_process);
+  int result = vm_fork_address_space_into(parent, new_process);
+  pmutex_unlock(&parent->mu);
   if (result) {
     // TODO(aoates): clean up partial proc on failure.
     return result;

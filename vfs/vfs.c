@@ -1605,9 +1605,18 @@ int vfs_chdir(const char* path) {
 }
 
 int vfs_get_memobj(int fd, kmode_t mode, memobj_t** memobj_out) {
+  process_t* proc = proc_current();
+  pmutex_lock(&proc->mu);
+  int result = vfs_get_memobj_locked(fd, mode, memobj_out);
+  pmutex_unlock(&proc->mu);
+  return result;
+}
+
+int vfs_get_memobj_locked(int fd, kmode_t mode, memobj_t** memobj_out) {
+  pmutex_assert_is_held(&proc_current()->mu);
   *memobj_out = 0x0;
   file_t* file = 0x0;
-  int result = lookup_fd(fd, &file);
+  int result = lookup_fd_locked(fd, &file);
   if (result) return result;
 
   if (file->vnode->type == VNODE_DIRECTORY) {

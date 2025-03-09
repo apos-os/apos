@@ -70,9 +70,9 @@ typedef struct process {
   struct vnode* cwd GUARDED_BY(&mu);
 
   // List of vm_area_t's of the mmap'd areas in the current process.
-  list_t vm_area_list;
+  list_t vm_area_list GUARDED_BY(&mu);
 
-  page_dir_ptr_t page_directory;
+  page_dir_ptr_t page_directory;  // const after construction
 
   // Set of pending signals.
   ksigset_t pending_signals GUARDED_BY(&spin_mu);

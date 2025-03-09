@@ -23,6 +23,7 @@
 #include "memory/page_alloc.h"
 #include "memory/vm_page_fault.h"
 #include "memory/vm_area.h"
+#include "proc/pmutex.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
 
@@ -32,7 +33,7 @@ static inline vm_area_t* link2area(list_link_t* link) {
   return container_of(link, vm_area_t, vm_proc_list);
 }
 
-static void check_vm_list(process_t* proc) {
+static void check_vm_list(process_t* proc) REQUIRES(proc->mu) {
   list_link_t* link = proc->vm_area_list.head;
   while (link) {
     vm_area_t* const area = link2area(link);
@@ -51,7 +52,8 @@ static void check_vm_list(process_t* proc) {
   }
 }
 
-static vm_area_t* find_area(process_t* proc, addr_t address) {
+static vm_area_t* find_area(process_t* proc, addr_t address)
+    REQUIRES(proc->mu) {
   list_link_t* link = proc->vm_area_list.head;
   while (link) {
     vm_area_t* const area = container_of(link, vm_area_t, vm_proc_list);
@@ -98,6 +100,16 @@ static int fault_allowed(vm_area_t* area, vm_fault_type_t type,
 int vm_handle_page_fault(addr_t address, vm_fault_type_t type, vm_fault_op_t op,
                          vm_fault_mode_t mode) {
   process_t* proc = proc_current();
+  pmutex_lock(&proc->mu);
+  int result = vm_handle_page_fault_locked(address, type, op, mode);
+  pmutex_unlock(&proc->mu);
+  return result;
+}
+
+int vm_handle_page_fault_locked(addr_t address, vm_fault_type_t type,
+                                vm_fault_op_t op, vm_fault_mode_t mode) {
+  process_t* proc = proc_current();
+  pmutex_assert_is_held(&proc->mu);
   if (ENABLE_KERNEL_SAFETY_NETS) {
     check_vm_list(proc);
   }

@@ -39,6 +39,8 @@
 
 #define PROC_DEFAULT_UMASK 022
 
+atomic_flag_t g_forked = ATOMIC_FLAG_INIT;
+
 // We statically allocate the first process_t, so that proc_init() can run
 // before kmalloc_init(), and therefore kmalloc_init() can set up its memory
 // area.

@@ -16,7 +16,10 @@
 #ifndef APOO_PROC_PROCESS_INTERNAL_H
 #define APOO_PROC_PROCESS_INTERNAL_H
 
+#include "common/atomic.h"
 #include "proc/process.h"
+
+extern atomic_flag_t g_forked;
 
 // Allocate and initialize a process, and assign it a free process ID.
 // Returns NULL if the kernel is out of memory or process IDs.

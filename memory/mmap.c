@@ -24,6 +24,7 @@
 #include "memory/memobj_shadow.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
+#include "proc/pmutex.h"
 #include "proc/process.h"
 #include "vfs/vfs.h"
 
@@ -132,6 +133,9 @@ static int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
   return 0;
 }
 
+static int do_munmap_locked(process_t* proc, void* addr_ptr, addr_t length)
+    REQUIRES(proc->mu);
+
 int do_mmap(void* addr, addr_t length, int prot, int flags,
             int fd, addr_t offset, void** addr_out) {
   if ((!(flags & KMAP_PRIVATE) && !(flags & KMAP_SHARED)) ||
@@ -148,19 +152,22 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
 
   // This is a bit icky --- would be nice to have a more flexible and less
   // brittle way to manage memory limits portably.
+  pmutex_lock(&proc_current()->mu);
   addr_t last_mappable = bin_32bit(proc_current()->user_arch)
                              ? MEM_LAST_USER_MAPPABLE_ADDR_32
                              : MEM_LAST_USER_MAPPABLE_ADDR;
 
   if ((addr_t)addr > last_mappable - length + 1) {
+    pmutex_unlock(&proc_current()->mu);
     return -EINVAL;
   }
 
   // Check address space limits.
   const apos_rlim_t limit = proc_current()->limits[APOS_RLIMIT_AS].rlim_cur;
   if (limit != APOS_RLIM_INFINITY) {
-    size_t total_as = mmap_get_usage();
+    size_t total_as = mmap_get_usage_locked();
     if (total_as + length > limit) {
+      pmutex_unlock(&proc_current()->mu);
       return -ENOMEM;
     }
   }
@@ -169,12 +176,16 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
   addr_t hole_addr = 0x0;
   if (flags & KMAP_FIXED) {
     if ((addr_t)addr % PAGE_SIZE != 0) {
+      pmutex_unlock(&proc_current()->mu);
       return -EINVAL;
     }
 
     // Unmap anything overlapping the requested region.
-    const int result = do_munmap(addr, length);
-    if (result) return result;
+    const int result = do_munmap_locked(proc_current(), addr, length);
+    if (result) {
+      pmutex_unlock(&proc_current()->mu);
+      return result;
+    }
     hole_addr = (addr_t)addr;
   } else {
     hole_addr =
@@ -192,6 +203,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
     }
   }
   if (hole_addr == 0) {
+    pmutex_unlock(&proc_current()->mu);
     return -ENOMEM;
   }
 
@@ -203,7 +215,10 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
     // TODO(aoates): allow anonymous mappings to share read-only pages of
     // zeroes, and only create new ones on writes.
     memobj = memobj_create_anon();
-    if (!memobj) return -ENOMEM;
+    if (!memobj) {
+      pmutex_unlock(&proc_current()->mu);
+      return -ENOMEM;
+    }
 
     // Put a shadow object in front of the anonymous object --- this handles
     // page preservation when pages are unpinned correctly.
@@ -222,8 +237,11 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
       else if (prot & KPROT_READ) fd_mode = VFS_O_RDONLY;
       else if (prot & KPROT_WRITE) fd_mode = VFS_O_WRONLY;
     }
-    result = vfs_get_memobj(fd, fd_mode, &memobj);
-    if (result) return result;
+    result = vfs_get_memobj_locked(fd, fd_mode, &memobj);
+    if (result) {
+      pmutex_unlock(&proc_current()->mu);
+      return result;
+    }
 
     // For private mappings, create a shadow object.
     if (flags & KMAP_PRIVATE) {
@@ -236,7 +254,10 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
   // Create the new vm_area_t.
   vm_area_t* area = 0x0;
   result = vm_area_create(length, /*needs_pages=*/true, &area);
-  if (result) return result;
+  if (result) {
+    pmutex_unlock(&proc_current()->mu);
+    return result;
+  }
 
   // TODO(aoates): check against length of file
 
@@ -254,10 +275,20 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
   area->proc = proc_current();
   vm_insert_area(proc_current(), area);
   *addr_out = (void*)area->vm_base;
+  pmutex_unlock(&proc_current()->mu);
   return 0;
 }
 
 int do_munmap(void* addr_ptr, addr_t length) {
+  process_t* proc = proc_current();
+  pmutex_lock(&proc->mu);
+  int result = do_munmap_locked(proc, addr_ptr, length);
+  pmutex_unlock(&proc->mu);
+  return result;
+}
+
+static int do_munmap_locked(process_t* proc, void* addr_ptr, addr_t length) {
+  pmutex_assert_is_held(&proc->mu);
   const addr_t addr = (addr_t)addr_ptr;
   if (addr % PAGE_SIZE != 0 || length % PAGE_SIZE != 0) {
     return -EINVAL;
@@ -285,6 +316,15 @@ int do_munmap(void* addr_ptr, addr_t length) {
 }
 
 size_t mmap_get_usage(void) {
+  process_t* proc = proc_current();
+  pmutex_lock(&proc->mu);
+  size_t result = mmap_get_usage_locked();
+  pmutex_unlock(&proc->mu);
+  return result;
+}
+
+size_t mmap_get_usage_locked(void) {
+  pmutex_assert_is_held(&proc_current()->mu);
   list_link_t* link = proc_current()->vm_area_list.head;
   addrdiff_t total_as = 0;
   while (link) {

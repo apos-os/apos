@@ -156,7 +156,6 @@ static kpid_t finish_waitpid(process_t* p, process_t* zombie, int* exit_status,
   // Must unlock in this order.
   kspin_unlock(&zombie->spin_mu);
   kspin_unlock(&g_proc_table_lock);
-  pmutex_unlock(&p->mu);
 
   // TODO(aoates): make it possible to unlock spinlocks in a different order
   // than they were locked, so we can unlock only g_proc_table_lock here.
@@ -178,6 +177,7 @@ static kpid_t finish_waitpid(process_t* p, process_t* zombie, int* exit_status,
     *exit_status = zombie->exit_status;
   }
   kspin_unlock(&zombie->spin_mu);
+  pmutex_unlock(&p->mu);
 
   // Destroy all VM areas.
   list_link_t* vm_link = list_pop(&vm_areas);
