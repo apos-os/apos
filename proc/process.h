@@ -107,7 +107,8 @@ typedef struct process {
   bool execed GUARDED_BY(&mu);
 
   // User-mode architecture, once determined (e.g. by exec()).
-  bin_arch_t user_arch;
+  // Non-process-thread readers must lock |mu|.
+  bin_arch_t user_arch;  // const except during exec()
 
   // Parent process.  Cannot be modified without holding the old and new
   // parent's mutexs as well.

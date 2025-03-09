@@ -31,6 +31,7 @@
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_internal.h"
 
 #define KLOG(...) klogfm(KL_PROC, __VA_ARGS__)
 
@@ -133,27 +134,25 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
     return result;
   }
 
-  // TODO(aoates): similar to exit(), figure out how to deal with locking these.
-  // No threads can be concurrently modifying the process FD table.
-  {
-    pmutex_destructor(&p->mu);
-    for (int fd = 0; fd < PROC_MAX_FDS; ++fd) {
-      if (p->fds[fd].flags & VFS_O_CLOEXEC) {
-        if (vfs_close(fd) != 0) {
-          KLOG(WARNING, "exec error: unable to close O_CLOEXEC fd %d\n", fd);
-        }
+  pmutex_lock(&p->mu);
+  for (int fd = 0; fd < PROC_MAX_FDS; ++fd) {
+    if (p->fds[fd].flags & VFS_O_CLOEXEC) {
+      if (vfs_close_locked(fd) != 0) {
+        KLOG(WARNING, "exec error: unable to close O_CLOEXEC fd %d\n", fd);
       }
     }
   }
 
   p->user_arch = binary->arch;
+  proc_current()->execed = true;
+  pmutex_unlock(&p->mu);
+
   if (cleanup) {
     (*cleanup)(path, argv, envp, cleanup_arg);
   }
 
   // Jump to the entry point.
   kfree(binary);
-  proc_current()->execed = true;
   user_context_apply(&ctx);
 
   // We shouldn't ever get here, since we can't return from user space.
