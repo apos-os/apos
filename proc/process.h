@@ -125,6 +125,10 @@ typedef struct process {
   // Wait queue for the process's threads if the process is STOPPED.
   kthread_queue_t stopped_queue;
 
+  // Wait queue that is notified whenever the set of threads in the process
+  // changes (thread exit or start).
+  kthread_queue_t thread_change_queue;
+
   // Resource limits.
   struct apos_rlimit limits[APOS_RLIMIT_NUM_RESOURCES];
 

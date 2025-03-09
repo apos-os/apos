@@ -20,6 +20,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "common/list.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/mmap.h"
@@ -27,6 +28,7 @@
 #include "proc/kthread-internal.h"
 #include "proc/load/load.h"
 #include "proc/pmutex.h"
+#include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "vfs/vfs.h"
 
@@ -64,6 +66,9 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
   kthread_t thread = kthread_current_thread();
   KASSERT(thread->process == p);
   kspin_lock(&p->spin_mu);
+  // Set exiting to prevent new thread creation.
+  p->exiting = true;
+
   FOR_EACH_LIST(iter_link, &p->threads) {
     kthread_data_t* thread_iter =
         LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
@@ -71,7 +76,18 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
 
     proc_force_signal_on_thread_locked(p, thread_iter, SIGAPOSTKILL);
   }
-  // TODO(SMP): wait here until all other threads terminate.
+  // Wait until all other threads actually terminate.
+  while (p->threads.head != p->threads.tail) {
+    // We don't want scheduler_wait() to re-check signals (which would require
+    // re-taking me->process->spin_mu).
+    scheduler_wait(&p->thread_change_queue, SWAIT_NO_SIGNAL_CHECK, -1, NULL,
+                   &p->spin_mu);
+  }
+  KASSERT_DBG(list_size(&p->threads) == 1);
+  KASSERT_DBG(p->threads.head == &thread->proc_threads_link);
+
+  // Threads can now be created again (in the exec'd process).
+  p->exiting = false;
   kspin_unlock(&p->spin_mu);
 
   // Unmap the current user address space.

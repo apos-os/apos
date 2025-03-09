@@ -106,6 +106,7 @@ static void proc_init_process(process_t* p) NO_THREAD_SAFETY_ANALYSIS {
   p->children_link = LIST_LINK_INIT;
   kthread_queue_init(&p->wait_queue);
   kthread_queue_init(&p->stopped_queue);
+  kthread_queue_init(&p->thread_change_queue);
 
   for (int i = 0; i < APOS_RLIMIT_NUM_RESOURCES; ++i) {
     p->limits[i].rlim_cur = APOS_RLIM_INFINITY;
@@ -317,6 +318,7 @@ int proc_thread_create(kthread_t* thread, void* (*start_routine)(void*),
 
   (*thread)->process = proc;
   list_push(&proc->threads, &(*thread)->proc_threads_link);
+  scheduler_wake_all(&proc->thread_change_queue);
   kspin_unlock(&proc->spin_mu);
 
   scheduler_make_runnable(*thread);
@@ -332,6 +334,7 @@ void proc_thread_exit(void* x) {
   KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
 
   list_remove(&p->threads, &thread->proc_threads_link);
+  scheduler_wake_all(&p->thread_change_queue);
   thread->process = NULL;
   bool last_thread = list_empty(&p->threads);
   kspin_unlock(&p->spin_mu);
