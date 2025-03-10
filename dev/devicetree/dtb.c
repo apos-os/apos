@@ -426,8 +426,8 @@ int dtfdt_print(const void* fdt, bool print_header, dtfdt_sink_t sink,
     const uint64_t* memres = (const uint64_t*)(fdt + hdr.off_mem_rsvmap);
     while (true) {
       // On 32-bit archs the upper 32 bits should be ignored, so cast them away.
-      addr_t addr = (addr_t)btoh64(*(memres++));
-      addr_t len = (addr_t)btoh64(*(memres++));
+      addr_t addr = (addr_t)btoh64(read_unaligned_u64(memres++));
+      addr_t len = (addr_t)btoh64(read_unaligned_u64(memres++));
       if (addr == 0 && len == 0) break;
       fdt_printf(&state, "  0x%" PRIxADDR " - 0x%" PRIxADDR "\n", addr,
                  addr + len);
