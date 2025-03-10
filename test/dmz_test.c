@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/alignment.h"
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
@@ -342,7 +343,7 @@ static void dmz_copy_from_user_test(void) {
 
   // Basic test --- full copy, page-aligned.
   KEXPECT_EQ(0, syscall_copy_from_user(addrA, dst_buf, kRegionSize));
-  KEXPECT_EQ(fnv_hash(12345), *(uint32_t*)dst_buf);
+  KEXPECT_EQ(fnv_hash(12345), read_unaligned_u32(dst_buf));
   KEXPECT_EQ(0, kmemcmp(addrA, dst_buf, kRegionSize));
 
   // Test less than one page, and offset.
@@ -458,26 +459,26 @@ static void dmz_copy_to_user_test(void) {
 
   // Basic test --- full copy, page-aligned.
   KEXPECT_EQ(0, syscall_copy_to_user(src_buf, addrA, kRegionSize));
-  KEXPECT_EQ(fnv_hash(12345), *(uint32_t*)addrA);
+  KEXPECT_EQ(fnv_hash(12345), read_unaligned_u32(addrA));
   KEXPECT_EQ(0, kmemcmp(addrA, src_buf, kRegionSize));
 
   // Test less than one page, and offset.
   kmemset(addrA, 0, kRegionSize);
   KEXPECT_EQ(0, syscall_copy_to_user(src_buf, addrA + 50, 100));
-  KEXPECT_EQ(fnv_hash(12345), *(uint32_t*)(addrA + 50));
+  KEXPECT_EQ(fnv_hash(12345), read_unaligned_u32(addrA + 50));
   KEXPECT_EQ(0, kmemcmp(addrA + 50, src_buf, 100));
 
   // Test spanning 2 pages.
   kmemset(addrA, 0, kRegionSize);
   KEXPECT_EQ(0, syscall_copy_to_user(src_buf, addrA + 50, PAGE_SIZE + 200));
-  KEXPECT_EQ(fnv_hash(12345), *(uint32_t*)(addrA + 50));
+  KEXPECT_EQ(fnv_hash(12345), read_unaligned_u32(addrA + 50));
   KEXPECT_EQ(0, kmemcmp(addrA + 50, src_buf, PAGE_SIZE + 200));
   KEXPECT_EQ(0, user_buf[PAGE_SIZE + 50 + 200]);
 
   // Test spanning 2 pages, ending on page boundary.
   kmemset(addrA, 0, kRegionSize);
   KEXPECT_EQ(0, syscall_copy_to_user(src_buf, addrA + 50, 2 * PAGE_SIZE - 50));
-  KEXPECT_EQ(fnv_hash(12345), *(uint32_t*)(addrA + 50));
+  KEXPECT_EQ(fnv_hash(12345), read_unaligned_u32(addrA + 50));
   KEXPECT_EQ(0, kmemcmp(addrA + 50, src_buf, 2 * PAGE_SIZE - 50));
   KEXPECT_EQ(0, user_buf[2 * PAGE_SIZE - 50 + 50]);
 

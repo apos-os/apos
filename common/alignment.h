@@ -36,4 +36,10 @@ static inline ALWAYS_INLINE uint64_t read_unaligned_u64(const void* ptr) {
   return value;
 }
 
+static inline ALWAYS_INLINE uint32_t read_unaligned_u32(const void* ptr) {
+  uint32_t value;
+  kmemcpy(&value, ptr, sizeof(uint32_t));
+  return value;
+}
+
 #endif
