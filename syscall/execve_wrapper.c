@@ -53,8 +53,16 @@ static int copy_string_table(const void* table_unchecked,
 
   // Copy each string in the table.
   for (int i = 0; i < size - 1; ++i) {
-    addr_t string_addr = is64bit ? ((addr64_t*)table_unchecked)[i]
-                                 : ((addr32_t*)table_unchecked)[i];
+    addr_t string_addr;
+    if (is64bit) {
+      KASSERT_DBG(sizeof(addr_t) == sizeof(addr64_t));
+      kmemcpy(&string_addr, table_unchecked + i * sizeof(addr64_t),
+              sizeof(addr64_t));
+    } else {
+      addr32_t ptr32;
+      kmemcpy(&ptr32, table_unchecked + i * sizeof(addr32_t), sizeof(addr32_t));
+      string_addr = ptr32;
+    }
     const int string_size = syscall_verify_string((const char*)string_addr);
     if (string_size < 0) {
       free_string_table(KERNEL_table);

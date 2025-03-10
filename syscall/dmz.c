@@ -94,7 +94,14 @@ int syscall_verify_ptr_table(const void* table, bool is64bit) {
   const addr_t table_base = (addr_t)table;
   const size_t ptr_size = is64bit ? sizeof(addr64_t) : sizeof(addr32_t);
   for (addr_t i = 0; table_base + i * ptr_size < region_end; ++i) {
-    addr64_t ptr = is64bit ? ((addr64_t*)table)[i] : ((addr32_t*)table)[i];
+    addr64_t ptr;
+    if (is64bit) {
+      kmemcpy(&ptr, table + i * sizeof(addr64_t), sizeof(addr64_t));
+    } else {
+      addr32_t ptr32;
+      kmemcpy(&ptr32, table + i * sizeof(addr32_t), sizeof(addr32_t));
+      ptr = ptr32;
+    }
     if (ptr == 0x0) {
       return i + 1;
     }
