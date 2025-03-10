@@ -97,9 +97,10 @@ void defint_process_queued(bool force) {
 
   // Prevent any new defints from being processed while we're working.
   g_defints_enabled = false;
-  g_defint_running = (kthread_current_thread()->interrupt_level == 0)
-                         ? DEFINT_THREAD_CTX
-                         : DEFINT_INTERRUPT_CTX;
+  g_defint_running =
+      (atomic_load_relaxed(&kthread_current_thread()->interrupt_level) == 0)
+          ? DEFINT_THREAD_CTX
+          : DEFINT_INTERRUPT_CTX;
 
   // TODO(aoates): consider capping the number of defints we run at a given time
   // to minimize impact on the thread we're victimizing.

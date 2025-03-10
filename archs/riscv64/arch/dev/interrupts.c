@@ -18,6 +18,7 @@
 #include "archs/riscv64/internal/page_tables.h"
 #include "archs/riscv64/internal/riscv.h"
 #include "archs/riscv64/internal/timer.h"
+#include "common/atomic.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "dev/interrupts.h"
@@ -129,8 +130,8 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
                          uint64_t is_kernel) {
   kthread_t thread = kthread_current_thread();
   if (thread) {
-    thread->interrupt_level++;
-    KASSERT_DBG(thread->interrupt_level == 1 || thread->interrupt_level == 2);
+    int val = atomic_add_relaxed(&thread->interrupt_level, 1);
+    KASSERT_DBG(val == 1 || val == 2);
 #if ENABLE_TSAN
     // "Release" the interrupt lock --- everything past this should be
     // considered a new epoch for the interrupt thread.
@@ -190,8 +191,8 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
         break;
 
       case RSV_TRAP_ENVCALL_USR:
-        KASSERT_DBG(thread->interrupt_level == 1);
-        thread->interrupt_level = 0;
+        KASSERT_DBG(atomic_load_relaxed(&thread->interrupt_level) == 1);
+        atomic_store_relaxed(&thread->interrupt_level, 0);
         is_interrupt = false;
         enable_interrupts();
         ctx->a0 = syscall_dispatch(ctx->a0, ctx->a1, ctx->a2, ctx->a3, ctx->a4,
@@ -213,7 +214,8 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
   defint_process_queued(/* force */ true);
 
   if (thread && is_interrupt) {
-    thread->interrupt_level--;
+    KASSERT_DBG(atomic_load_relaxed(&thread->interrupt_level) >= 1);
+    atomic_sub_relaxed(&thread->interrupt_level, 1);
   }
 
   if (!is_kernel) {

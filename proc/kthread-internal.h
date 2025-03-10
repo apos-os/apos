@@ -102,7 +102,8 @@ struct kthread_data {
   // How many levels of interrupt are currently being processed (0 <= n <= 2).
   // Arch code must maintain this --- incrementing on interrupt start,
   // decrementing on finish, and setting to zero when user mode is entered.
-  int interrupt_level;
+  // Atomic only due to interrupt access, not synchronization.
+  atomic32_t interrupt_level;
 
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   // List of currently-held mutexes.

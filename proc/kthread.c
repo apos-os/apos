@@ -74,7 +74,7 @@ static void kthread_init_kthread(kthread_data_t* t) NO_THREAD_SAFETY_ANALYSIS {
   t->spinlocks_held = 0;
   t->all_threads_link = LIST_LINK_INIT;
   t->proc_threads_link = LIST_LINK_INIT;
-  t->interrupt_level = 0;
+  atomic_store_relaxed(&t->interrupt_level, 0);
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   t->mutexes_held = LIST_INIT;
 #endif
@@ -293,9 +293,9 @@ void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg) {
 }
 
 void kthread_reset_interrupt_level(void) {
-  KASSERT(g_current_thread->interrupt_level == 0 ||
-          g_current_thread->interrupt_level == 1);
-  g_current_thread->interrupt_level = 0;
+  int ilevel = atomic_load_relaxed(&g_current_thread->interrupt_level);
+  KASSERT(ilevel == 0 || ilevel == 1);
+  atomic_store_relaxed(&g_current_thread->interrupt_level, 0);
 
 #if ENABLE_TSAN
   // Before we return to user-mode, release all writes above to the interrupt
@@ -377,7 +377,7 @@ ktctx_type_t kthread_execution_context(void) {
   if (!g_current_thread) return KTCTX_THREAD;
 
   defint_running_t s = defint_running_state();
-  int int_level = g_current_thread->interrupt_level;
+  int int_level = atomic_load_relaxed(&g_current_thread->interrupt_level);
   if (s == DEFINT_NONE) {
     return (int_level > 0) ? KTCTX_INTERRUPT : KTCTX_THREAD;
   } else if (s == DEFINT_THREAD_CTX) {
