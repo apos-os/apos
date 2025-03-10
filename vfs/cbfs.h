@@ -17,8 +17,10 @@
 #ifndef APOO_VFS_CBFS_H
 #define APOO_VFS_CBFS_H
 
+#include "common/alignment.h"
 #include "common/list.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "vfs/fs.h"
 #include "vfs/vnode.h"
 
@@ -54,7 +56,8 @@ typedef struct {
 } cbfs_entry_t;
 
 static inline size_t cbfs_entry_size(const char* name) {
-  return sizeof(cbfs_entry_t) + kstrlen(name) + 1;
+  return align_up(sizeof(cbfs_entry_t) + kstrlen(name) + 1,
+                  alignof(cbfs_entry_t));
 }
 
 void cbfs_create_entry(cbfs_entry_t* entry, const char* name, int num);

@@ -134,23 +134,31 @@ static int lookup_by_name(cbfs_t* fs, cbfs_inode_t* parent, const char* name,
   if (parent->getdents_cb) {
     list_t list = LIST_INIT;
     int offset = 0;
+    const int kCbfsEntryBufSize = 1000;
+    char* cbfs_entry_buf =
+        kmalloc_aligned(kCbfsEntryBufSize, alignof(cbfs_entry_t));
     do {
       list = LIST_INIT;
-      const int kCbfsEntryBufSize = 1000;
-      char cbfs_entry_buf[kCbfsEntryBufSize];
       result = parent->getdents_cb(&fs->fs, parent->num, parent->arg, offset,
                                    &list, cbfs_entry_buf, kCbfsEntryBufSize);
-      if (result < 0) return result;
+      if (result < 0) {
+        kfree(cbfs_entry_buf);
+        return result;
+      }
 
       result = lookup_in_entry_list(fs, &list, name, generated_inode, ptr_out,
                                     &scanned);
-      if (result >= 0)
+      if (result >= 0) {
+        kfree(cbfs_entry_buf);
         return 0;
-      else if (result != -ENOENT)
+      } else if (result != -ENOENT) {
+        kfree(cbfs_entry_buf);
         return result;
+      }
 
       offset += scanned;
     } while (!list_empty(&list));
+    kfree(cbfs_entry_buf);
   }
   return -ENOENT;
 }

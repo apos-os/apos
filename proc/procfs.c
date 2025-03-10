@@ -16,6 +16,7 @@
 
 #include <limits.h>
 
+#include "common/alignment.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -257,6 +258,7 @@ static int procfs_get_vnode(fs_t* fs, void* arg, int vnode,
 
 static int proc_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
                          list_t* list_out, void* buf, int buflen) {
+  ASSERT_ALIGNED(buf, cbfs_entry_t);
   int process_idx = -1;
   for (kpid_t pid = 0; pid < PROC_MAX_PROCS; ++pid) {
     process_t* proc = proc_get_ref(pid);
