@@ -296,6 +296,13 @@ void kthread_reset_interrupt_level(void) {
   KASSERT(g_current_thread->interrupt_level == 0 ||
           g_current_thread->interrupt_level == 1);
   g_current_thread->interrupt_level = 0;
+
+#if ENABLE_TSAN
+  // Before we return to user-mode, release all writes above to the interrupt
+  // thread.  Because interrupts are blocked, they wouldn't otherwise be
+  // released.
+  tsan_release(NULL, TSAN_INTERRUPTS);
+#endif
 }
 
 void kthread_disable(kthread_t thread) {

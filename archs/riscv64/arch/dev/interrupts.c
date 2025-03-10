@@ -143,6 +143,7 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
          scause, stval, ctx->address, (int)is_kernel);
 
   syscall_context_t* syscall_ctx = NULL;
+  bool is_interrupt = true;
   if (scause & RSV_INTERRUPT) {
     const int interrupt = scause & ~RSV_INTERRUPT;
     switch (interrupt) {
@@ -191,13 +192,13 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
       case RSV_TRAP_ENVCALL_USR:
         KASSERT_DBG(thread->interrupt_level == 1);
         thread->interrupt_level = 0;
+        is_interrupt = false;
         enable_interrupts();
         ctx->a0 = syscall_dispatch(ctx->a0, ctx->a1, ctx->a2, ctx->a3, ctx->a4,
                                    ctx->a5, ctx->a6);
         ctx->address += RSV_ECALL_INSTR_LEN;
         syscall_ctx = &kthread_current_thread()->syscall_ctx;
         disable_interrupts();
-        thread->interrupt_level = 1;
         break;
 
       case RSV_TRAP_BREAKPOINT:
@@ -211,12 +212,19 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
 
   defint_process_queued(/* force */ true);
 
-  if (thread) {
+  if (thread && is_interrupt) {
     thread->interrupt_level--;
   }
 
   if (!is_kernel) {
     proc_prep_user_return(&copy_ctx, ctx, syscall_ctx);
+
+#if ENABLE_TSAN
+    // Before we return to user-mode, release all writes above to the interrupt
+    // thread.  Because interrupts are blocked, they wouldn't otherwise be
+    // released.
+    tsan_release(NULL, TSAN_INTERRUPTS);
+#endif
   }
 
   // Note: we may never get here, if there were signals to dispatch.
