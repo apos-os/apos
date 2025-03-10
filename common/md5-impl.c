@@ -64,7 +64,9 @@ static void md5_hash_block(const void* block, uint32_t md5_out[4]) {
     uint32_t old_D = D;
     D = C;
     C = B;
-    B += rotl(A + F + md5_K[i] + ((uint32_t*)block)[g], md5_s[i]);
+    uint32_t block_g;
+    MD5_MEMCPY(&block_g, block + sizeof(uint32_t) * g, sizeof(uint32_t));
+    B += rotl(A + F + md5_K[i] + block_g, md5_s[i]);
     A = old_D;
   }
 
