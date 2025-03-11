@@ -66,7 +66,6 @@ void proc_exit(int status) {
 }
 
 void proc_finish_exit(void) {
-  // We must be the only thread remaining.
   process_t* const p = proc_current();
   KASSERT(p->id != 0);
 
@@ -146,11 +145,17 @@ void proc_finish_exit(void) {
 
   // Now clean up state protected by the spinlock.
   kspin_lock(&p->spin_mu);
-  KASSERT(list_empty(&p->threads));
   KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
 
   // Cancel any outstanding alarms.
   proc_alarm_cancel(p);
+
+  // We must be the only thread left.  Clean up the reference, just in case.
+  kthread_t me = kthread_current_thread();
+  KASSERT(p->threads.head == p->threads.tail);
+  KASSERT(p->threads.head == &me->proc_threads_link);
+  list_pop(&p->threads);
+  me->process = NULL;
 
   p->state = PROC_ZOMBIE;
 

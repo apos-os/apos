@@ -335,17 +335,19 @@ void proc_thread_exit(void* x) {
   KASSERT_DBG(list_link_on_list(&p->threads, &thread->proc_threads_link));
   KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
 
-  list_remove(&p->threads, &thread->proc_threads_link);
-  scheduler_wake_all(&p->thread_change_queue);
-  thread->process = NULL;
-  bool last_thread = list_empty(&p->threads);
-  kspin_unlock(&p->spin_mu);
-
-  // If we're the last thread left in the process, exit the process.
-  if (last_thread) {
+  // Check if we're the last thread.
+  if (p->threads.head == p->threads.tail) {
+    KASSERT(p->threads.head == &thread->proc_threads_link);
+    kspin_unlock(&p->spin_mu);
     proc_finish_exit();
     die("unreachable");
   }
+
+  // Otherwise, remove ourselves and exit the thread.
+  list_remove(&p->threads, &thread->proc_threads_link);
+  scheduler_wake_all(&p->thread_change_queue);
+  thread->process = NULL;
+  kspin_unlock(&p->spin_mu);
 
   // Someone else will clean up.
   kthread_exit(x);

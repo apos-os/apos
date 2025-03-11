@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "proc/notification.h"
 #include "test/ktest.h"
 
 #include "proc/exit.h"
@@ -21,6 +22,8 @@
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "proc/wait.h"
+#include "vfs/pipe.h"
+#include "vfs/vfs.h"
 
 static bool has_sigtkill(void) {
   kthread_t thread = kthread_current_thread();
@@ -206,7 +209,62 @@ static void basic_tests(void) {
   KEXPECT_EQ(0, status);
 }
 
+static void do_nothing(void* args) {
+  proc_exit(0);
+}
+
+typedef struct {
+  notification_t t1_running;
+  notification_t t1_finish;
+} exit_yield_args_t;
+
+static void exit_yield_thread(void* arg) {
+  exit_yield_args_t* args = (exit_yield_args_t*)arg;
+  // Fork again (not necessary, but ensure there's a child that has to be
+  // reparented to the root process).
+  kpid_t child = proc_fork(&do_nothing, NULL);
+  KEXPECT_GE(child, 0);
+
+  // Open some file descriptors to do more work in process exit.
+  int fd[2];
+  KEXPECT_EQ(0, vfs_pipe(fd));
+  KEXPECT_EQ(25, vfs_dup2(fd[0], 25));
+
+  ntfn_notify(&args->t1_running);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args->t1_finish, 1000));
+  proc_exit(0);
+  die("unreachable");
+}
+
+static void exit_yield_test(void) {
+  KTEST_BEGIN("proc threads: thread yields during process exit");
+  // This test is pretty white-boxy, but is the easiest way to test this issue.
+  exit_yield_args_t args;
+  ntfn_init(&args.t1_running);
+  ntfn_init(&args.t1_finish);
+  kpid_t child = proc_fork(&exit_yield_thread, &args);
+  KEXPECT_GE(child, 0);
+
+  // Wait for the thread to be running.
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.t1_running, 1000));
+
+  // Now lock the root thread's mutex (as a somewhat arbitrary operation that
+  // will cause the process thread to block while it is exiting).
+  process_t* root = proc_get(0);
+  pmutex_lock(&root->mu);
+  // Let the process thread exit.
+  ntfn_notify(&args.t1_finish);
+  ksleep(20);
+  // The exiting thread should be blocked waiting for the root process lock.
+  // Unlock it, then wait for it to exit.
+  pmutex_unlock(&root->mu);
+  int status = 1;
+  KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
+  KEXPECT_EQ(0, status);
+}
+
 void proc_thread_test(void) {
   KTEST_SUITE_BEGIN("proc threads tests");
   basic_tests();
+  exit_yield_test();
 }
