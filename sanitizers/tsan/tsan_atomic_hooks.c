@@ -98,3 +98,4 @@ void __tsan_atomic32_store(volatile __tsan_atomic32* a, __tsan_atomic32 val,
 
 DEFINE_ATOMIC_RMW(__tsan_atomic32, _fetch_add)
 DEFINE_ATOMIC_RMW(__tsan_atomic32, _fetch_sub)
+DEFINE_ATOMIC_RMW(__tsan_atomic32, _fetch_or)
