@@ -18,6 +18,7 @@
 
 #include "arch/dev/interrupts.h"
 #include "common/attributes.h"
+#include "common/kassert.h"
 #include "proc/thread_annotations.h"
 
 // TODO(SMP): when SMP is enabled, spin as well as disable interrupts.
@@ -31,13 +32,16 @@ typedef struct CAPABILITY("tsan_spinlock") {
 static inline ALWAYS_INLINE
 void tsan_spinlock_lock(tsan_spinlock_t* sp)
     ACQUIRE(sp) NO_THREAD_SAFETY_ANALYSIS {
-  sp->locked = true;
   sp->interrupts = save_and_disable_interrupts_raw();
+  KASSERT_DBG(!sp->locked);
+  sp->locked = true;
 }
 
 static inline ALWAYS_INLINE
 void tsan_spinlock_unlock(tsan_spinlock_t* sp)
     RELEASE(sp) NO_THREAD_SAFETY_ANALYSIS {
+  KASSERT_DBG(sp->locked);
+  sp->locked = false;
   restore_interrupts_raw(sp->interrupts);
 }
 
