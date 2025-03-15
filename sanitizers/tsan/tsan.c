@@ -29,7 +29,7 @@
 #include "sanitizers/tsan/tsan_params.h"
 
 static bool g_tsan_mem_init = false;
-bool g_tsan_init = false;
+int g_tsan_init = 0;
 
 // As with the heap vm_area_t, statically allocate this for the root process to
 // avoid heap allocations during initialization.
@@ -155,5 +155,5 @@ void tsan_init(void) {
 
   tsan_per_cpu_init();
 
-  g_tsan_init = true;
+  __atomic_store_n(&g_tsan_init, 1, ATOMIC_RELEASE);
 }

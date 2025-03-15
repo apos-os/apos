@@ -26,8 +26,10 @@
 
 typedef unsigned long uptr;
 
-// TODO(tsan): use an atomic.
-extern bool g_tsan_init;
+extern int g_tsan_init;  // Don't read directly.
+static inline ALWAYS_INLINE bool tsan_initialized(void) {
+  return __atomic_load_n(&g_tsan_init, ATOMIC_ACQUIRE);
+}
 
 static ALWAYS_INLINE void tsan_epoch_inc(tsan_epoch_t* epoch) {
   KASSERT(*epoch < TSAN_EPOCH_MAX);

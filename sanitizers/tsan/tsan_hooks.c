@@ -117,14 +117,14 @@ void* __tsan_memset(void* dest, int ch, uptr count) {
 }
 
 void __tsan_func_entry(void* call_pc) {
-  if (g_tsan_init) {
+  if (tsan_initialized()) {
     tsan_log_func_entry(tsan_log(tsan_current_thread()),
                         (addr_t)call_pc - SIZE_OF_JUMP_INSTR);
   }
 }
 
 void __tsan_func_exit(void) {
-  if (g_tsan_init) {
+  if (tsan_initialized()) {
     tsan_log_func_exit(tsan_log(tsan_current_thread()));
   }
 }

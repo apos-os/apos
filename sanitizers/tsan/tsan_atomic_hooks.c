@@ -34,7 +34,7 @@ __tsan_atomic32 __tsan_atomic32_load(const volatile __tsan_atomic32* a,
   // clang.  I assume they had their reasons :)
 
   // Relaxed fast-path.
-  if (!tsan_is_acquire(mo) || !g_tsan_init) {
+  if (!tsan_is_acquire(mo) || !tsan_initialized()) {
     tsan_check(CALLERPC, (addr_t)a, sizeof(__tsan_atomic32),
                TSAN_ACCESS_READ | TSAN_ACCESS_IS_ATOMIC);
     return __atomic_load_n(a, mo);
@@ -60,7 +60,7 @@ void __tsan_atomic32_store(volatile __tsan_atomic32* a, __tsan_atomic32 val,
              TSAN_ACCESS_WRITE | TSAN_ACCESS_IS_ATOMIC);
 
   // Relaxed fast-path.
-  if (!tsan_is_release(mo) || !g_tsan_init) {
+  if (!tsan_is_release(mo) || !tsan_initialized()) {
     __atomic_store_n(a, val, mo);
     return;
   }
@@ -78,7 +78,7 @@ void __tsan_atomic32_store(volatile __tsan_atomic32* a, __tsan_atomic32 val,
                TSAN_ACCESS_WRITE | TSAN_ACCESS_IS_ATOMIC);          \
                                                                     \
     /* Relaxed fast-path. */                                        \
-    if (mo == ATOMIC_RELAXED || !g_tsan_init) {                     \
+    if (mo == ATOMIC_RELAXED || !tsan_initialized()) {              \
       return __atomic##_OP(a, val, mo);                             \
     }                                                               \
                                                                     \

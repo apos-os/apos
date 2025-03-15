@@ -311,7 +311,7 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
 }
 
 bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
-  if (!g_tsan_init) return false;
+  if (!tsan_initialized()) return false;
 
   kthread_t thread = tsan_current_thread();
   tsan_log_access(tsan_log(thread), pc, addr, size, type);
@@ -320,7 +320,7 @@ bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type) {
 
 bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
                           tsan_access_type_t type) {
-  if (!g_tsan_init) return false;
+  if (!tsan_initialized()) return false;
 
   kthread_t thread = tsan_current_thread();
   tsan_log_access(tsan_log(thread), pc, addr, size, type);
@@ -341,7 +341,7 @@ bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
 
 bool tsan_check_range(addr_t pc, addr_t addr, size_t len,
                       tsan_access_type_t type) {
-  if (!g_tsan_init) return false;
+  if (!tsan_initialized()) return false;
   if (len == 0) return false;  // Unusual, but happens.
 
   if (pc == 0) {

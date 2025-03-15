@@ -213,7 +213,7 @@ static void do_special_release(kthread_t thread, kthread_t special_thread) {
 }
 
 void tsan_acquire(tsan_lock_data_t* lock, tsan_lock_type_t type) {
-  if (!g_tsan_init) return;
+  if (!tsan_initialized()) return;
 
   KASSERT(type == TSAN_LOCK || type == TSAN_INTERRUPTS || type == TSAN_DEFINTS);
   kthread_t thread = tsan_current_thread();
@@ -237,7 +237,7 @@ void tsan_acquire(tsan_lock_data_t* lock, tsan_lock_type_t type) {
 }
 
 void tsan_release(tsan_lock_data_t* lock, tsan_lock_type_t type) {
-  if (!g_tsan_init) return;
+  if (!tsan_initialized()) return;
 
   KASSERT(type == TSAN_LOCK || type == TSAN_INTERRUPTS || type == TSAN_DEFINTS);
   kthread_t thread = tsan_current_thread();
