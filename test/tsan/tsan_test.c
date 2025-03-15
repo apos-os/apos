@@ -2754,7 +2754,15 @@ static void atomic_relaxed_race_test4(void) {
 typedef struct {
   atomic32_t flag;
   uint32_t val;
+  uint32_t read_unsafe;
+  uint32_t val_unsafe;
 } sync_test_args_t;
+
+static sync_test_args_t* alloc_sync_test_args(void) {
+  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  kmemset(args, 0, sizeof(sync_test_args_t));
+  return args;
+}
 
 static void* sync_test_reader(void* arg) {
   sched_enable_preemption_for_test();
@@ -2763,6 +2771,9 @@ static void* sync_test_reader(void* arg) {
   while (tsan_atomic_read(&args->flag, ATOMIC_RELAXED) == 0)
     ; // Spin
   uint32_t val = tsan_read32(&args->val);
+  if (args->read_unsafe) {
+    tsan_read32(&args->val_unsafe);
+  }
   sched_disable_preemption();
   return (void*)(uintptr_t)val;
 }
@@ -2779,7 +2790,7 @@ static void* sync_test_writer(void* arg) {
 
 static void atomic_relaxed_doesnt_sync_test(void) {
   KTEST_BEGIN("TSAN: relaxed atomic accesses don't synchronize");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -2922,6 +2933,9 @@ static void* sync_test_reader_acquire(void* arg) {
   while (tsan_atomic_read(&args->flag, ATOMIC_ACQUIRE) == 0)
     ; // Spin
   uint32_t val = tsan_read32(&args->val);
+  if (args->read_unsafe) {
+    tsan_read32(&args->val_unsafe);
+  }
   sched_disable_preemption();
   return (void*)(uintptr_t)val;
 }
@@ -2933,6 +2947,9 @@ static void* sync_test_reader_acqrel(void* arg) {
   while (tsan_atomic_read(&args->flag, ATOMIC_ACQ_REL) == 0)
     ; // Spin
   uint32_t val = tsan_read32(&args->val);
+  if (args->read_unsafe) {
+    tsan_read32(&args->val_unsafe);
+  }
   sched_disable_preemption();
   return (void*)(uintptr_t)val;
 }
@@ -2943,6 +2960,11 @@ static void* sync_test_writer_release(void* arg) {
   sync_test_args_t* args = (sync_test_args_t*)arg;
   tsan_write32(&args->val, 42);
   tsan_atomic_write(&args->flag, 1, ATOMIC_RELEASE);
+  if (args->read_unsafe) {
+    scheduler_yield();
+    tsan_write32(&args->val_unsafe, 43);
+    tsan_atomic_write(&args->flag, 1, ATOMIC_RELEASE);
+  }
   sched_disable_preemption();
   return NULL;
 }
@@ -2953,13 +2975,18 @@ static void* sync_test_writer_acqrel(void* arg) {
   sync_test_args_t* args = (sync_test_args_t*)arg;
   tsan_write32(&args->val, 42);
   tsan_atomic_write(&args->flag, 1, ATOMIC_ACQ_REL);
+  if (args->read_unsafe) {
+    scheduler_yield();
+    tsan_write32(&args->val_unsafe, 43);
+    tsan_atomic_write(&args->flag, 1, ATOMIC_RELEASE);
+  }
   sched_disable_preemption();
   return NULL;
 }
 
 static void atomic_acqrel_syncs_test(void) {
   KTEST_BEGIN("TSAN: acq/rel atomic accesses synchronizes (ACQUIRE+RELEASE)");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -2973,9 +3000,39 @@ static void atomic_acqrel_syncs_test(void) {
   tsan_test_cleanup();
 }
 
+// Note: this test is kind of brittle.  It is trying to test for a race where
+// the load/store and acquire/release aren't done atomically, and (for example)
+// the load "over-acquires" (get value from store X, but get the clock
+// synchronized for a later store Y).
+//
+// If this test becomes flaky when SMP is is enabled, may be best to delete it
+// (or make it a loop test that tries to trigger the race in many iterations,
+// and verifies each time we get either (X, clock[X]) or (Y, clock[Y]) but not
+// (X, clock[Y]).
+static void atomic_acqrel_syncs_precise_test(void) {
+  KTEST_BEGIN("TSAN: acq/rel atomic accesses don't synchronize outside critical section (ACQUIRE+RELEASE)");
+  sync_test_args_t* args = alloc_sync_test_args();
+  atomic_store_relaxed(&args->flag, 0);
+  args->val = 100;
+  args->read_unsafe = true;
+  kthread_t threads[2];
+
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &sync_test_reader_acquire, args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &sync_test_writer_release, args));
+
+  KEXPECT_TRUE(wait_for_race());
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  EXPECT_REPORT(&args->val_unsafe, 4, "r", &args->val_unsafe, 4, "w");
+  intercept_reports_done();
+  tsan_test_cleanup();
+}
+
 static void atomic_acqrel_syncs_test2(void) {
   KTEST_BEGIN("TSAN: acq/rel atomic accesses synchronizes (ACQ_REL reader)");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -2994,7 +3051,7 @@ static void atomic_acqrel_syncs_test2(void) {
 // created sync object" and "already existing sync object" paths.
 static void atomic_acqrel_syncs_test2b(void) {
   KTEST_BEGIN("TSAN: acq/rel atomic accesses synchronizes (ACQ_REL reader, existing sync object)");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -3011,7 +3068,7 @@ static void atomic_acqrel_syncs_test2b(void) {
 
 static void atomic_acqrel_syncs_test3(void) {
   KTEST_BEGIN("TSAN: acq/rel atomic accesses synchronizes (ACQ_REL writer)");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -3030,7 +3087,7 @@ static void atomic_acqrel_syncs_test3(void) {
 // verify we do _another_ release after that (if the object already exists).
 static void atomic_acqrel_syncs_test3b(void) {
   KTEST_BEGIN("TSAN: acq/rel atomic accesses synchronizes (ACQ_REL writer, existing sync object)");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -3047,7 +3104,7 @@ static void atomic_acqrel_syncs_test3b(void) {
 
 static void atomic_acqrel_syncs_relaxed_test(void) {
   KTEST_BEGIN("TSAN: acq/rel atomic accesses don't synchronize with relaxed");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -3068,7 +3125,7 @@ static void atomic_acqrel_syncs_relaxed_test(void) {
 
 static void atomic_acqrel_syncs_relaxed_test2(void) {
   KTEST_BEGIN("TSAN: acq/rel atomic accesses don't synchronize with relaxed #2");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -3095,6 +3152,7 @@ static void atomic_acq_rel_tests(void) {
   atomic_acqrel_race_test3();
   atomic_acqrel_race_test4();
   atomic_acqrel_syncs_test();
+  atomic_acqrel_syncs_precise_test();
   atomic_acqrel_syncs_test2();
   atomic_acqrel_syncs_test2b();
   atomic_acqrel_syncs_test3();
@@ -3180,6 +3238,9 @@ static void* sync_test_reader_seqcst(void* arg) {
   while (tsan_atomic_read(&args->flag, ATOMIC_SEQ_CST) == 0)
     ; // Spin
   uint32_t val = tsan_read32(&args->val);
+  if (args->read_unsafe) {
+    tsan_read32(&args->val_unsafe);
+  }
   sched_disable_preemption();
   return (void*)(uintptr_t)val;
 }
@@ -3190,13 +3251,18 @@ static void* sync_test_writer_seqcst(void* arg) {
   sync_test_args_t* args = (sync_test_args_t*)arg;
   tsan_write32(&args->val, 42);
   tsan_atomic_write(&args->flag, 1, ATOMIC_SEQ_CST);
+  if (args->read_unsafe) {
+    scheduler_yield();
+    tsan_write32(&args->val_unsafe, 43);
+    tsan_atomic_write(&args->flag, 1, ATOMIC_RELEASE);
+  }
   sched_disable_preemption();
   return NULL;
 }
 
 static void atomic_seqcst_syncs_test(void) {
   KTEST_BEGIN("TSAN: seq cst atomic accesses synchronizes (seq cst)");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -3212,7 +3278,7 @@ static void atomic_seqcst_syncs_test(void) {
 
 static void atomic_seqcst_syncs_test2(void) {
   KTEST_BEGIN("TSAN: seq cst atomic accesses synchronizes (ACQUIRE reader)");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -3231,7 +3297,7 @@ static void atomic_seqcst_syncs_test2(void) {
 // created sync object" and "already existing sync object" paths.
 static void atomic_seqcst_syncs_test2b(void) {
   KTEST_BEGIN("TSAN: seq cst atomic accesses synchronizes (ACQUIRE reader, existing sync object)");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -3248,7 +3314,7 @@ static void atomic_seqcst_syncs_test2b(void) {
 
 static void atomic_seqcst_syncs_test3(void) {
   KTEST_BEGIN("TSAN: seq cst atomic accesses synchronizes (RELEASE writer)");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -3267,7 +3333,7 @@ static void atomic_seqcst_syncs_test3(void) {
 // verify we do _another_ release after that (if the object already exists).
 static void atomic_seqcst_syncs_test3b(void) {
   KTEST_BEGIN("TSAN: seq cst atomic accesses synchronizes (RELEASE writer, existing sync object)");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -3284,7 +3350,7 @@ static void atomic_seqcst_syncs_test3b(void) {
 
 static void atomic_seqcst_syncs_relaxed_test(void) {
   KTEST_BEGIN("TSAN: seq cst atomic accesses don't synchronize with relaxed");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
@@ -3305,7 +3371,7 @@ static void atomic_seqcst_syncs_relaxed_test(void) {
 
 static void atomic_seqcst_syncs_relaxed_test2(void) {
   KTEST_BEGIN("TSAN: seq cst atomic accesses don't synchronize with relaxed #2");
-  sync_test_args_t* args = TS_MALLOC(sync_test_args_t);
+  sync_test_args_t* args = alloc_sync_test_args();
   atomic_store_relaxed(&args->flag, 0);
   args->val = 100;
   kthread_t threads[2];
