@@ -306,11 +306,15 @@ void kthread_reset_interrupt_level(void) {
 }
 
 void kthread_disable(kthread_t thread) {
+  PUSH_AND_DISABLE_INTERRUPTS();
   thread->runnable = false;
+  POP_INTERRUPTS();
 }
 
 void kthread_enable(kthread_t thread) {
+  PUSH_AND_DISABLE_INTERRUPTS();
   thread->runnable = true;
+  POP_INTERRUPTS();
 }
 
 void kthread_switch(kthread_t new_thread) {
