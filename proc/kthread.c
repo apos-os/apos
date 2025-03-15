@@ -317,7 +317,11 @@ void kthread_enable(kthread_t thread) {
   POP_INTERRUPTS();
 }
 
-void kthread_switch(kthread_t new_thread) {
+// NO_TSAN: this manipulates the current thread execution state, which confuses
+// TSAN for accesses that happen inside the function.
+// TODO(aoates): figure out a way to have TSAN enabled for this function, or
+// most of it.
+NO_TSAN void kthread_switch(kthread_t new_thread) {
   PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(g_current_thread->state != KTHREAD_RUNNING);
   kthread_id_t my_id = g_current_thread->id;

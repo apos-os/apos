@@ -82,7 +82,11 @@ defint_state_t defint_set_state(defint_state_t s) {
   return old;
 }
 
-void defint_process_queued(bool force) {
+// NO_TSAN: this manipulates the current thread execution state, which confuses
+// TSAN for accesses that happen inside the function.
+// TODO(aoates): figure out a way to have TSAN enabled for this function, or
+// most of it.
+NO_TSAN void defint_process_queued(bool force) {
   if (!interrupts_enabled() && !force) {
     return;
   }

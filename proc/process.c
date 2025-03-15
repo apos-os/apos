@@ -271,7 +271,11 @@ void proc_put(process_t* proc) {
   }
 }
 
-void proc_set_current(process_t* process) NO_THREAD_SAFETY_ANALYSIS {
+// NO_TSAN: because it's called from kthread_switch after we've change
+// g_current_thread but before we actually do the thread switch.
+// TODO(aoates): figure out a way to have TSAN enabled for this function, or
+// most of it.
+NO_TSAN void proc_set_current(process_t* process) NO_THREAD_SAFETY_ANALYSIS {
   KASSERT_MSG(process->id >= 0 && process->id < PROC_MAX_PROCS,
               "bad process ID: %d", process->id);
   // No need to lock the table lock, there is no data race so long as the
