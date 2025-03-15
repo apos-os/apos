@@ -3474,11 +3474,103 @@ static void atomic_flag_tests(void) {
   atomic_flag_test2();
 }
 
+static void* sync_test_rmw_read_acquire(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  sync_test_args_t* args = (sync_test_args_t*)arg;
+  while (tsan_atomic_rmw(&args->flag, 2, ATOMIC_ACQUIRE) % 2 == 0)
+    ;  // Spin
+  uint32_t val = tsan_read32(&args->val);
+  sched_disable_preemption();
+  return (void*)(uintptr_t)val;
+}
+
+static void* sync_test_rmw_read_release(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  sync_test_args_t* args = (sync_test_args_t*)arg;
+  while (tsan_atomic_rmw(&args->flag, 2, ATOMIC_RELEASE) % 2 == 0)
+    ;  // Spin
+  uint32_t val = tsan_read32(&args->val);
+  sched_disable_preemption();
+  return (void*)(uintptr_t)val;
+}
+
+static void* sync_test_rmw_write_acquire(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  sync_test_args_t* args = (sync_test_args_t*)arg;
+  while (tsan_atomic_read(&args->flag, ATOMIC_ACQUIRE) < 10)
+    ;  // Spin
+  tsan_write32(&args->val, 42);
+  tsan_atomic_rmw(&args->flag, 1, ATOMIC_ACQUIRE);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* sync_test_rmw_write_release(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  sync_test_args_t* args = (sync_test_args_t*)arg;
+  while (tsan_atomic_read(&args->flag, ATOMIC_ACQUIRE) < 10)
+    ;  // Spin
+  tsan_write32(&args->val, 42);
+  tsan_atomic_rmw(&args->flag, 1, ATOMIC_RELEASE);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void atomic_rmw_race_test1(void) {
+  KTEST_BEGIN("TSAN: atomic RMW(ATOMIC_RELEASE) doesn't acquire");
+  sync_test_args_t* args = alloc_sync_test_args();
+  atomic_store_relaxed(&args->flag, 0);
+  args->val = 100;
+  kthread_t threads[2];
+
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &sync_test_rmw_read_release, args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &sync_test_rmw_write_release, args));
+
+  KEXPECT_TRUE(wait_for_race());
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  EXPECT_REPORT(&args->val, 4, "r", &args->val, 4, "w");
+  intercept_reports_done();
+  tsan_test_cleanup();
+}
+
+static void atomic_rmw_race_test2(void) {
+  KTEST_BEGIN("TSAN: atomic RMW(ATOMIC_ACQUIRE) doesn't release");
+  sync_test_args_t* args = alloc_sync_test_args();
+  atomic_store_relaxed(&args->flag, 0);
+  args->val = 100;
+  kthread_t threads[2];
+
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &sync_test_rmw_read_acquire, args));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], &sync_test_rmw_write_acquire, args));
+
+  KEXPECT_TRUE(wait_for_race());
+  for (int i = 0; i < 2; ++i) {
+    kthread_join(threads[i]);
+  }
+  EXPECT_REPORT(&args->val, 4, "r", &args->val, 4, "w");
+  intercept_reports_done();
+  tsan_test_cleanup();
+}
+
+static void atomic_weak_rmw_tests(void) {
+  atomic_rmw_race_test1();
+  atomic_rmw_race_test2();
+}
+
 static void atomic_tests(void) {
   atomic_relaxed_tests();
   atomic_acq_rel_tests();
   atomic_seq_cst_tests();
   atomic_flag_tests();
+  atomic_weak_rmw_tests();
 }
 
 void tsan_test(void) {

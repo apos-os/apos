@@ -161,6 +161,12 @@ uint32_t tsan_atomic_rmw(atomic32_t* x, uint32_t val, int memorder) {
     case ATOMIC_RELAXED:
       return atomic_add_relaxed(x, val);
 
+    case ATOMIC_ACQUIRE:
+      return __atomic_add_fetch(&x->_val, val, ATOMIC_ACQUIRE);
+
+    case ATOMIC_RELEASE:
+      return __atomic_add_fetch(&x->_val, val, ATOMIC_RELEASE);
+
     case ATOMIC_ACQ_REL:
       return atomic_add_acq_rel(x, val);
   }

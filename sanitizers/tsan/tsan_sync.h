@@ -20,6 +20,7 @@
 
 #include "common/types.h"
 #include "sanitizers/tsan/tsan_lock.h"
+#include "sanitizers/tsan/tsan_spinlock.h"
 #include "sanitizers/tsan/vector_clock.h"
 
 // Dynamic synchronization object.  Used for synchronizing atomics, which are
@@ -32,6 +33,7 @@ typedef struct tsan_sync {
   addr_t addr;
   tsan_lock_data_t lock;
   struct tsan_sync* next;
+  tsan_spinlock_t spin;
 } tsan_sync_t;
 
 // Returns the sync object associated with the given address.  If one does not

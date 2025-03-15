@@ -25,6 +25,7 @@
 #include "sanitizers/tsan/shadow_cell.h"
 #include "sanitizers/tsan/tsan_layout.h"
 #include "sanitizers/tsan/tsan_lock.h"
+#include "sanitizers/tsan/tsan_spinlock.h"
 
 // We only support 32-bit atomic accesses currently for efficiency.
 #define TSAN_SYNC_OBJ_SIZE 4
@@ -105,6 +106,7 @@ tsan_sync_t* tsan_sync_get(addr_t addr, size_t access_size, bool create) {
   } else if (!entry) {
     entry = alloc_sync();
     entry->addr = addr;
+    entry->spin = TSAN_SPINLOCK_INIT;
     tsan_lock_init(&entry->lock);
     entry->next = bucket->entries;
     bucket->entries = entry;

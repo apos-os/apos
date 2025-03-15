@@ -17,6 +17,7 @@ Import('env AposAddSources')
 srcs = [
   'tsan.c',
   'tsan_access.c',
+  'tsan_atomic_hooks.c',
   'tsan_event.c',
   'tsan_hooks.c',
   'tsan_sync.c',

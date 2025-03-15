@@ -46,10 +46,6 @@ static inline bool tsan_is_atomic(tsan_access_type_t t) {
 // Call to check an access from a hook.
 bool tsan_check(addr_t pc, addr_t addr, uint8_t size, tsan_access_type_t type);
 
-// Check an atomic access.
-bool tsan_check_atomic(addr_t pc, addr_t addr, uint8_t size,
-                       tsan_access_type_t type, int memorder);
-
 // As above, but allowed to be an unaligned load that hits two shadow cells.
 bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
                           tsan_access_type_t type);
