@@ -329,10 +329,12 @@ void kfree(void* x) {
     }
   }
   if (bad) {
+#if ENABLE_KMALLOC_HEAP_PROFILE
     addr_t trace[TRACETBL_MAX_TRACE_LEN];
     int len = tracetbl_get(b->stack_trace, trace);
     KLOG(ERROR, "Block allocated at:\n");
     print_stack_trace(trace, len);
+#endif
     die("Heap corruption");
   }
   if (ENABLE_KERNEL_SAFETY_NETS) {
