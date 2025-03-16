@@ -6602,7 +6602,7 @@ static void* multithread_vnode_get_put_race_test_func(void* arg) {
     KEXPECT_EQ(VNODE_REGULAR, node->type);
 
     // Try and set up the race.
-    if (node->refcount > 1) scheduler_yield();
+    if (atomic_load_relaxed(&node->refcount) > 1) scheduler_yield();
 
     kmutex_lock(&node->mutex);
     node->uid++;

@@ -29,7 +29,7 @@ static void vfs_log_cache_iter(void* arg, htbl_key_t key, void* val) {
   KASSERT(key == vnode_hash_n(vnode));
   KLOG(INFO, "  %p { fs: %d inode: %d  type: %s  len: %d  refcount: %d }\n",
        vnode, vnode->fs->id, vnode->num, VNODE_TYPE_NAME[vnode->type],
-       vnode->len, vnode->refcount);
+       vnode->len, atomic_load_relaxed(&vnode->refcount));
 }
 
 void vfs_log_cache(void) {
@@ -84,7 +84,7 @@ int vfs_get_vnode_refcount_for_path(const char* path) {
   const int result = vfs_get_vnode(path, &vnode);
   if (result) return result;
 
-  const int refcount = vnode->refcount - 1;
+  const int refcount = atomic_load_relaxed(&vnode->refcount) - 1;
   VFS_PUT_AND_CLEAR(vnode);
   return refcount;
 }

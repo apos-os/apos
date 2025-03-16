@@ -41,7 +41,7 @@ static void vfs_print_vnode_cache_iter(void* arg, htbl_key_t key, void* val) {
   const int printlen = ksprintf(
       buf, "  %p { fs: %d inode: %d  type: %s  len: %d  refcount: %d }\n",
       vnode, vnode->fs->id, vnode->num, VNODE_TYPE_NAME[vnode->type],
-      vnode->len, vnode->refcount);
+      vnode->len, atomic_load_relaxed(&vnode->refcount));
 
 
   state_t* state = (state_t*)arg;

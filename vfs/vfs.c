@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "common/alignment.h"
+#include "common/atomic.h"
 #include "common/config.h"
 #include "common/errno.h"
 #include "common/kassert.h"
@@ -65,7 +66,7 @@ void vfs_vnode_init(vnode_t* n, fs_t* fs, int num) {
   n->mounted_fs = VFS_FSID_NONE;
   n->parent_mount_point = 0x0;
   n->gid = -1;
-  n->refcount = 0;
+  n->refcount = (atomic32_t)ATOMIC32_INIT(1);
   kmutex_init(&n->mutex);
   kmutex_init(&n->state_mu);
   memobj_init_vnode(n);
@@ -121,7 +122,7 @@ static int is_valid_create_mode(kmode_t mode) {
 
 static void init_fifo_vnode(vnode_t* vnode) {
   KASSERT_DBG(vnode->type == VNODE_FIFO);
-  KASSERT_DBG(vnode->refcount >= 1);
+  KASSERT_DBG(atomic_load_relaxed(&vnode->refcount) >= 1);
 
   vnode->fifo = (apos_fifo_t*)kmalloc(sizeof(apos_fifo_t));
   fifo_init(vnode->fifo);
@@ -129,7 +130,7 @@ static void init_fifo_vnode(vnode_t* vnode) {
 
 static void cleanup_fifo_vnode(vnode_t* vnode) {
   KASSERT_DBG(vnode->type == VNODE_FIFO);
-  KASSERT_DBG(vnode->refcount == 0);
+  KASSERT_DBG(atomic_load_relaxed(&vnode->refcount) == 0);
 
   fifo_cleanup(vnode->fifo);
   kfree(vnode->fifo);
@@ -138,7 +139,7 @@ static void cleanup_fifo_vnode(vnode_t* vnode) {
 
 static void cleanup_socket_vnode(vnode_t* vnode) {
   KASSERT_DBG(vnode->type == VNODE_SOCKET);
-  KASSERT_DBG(vnode->refcount == 0);
+  KASSERT_DBG(atomic_load_relaxed(&vnode->refcount) == 0);
 
   if (vnode->socket) {
     net_socket_destroy(vnode->socket);
@@ -235,10 +236,10 @@ static vnode_t* vfs_get_uninitialized(fs_t* fs, int vnode_num) {
                        (void**)(&vnode));
   if (!error) {
     KASSERT(vnode->num == vnode_num);
-    KASSERT(vnode->refcount > 0);
+    KASSERT(atomic_load_relaxed(&vnode->refcount) > 0);
 
     // Increment the refcount, then return the (possibly uninitialized!) vnode.
-    vnode->refcount++;
+    atomic_add_relaxed(&vnode->refcount, 1);
     kspin_unlock(&g_vnode_cache_lock);
 
     return vnode;
@@ -246,7 +247,6 @@ static vnode_t* vfs_get_uninitialized(fs_t* fs, int vnode_num) {
     // We need to create the vnode.
     vnode = fs->alloc_vnode(fs);
     vfs_vnode_init(vnode, fs, vnode_num);
-    vnode->refcount = 1;
     vnode->state = VNODE_ST_BOUND;
     fs->open_vnodes++;
     list_push(&fs->open_vnodes_list, &vnode->fs_link);
@@ -271,7 +271,7 @@ static vnode_t* vfs_get_uninitialized(fs_t* fs, int vnode_num) {
 //  3) error --- returns the error, vnode is pointer is cleared.
 static int vfs_vnode_finish_init(vnode_t** n_ptr) {
   vnode_t* vnode = *n_ptr;
-  KASSERT_DBG(vnode->refcount >= 1);
+  KASSERT_DBG(atomic_load_relaxed(&vnode->refcount) >= 1);
 
   kmutex_lock(&vnode->state_mu);
   if (vnode->state == VNODE_ST_VALID) {
@@ -358,10 +358,7 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
 }
 
 void vfs_ref(vnode_t* n) {
-  // TODO(aoates): use atomic for refcount.
-  kspin_lock(&g_vnode_cache_lock);
-  n->refcount++;
-  kspin_unlock(&g_vnode_cache_lock);
+  atomic_add_relaxed(&n->refcount, 1);
 }
 
 void vfs_put(vnode_t* vnode) {
@@ -371,15 +368,17 @@ void vfs_put(vnode_t* vnode) {
 
   kspin_lock(&g_vnode_cache_lock);
   KASSERT_DBG(vnode->memobj.refcount >= 1);
-  if (vnode->refcount > 1) {
+  if (atomic_load_relaxed(&vnode->refcount) > 1) {
     // We're definitely not the last.  Nothing else matters --- this vnode is
     // someone else's problem.
-    vnode->refcount--;
+    atomic_sub_relaxed(&vnode->refcount, 1);
     kspin_unlock(&g_vnode_cache_lock);
     kmutex_unlock(&vnode->state_mu);
     // vnode may now be invalid.
     return;
   }
+  // We hold g_vnode_cache_lock and a reference, so the refcount cannot go from
+  // 1 to 2 until we unlock.
 
   // We are currently holding the last reference, so we're responsible for
   // transitioning the vnode to the next state if needed.
@@ -408,14 +407,14 @@ void vfs_put(vnode_t* vnode) {
 
     // Note that other threads may have gotten this vnode from the table while
     // we were blocked in fs->put_vnode().
-    KASSERT_DBG(vnode->refcount >= 1);
+    KASSERT_DBG(atomic_load_relaxed(&vnode->refcount) >= 1);
     KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
     // At this point it's guaranteed that no one new can get to the vnode.
 
-    if (vnode->refcount > 1) {
+    if (atomic_load_relaxed(&vnode->refcount) > 1) {
       // Someone else came along while we were put()ing and tried to get the
       // node.  Let them clean it up.
-      vnode->refcount--;
+      atomic_sub_relaxed(&vnode->refcount, 1);
       kspin_unlock(&g_vnode_cache_lock);
       kmutex_unlock(&vnode->state_mu);
       // vnode may now be invalid.
@@ -430,7 +429,7 @@ void vfs_put(vnode_t* vnode) {
   // Note: if we ever expose the get/init split externally, will need to handle
   // BOUND here as well (and remove from vnode table).
   KASSERT(vnode->state == VNODE_ST_LAMED);
-  KASSERT(vnode->refcount == 1);
+  KASSERT(atomic_load_relaxed(&vnode->refcount) == 1);
 
   vnode->fs->open_vnodes--;
   KASSERT_DBG(list_link_on_list(&vnode->fs->open_vnodes_list, &vnode->fs_link));
@@ -438,7 +437,7 @@ void vfs_put(vnode_t* vnode) {
   KASSERT_DBG(vnode->fs->open_vnodes >= 0);
   kspin_unlock(&g_vnode_cache_lock);
   kmutex_unlock(&vnode->state_mu);
-  vnode->refcount--;
+  atomic_sub_relaxed(&vnode->refcount, 1);
   if (vnode->type == VNODE_FIFO) cleanup_fifo_vnode(vnode);
   if (vnode->type == VNODE_SOCKET) cleanup_socket_vnode(vnode);
 

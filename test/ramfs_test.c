@@ -30,7 +30,7 @@ static vnode_t* g_root = 0;
 static vnode_t* get_vnode(int inode) {
   vnode_t* n = g_fs->alloc_vnode(g_fs);
   n->num = inode;
-  n->refcount = 1;
+  n->refcount = (atomic32_t)ATOMIC32_INIT(1);
   kstrcpy(n->fstype, "ramfs");
   n->fs = g_fs;
 

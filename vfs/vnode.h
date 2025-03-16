@@ -16,9 +16,10 @@
 #ifndef APOO_VFS_VNODE_H
 #define APOO_VFS_VNODE_H
 
+#include "common/atomic.h"
 #include "memory/memobj.h"
 #include "net/socket/socket.h"
-#include "proc/kthread.h"
+#include "proc/kmutex.h"
 #include "user/include/apos/dev.h"
 #include "user/include/apos/posix_types.h"
 #include "user/include/apos/vfs/stat.h"
@@ -110,7 +111,9 @@ struct vnode {
   // mount point on the parent fs.
   struct vnode* parent_mount_point;
 
-  int refcount;
+  // TODO(aoates): consider replacing this with a refcount_t (which would
+  // require reworking the inner VFS logic).
+  atomic32_t refcount;
 
   char fstype[10];
   fs_t* fs;  // const after creation

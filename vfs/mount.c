@@ -125,14 +125,13 @@ static void try_free_all_open(mounted_fs_t* fs) {
       return;
     }
 
-    kspin_lock(&g_vnode_cache_lock);
-    if (node != fs->mounted_root && node->refcount > 1) {
+    if (node != fs->mounted_root && atomic_load_relaxed(&node->refcount) > 1) {
       // Someone still holds a ref.  Give up on the whole thing.
-      kspin_unlock(&g_vnode_cache_lock);
       vfs_put(node);
       return;
     }
 
+    kspin_lock(&g_vnode_cache_lock);
     link = node->fs_link.next;
     if (link) {
       vnode_t* next_node = container_of(link, vnode_t, fs_link);
@@ -203,7 +202,8 @@ static int vfs_unmount_fs_locked(const char* path, fs_t** fs_out) {
   // open_vnodes won't be 1 OR mounted_root->refcount > 1), or it must have the
   // mount point locked (so we can't be here).
   if (g_fs_table[mount_point->mounted_fs].fs->open_vnodes > 1 ||
-      g_fs_table[mount_point->mounted_fs].mounted_root->refcount > 1) {
+      atomic_load_relaxed(
+          &g_fs_table[mount_point->mounted_fs].mounted_root->refcount) > 1) {
     kspin_unlock(&g_vnode_cache_lock);
     kmutex_unlock(&mount_point->mutex);
     VFS_PUT_AND_CLEAR(mount_point);
