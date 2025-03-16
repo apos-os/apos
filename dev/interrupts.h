@@ -48,9 +48,8 @@ static inline void _interrupts_cleanup_verify(interrupt_state_t* saved) {
       __attribute__((cleanup(_interrupts_cleanup_verify))) = \
       save_and_disable_interrupts(false)
 
-#define PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN() \
-    interrupt_state_t _SAVED_INTERRUPTS_NO_TSAN \
-      __attribute__((cleanup(_interrupts_cleanup_verify))) = \
+#define PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN()   \
+  interrupt_state_t _SAVED_INTERRUPTS_NO_TSAN = \
       save_and_disable_interrupts_raw()
 
 #else  // ENABLE_KERNEL_SAFETY_NETS
