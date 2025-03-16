@@ -27,7 +27,12 @@ static list_t g_defint_timers GUARDED_BY(g_defint_timer_lock) =
 // Always set to the deadline of the first entry on the timer list.
 static atomic32_t g_defint_timer_next = ATOMIC32_INIT(UINT32_MAX);
 
+// Whether we have a timer defint pending or not.  Needed in case the timer
+// defints run _very_ slowly (which can happen under TSAN).
+static atomic32_t g_defint_timer_pending = ATOMIC32_INIT(0);
+
 static void defint_timer_defint(void* arg) {
+  atomic_store_relaxed(&g_defint_timer_pending, 0);
   apos_ms_t now = get_time_ms();
   list_t run = LIST_INIT;
   kspin_lock(&g_defint_timer_lock);
@@ -57,7 +62,9 @@ static void defint_timer_defint(void* arg) {
 void defint_timer_run(apos_ms_t now) {
   // Relaxed is OK --- we won't actually read any dependent data without the
   // lock held.
-  if (atomic_load_relaxed(&g_defint_timer_next) <= now) {
+  if (atomic_load_relaxed(&g_defint_timer_next) <= now &&
+      !atomic_load_relaxed(&g_defint_timer_pending)) {
+    atomic_store_relaxed(&g_defint_timer_pending, 1);
     defint_schedule(&defint_timer_defint, NULL);
   }
 }
