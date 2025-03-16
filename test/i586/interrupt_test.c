@@ -135,7 +135,7 @@ static uint32_t get_interrupt_state(void) {
   return saved_flags & IF_FLAG;
 }
 
-void interrupt_save_test(void) {
+void interrupt_save_test(void) NO_THREAD_SAFETY_ANALYSIS {
   KTEST_SUITE_BEGIN("interrupt save/restore");
   int orig_state = get_interrupt_state();
 

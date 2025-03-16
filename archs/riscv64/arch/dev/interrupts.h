@@ -23,8 +23,8 @@
 // they should be run directly.
 void enable_interrupts_raw(void);
 void disable_interrupts_raw(void);
-interrupt_state_t save_and_disable_interrupts_raw(void);
-void restore_interrupts_raw(interrupt_state_t saved);
+interrupt_state_t save_and_disable_interrupts_raw(void) ACQUIRE(INTERRUPT);
+void restore_interrupts_raw(interrupt_state_t saved) RELEASE(INTERRUPT);
 
 #if !ENABLE_TSAN
 

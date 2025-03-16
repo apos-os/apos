@@ -18,7 +18,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "common/attributes.h"
+#include "proc/thread_annotations.h"
+
 typedef int interrupt_state_t;
+
+// Analysis-only lock that marks data as requiring interrupts to be disabled.
+extern analysis_lock_t INTERRUPT;
 
 void interrupts_init(void);
 
@@ -29,13 +35,22 @@ void disable_interrupts(void);
 // If |full_sync| is true, this should be considered a full synchronization
 // event between all threads, not just the current thread and interrupt
 // handlers.
-interrupt_state_t save_and_disable_interrupts(bool full_sync);
+interrupt_state_t save_and_disable_interrupts(bool full_sync)
+    ACQUIRE(INTERRUPT);
 
 // Restore interrupt state (given the return value of
 // save_and_disable_interrupts).
-void restore_interrupts(interrupt_state_t saved, bool full_sync);
+void restore_interrupts(interrupt_state_t saved, bool full_sync)
+    RELEASE(INTERRUPT);
 
 // Return the current IF flag state (as per save_and_disable_interrupts).
 interrupt_state_t get_interrupts_state(void);
+
+// Helpers to acquire and release INTERRUPT (for use in arch implementations of
+// the above).
+static inline ALWAYS_INLINE void _interrupt_noop_acquire(void)
+    ACQUIRE(INTERRUPT) NO_THREAD_SAFETY_ANALYSIS {}
+static inline ALWAYS_INLINE void _interrupt_noop_release(void)
+    RELEASE(INTERRUPT) NO_THREAD_SAFETY_ANALYSIS {}
 
 #endif

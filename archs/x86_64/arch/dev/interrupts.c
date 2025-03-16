@@ -319,6 +319,7 @@ interrupt_state_t save_and_disable_interrupts(bool full_sync) {
       "pop %0\n\t"
       "cli\n\t"
       : "=r"(saved_flags));
+  _interrupt_noop_acquire();
   return (saved_flags & IF_FLAG) != 0;
 }
 
@@ -326,4 +327,5 @@ void restore_interrupts(interrupt_state_t saved, bool full_sync) {
   if (saved) {
     asm volatile ("sti");
   }
+  _interrupt_noop_release();
 }

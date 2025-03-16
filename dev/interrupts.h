@@ -21,6 +21,7 @@
 
 #include "arch/dev/interrupts.h"
 #include "common/debug.h"
+#include "proc/thread_annotations.h"
 
 #if ENABLE_KERNEL_SAFETY_NETS
 // If safety nets are enabled, verify that interrupts are popped properly after
