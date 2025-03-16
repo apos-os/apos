@@ -178,6 +178,7 @@ static void uhci_cmd_ls(int argc, char* argv[]) {
     int idx = katoi(argv[2]);
     if (idx >= usb_num_buses()) {
       ksh_printf("error: invalid controller %d\n", idx);
+      POP_INTERRUPTS();
       return;
     }
     usb_uhci_t* hc = (usb_uhci_t*)usb_get_bus(idx)->hcd->dev_data;
