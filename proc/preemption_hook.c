@@ -14,12 +14,12 @@
 #include "proc/preemption_hook.h"
 
 #include "arch/dev/interrupts.h"
+#include "common/atomic.h"
 #include "common/hash.h"
 #include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
-#include "proc/spinlock.h"
 
 _Static_assert(PREEMPTION_INDUCE_LEVEL_LIST >= 0 &&
                    PREEMPTION_INDUCE_LEVEL_LIST <= 10,
@@ -34,18 +34,19 @@ _Static_assert(PREEMPTION_INDUCE_LEVEL_CIRCBUF >= 0 &&
                "PREEMPTION_INDUCE_LEVEL_CIRCBUF out of range");
 
 void sched_preempt_me(int level) {
-  static kspinlock_t rng_lock = KSPINLOCK_NORMAL_INIT_STATIC;
-  static uint32_t rng GUARDED_BY(rng_lock) = 12345;
+  // TODO(SMP): replace this with a per-cpu variable.
+  static atomic32_t rng = ATOMIC32_INIT(12345);
 
   // If interrupts are enabled, then we know we're not currently processing an
   // interrupt.
   if (kthread_current_thread() && interrupts_enabled() &&
       sched_preemption_enabled()) {
-    kspin_lock(&rng_lock);
-    rng = fnv_hash(rng);
-    if (rng == 0) rng = get_time_ms();
-    bool tick = (rng % 15) < (uint32_t)level;
-    kspin_unlock(&rng_lock);
+    // Racy RMW is OK.  Worst case scenario we repeat some RNG values.
+    // TODO(SMP): replace with relaxed CAS.
+    uint32_t rng_val = fnv_hash(atomic_load_relaxed(&rng));
+    if (rng_val == 0) rng_val = get_time_ms();
+    atomic_store_relaxed(&rng, rng_val);
+    bool tick = (rng_val % 15) < (uint32_t)level;
 
     if (tick) {
 #if ARCH == ARCH_riscv64
