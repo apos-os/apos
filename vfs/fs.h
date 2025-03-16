@@ -17,6 +17,7 @@
 #define APOO_VFS_FS_H
 
 #include "vfs/fsid.h"
+#include "vfs/vfs_locks.h"
 #include "vfs/vnode.h"
 
 // Concrete filesystem interface.  One of these is instantiated by the concrete
@@ -30,8 +31,8 @@ struct fs {
   char fstype[10];
   apos_dev_t dev;  // The underlying device.
   fsid_t id;
-  int open_vnodes;  // The number of open vnodes.  Protected by vnode cache lock
-  list_t open_vnodes_list;  // Also protected by vnode cache lock.
+  int open_vnodes GUARDED_BY(g_vnode_cache_lock);  // The number of open vnodes.
+  list_t open_vnodes_list GUARDED_BY(g_vnode_cache_lock);
   kmutex_t rename_lock;
 
   // TODO(aoates): how does allocating the root inode/vnode work?

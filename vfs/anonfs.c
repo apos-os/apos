@@ -18,6 +18,7 @@
 #include "dev/dev.h"
 #include "memory/kmalloc.h"
 #include "proc/kthread.h"
+#include "proc/spinlock.h"
 #include "proc/user.h"
 #include "vfs/anonfs.h"
 #include "vfs/fs.h"
@@ -61,6 +62,7 @@ fs_t* anonfs_create(vnode_type_t type) {
 
   kstrcpy(fs->fs.fstype, "anonfs");
   fs->fs.dev = kmakedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
+  kspin_constructor(&g_vnode_cache_lock);
   fs->fs.open_vnodes = 0;
   fs->type = type;
   kmutex_init(&fs->mu);

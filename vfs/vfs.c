@@ -74,6 +74,7 @@ void vfs_vnode_init(vnode_t* n, fs_t* fs, int num) {
 void vfs_fs_init(fs_t* fs) {
   kmemset(fs, 0, sizeof(fs_t));
   fs->id = VFS_FSID_NONE;
+  kspin_constructor(&g_vnode_cache_lock);
   fs->open_vnodes = 0;
   fs->open_vnodes_list = LIST_INIT;
   fs->dev = kmakedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
@@ -431,7 +432,6 @@ void vfs_put(vnode_t* vnode) {
   KASSERT(vnode->state == VNODE_ST_LAMED);
   KASSERT(vnode->refcount == 1);
 
-  // TODO(aoates): lock for fs data.
   vnode->fs->open_vnodes--;
   KASSERT_DBG(list_link_on_list(&vnode->fs->open_vnodes_list, &vnode->fs_link));
   list_remove(&vnode->fs->open_vnodes_list, &vnode->fs_link);

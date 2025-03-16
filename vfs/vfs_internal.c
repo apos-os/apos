@@ -47,6 +47,7 @@ int resolve_mounts(vnode_t** vnode) {
   while (n->mounted_fs != VFS_FSID_NONE) {
     // TODO(aoates): check that each of these is valid.
     fs_t* const child_fs = g_fs_table[n->mounted_fs].fs;
+    // Safe: mount point (n) is locked.
     vnode_t* child_fs_root = vfs_get(child_fs, child_fs->get_root(child_fs));
     KASSERT_DBG(child_fs_root->parent_mount_point == n);
     kmutex_unlock(&n->mutex);

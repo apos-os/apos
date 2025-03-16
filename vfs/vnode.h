@@ -150,6 +150,13 @@ void vfs_vnode_init(vnode_t* n, fs_t* fs, int num);
 //
 // May block if the vnode is uninitialized or being initialized.  Safe to call
 // with other vnodes locked.
+//
+// The caller must ensure the filesystem remains live through the call.  There
+// are three normal ways to do this:
+//  1) (most common) call it on another node's filesystem (e.g. a parent node).
+//     Having a ref on the parent node ensures the filesystem stays alive.
+//  2) With the filesystem's mount point node locked.
+//  3) on a static filesystem (the root FS, a static anonfs, etc).
 vnode_t* vfs_get(fs_t* fs, int vnode);
 
 // Increment the given node's refcount.

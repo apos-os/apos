@@ -25,6 +25,7 @@
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "proc/scheduler.h"
+#include "proc/spinlock.h"
 #include "proc/user.h"
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/ramfs.h"
@@ -304,6 +305,7 @@ int ramfs_create_path(const char* source, unsigned long flags, const void* data,
 
 void ramfs_destroy_fs(fs_t* fs) {
   ramfs_t* ramfs = (ramfs_t*)fs;
+  kspin_destructor(&g_vnode_cache_lock);
   KASSERT(ramfs->fs.open_vnodes == 0);
   for (int i = 0; i < RAMFS_MAX_INODES; ++i) {
     if (ramfs->inodes[i].data)

@@ -16,6 +16,8 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "proc/kmutex.h"
+#include "proc/spinlock.h"
 #include "vfs/fs_types.h"
 #include "vfs/vfs_internal.h"
 
@@ -23,7 +25,12 @@ static int vfs_mount_fs_locked(const char* path, fs_t* fs) {
   if (!path || !fs) return -EINVAL;
 
   if (fs->id != VFS_FSID_NONE) return -EBUSY;
+
+  // TODO(aoates): add an easy way to disable thread-safety analysis for
+  // expressions and use that here rather than lock the spinlock.
+  kspin_lock(&g_vnode_cache_lock);
   KASSERT_DBG(fs->open_vnodes == 0);
+  kspin_unlock(&g_vnode_cache_lock);
 
   // First open the vnode that will be the mount point.
   vnode_t* mount_point = 0x0;
@@ -89,6 +96,7 @@ int vfs_mount_fs(const char* path, fs_t* fs) {
 // TODO(SMP): write a highly-concurrent test for this that throws a lot of
 // threads doing a lot of different things simultaneously at this logic.
 static void try_free_all_open(mounted_fs_t* fs) {
+  KASSERT_DBG(kmutex_is_locked(&fs->mount_point->mutex));
   kspin_lock(&g_vnode_cache_lock);
   list_link_t* link = fs->fs->open_vnodes_list.head;
   // There should always be at least one open vnode when this is called (the
@@ -103,7 +111,7 @@ static void try_free_all_open(mounted_fs_t* fs) {
   int node_num = node->num;
   kspin_unlock(&g_vnode_cache_lock);
   while (node_num >= 0) {
-    node = vfs_get(fs->fs, node_num);
+    node = vfs_get(fs->fs, node_num);  // Safe: mount point is locked.
     // TODO(SMP): write a test that catches this case.
     if (!node) {
       // Eh, someone modified concurrently.  Give up.
@@ -185,15 +193,23 @@ static int vfs_unmount_fs_locked(const char* path, fs_t** fs_out) {
 
   // We should have at least one open vnode (the mounted_root reference in the
   // fs table).
+  kspin_lock(&g_vnode_cache_lock);
   KASSERT_DBG(g_fs_table[mount_point->mounted_fs].fs->open_vnodes >= 1);
 
-  // TODO(aoates): need to lock around the refcount read.
+  // This looks logically racy (another thread could open a vnode on this fs
+  // just after this check), but it is guaranteed that open_vnodes can never go
+  // from 1 to >1 during here.  For open_vnodes to increment, another thread
+  // must either have a reference to an existing node on the filesystem (so
+  // open_vnodes won't be 1 OR mounted_root->refcount > 1), or it must have the
+  // mount point locked (so we can't be here).
   if (g_fs_table[mount_point->mounted_fs].fs->open_vnodes > 1 ||
       g_fs_table[mount_point->mounted_fs].mounted_root->refcount > 1) {
+    kspin_unlock(&g_vnode_cache_lock);
     kmutex_unlock(&mount_point->mutex);
     VFS_PUT_AND_CLEAR(mount_point);
     return -EBUSY;
   }
+  kspin_unlock(&g_vnode_cache_lock);
 
   *fs_out = g_fs_table[mount_point->mounted_fs].fs;
 
