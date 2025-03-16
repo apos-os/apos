@@ -341,128 +341,129 @@ static void addr2str_tests(void) {
 
 static void str2addr_tests(void) {
   KTEST_BEGIN("IPv6 address string-to-addr");
-  char buf[INET6_PRETTY_LEN + 1];
-  buf[INET6_PRETTY_LEN] = '\0';
+  const int kBufLen = SOCKADDR_PRETTY_LEN;
+  char buf[kBufLen];
+  buf[kBufLen] = '\0';
   struct in6_addr addr;
 
   // Start with the same tests as above (round trip a canonical representation).
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("2001:db8:1:2:3000:bacd:1234:ffff", &addr));
   KEXPECT_STREQ("2001:db8:1:2:3000:bacd:1234:ffff", inet62str(&addr, buf));
 
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("2001:db8::1", &addr));
   KEXPECT_STREQ("2001:db8::1", inet62str(&addr, buf));
 
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("2001:db8::2:0:1", &addr));
   KEXPECT_STREQ("2001:db8::2:0:1", inet62str(&addr, buf));
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("2001:db8::2:0:0:1", &addr));
   KEXPECT_STREQ("2001:db8::2:0:0:1", inet62str(&addr, buf));
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("2001:db8:3:0:2::1", &addr));
   KEXPECT_STREQ("2001:db8:3:0:2::1", inet62str(&addr, buf));
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("2001:db8:3:0:2::", &addr));
   KEXPECT_STREQ("2001:db8:3:0:2::", inet62str(&addr, buf));
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("2001:0:0:2::1", &addr));
   KEXPECT_STREQ("2001:0:0:2::1", inet62str(&addr, buf));
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("2001:db8:0:1:1:1:1:1", &addr));
   KEXPECT_STREQ("2001:db8:0:1:1:1:1:1", inet62str(&addr, buf));
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("::1", &addr));
   KEXPECT_STREQ("::1", inet62str(&addr, buf));
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("::", &addr));
   KEXPECT_STREQ("::", inet62str(&addr, buf));
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("1::", &addr));
   KEXPECT_STREQ("1::", inet62str(&addr, buf));
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("::1:0:0:0:2", &addr));
   KEXPECT_STREQ("::1:0:0:0:2", inet62str(&addr, buf));
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("0:0:1::2", &addr));
   KEXPECT_STREQ("0:0:1::2", inet62str(&addr, buf));
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("::1:0:0:2:0:0", &addr));
   KEXPECT_STREQ("::1:0:0:2:0:0", inet62str(&addr, buf));
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("::ffff:0", &addr));
   KEXPECT_STREQ("::ffff:0", inet62str(&addr, buf));
 
   // Test mixing upper/lower case hex digits.
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("2001:dB8:0:aa:B0:1:1:1", &addr));
   KEXPECT_STREQ("2001:db8:0:aa:b0:1:1:1", inet62str(&addr, buf));
 
   // Test extra leading zeroes.
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("2001:0db8::001", &addr));
   KEXPECT_STREQ("2001:db8::1", inet62str(&addr, buf));
 
   // Test various non-canonical zeroes strings.
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("2001:db8:0:0:0:000::1", &addr));
   KEXPECT_STREQ("2001:db8::1", inet62str(&addr, buf));
 
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("2001:db8:0:0000:0:0:0::1", &addr));
   KEXPECT_STREQ("2001:db8::1", inet62str(&addr, buf));
 
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("2001:db8:0:0000:0:0::1", &addr));
   KEXPECT_STREQ("2001:db8::1", inet62str(&addr, buf));
 
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("0:0000:0:0:0:00:000:1", &addr));
   KEXPECT_STREQ("::1", inet62str(&addr, buf));
 
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("::", &addr));
   KEXPECT_STREQ("::", inet62str(&addr, buf));
 
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("0::", &addr));
   KEXPECT_STREQ("::", inet62str(&addr, buf));
 
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("::0", &addr));
   KEXPECT_STREQ("::", inet62str(&addr, buf));
 
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("0::0", &addr));
   KEXPECT_STREQ("::", inet62str(&addr, buf));
 
-  kmemset(buf, 'x', INET6_PRETTY_LEN);
+  kmemset(buf, 'x', kBufLen);
   kmemset(&addr, 0xab, sizeof(addr));
   KEXPECT_EQ(0, str2inet6("::1:2", &addr));
   KEXPECT_STREQ("::1:2", inet62str(&addr, buf));
@@ -502,6 +503,7 @@ static void str2addr_tests(void) {
   KEXPECT_EQ(0, sin6.sin6_scope_id);
 
   KTEST_BEGIN("IPv6: sockaddr2str tests");
+  kmemset(buf, 'x', kBufLen);
   KEXPECT_EQ(0, str2sin6("1::7", 1234, &sin6));
   KEXPECT_STREQ("[1::7]:1234", sockaddr2str((struct sockaddr*)&sin6,
                                             sizeof(sin6), buf));
