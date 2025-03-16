@@ -14,24 +14,24 @@
 
 #include <stdint.h>
 
+#include "common/atomic.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "dev/timer.h"
-#include "memory/kmalloc.h"
 #include "proc/kthread_pool.h"
 #include "proc/sleep.h"
 #include "proc/scheduler.h"
 #include "test/ktest.h"
 
-static int counter = 0;
+static atomic32_t counter;
 static kthread_queue_t wait_queue;
 
 static void pool_cb(void* arg) {
   scheduler_yield();
-  counter--;
+  int val = atomic_sub_relaxed(&counter, 1);
   scheduler_yield();
 
-  if (counter == 0) {
+  if (val == 0) {
     scheduler_make_runnable(kthread_queue_pop(&wait_queue));
   }
 }
@@ -53,7 +53,7 @@ void kthread_pool_test(void) {
   KTEST_SUITE_BEGIN("kthread_pool");
   KTEST_BEGIN("kthread_pool");
 
-  counter = TEST_SIZE;
+  atomic_store_relaxed(&counter, TEST_SIZE);
   kthread_pool_t pool;
   KASSERT(0 == kthread_pool_init(&pool, POOL_SIZE));
   scheduler_yield();  // Check the empty-queue logic.
@@ -74,12 +74,12 @@ void kthread_pool_test(void) {
   // shouldn't get here until everything is finished).
   ksleep(100);
 
-  KEXPECT_EQ(counter, 0);
+  KEXPECT_EQ(atomic_load_relaxed(&counter), 0);
 
   KTEST_BEGIN("kthread_pool_destroy(): blocks for pending items");
-  counter = POOL_SIZE + 4;
+  atomic_store_relaxed(&counter, POOL_SIZE + 4);
   for (int i = 0; i < POOL_SIZE + 3; ++i)
     kthread_pool_push(&pool, &pool_cb, NULL);
   kthread_pool_destroy(&pool);
-  KEXPECT_EQ(1, counter);
+  KEXPECT_EQ(1, atomic_load_relaxed(&counter));
 }
