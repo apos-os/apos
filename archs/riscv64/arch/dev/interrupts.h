@@ -19,13 +19,6 @@
 #include "common/attributes.h"
 #include "common/config.h"
 
-// The direct assembly implementations of these functions.  In non-TSAN mode,
-// they should be run directly.
-void enable_interrupts_raw(void);
-void disable_interrupts_raw(void);
-interrupt_state_t save_and_disable_interrupts_raw(void) ACQUIRE(INTERRUPT);
-void restore_interrupts_raw(interrupt_state_t saved) RELEASE(INTERRUPT);
-
 #if !ENABLE_TSAN
 
 #define enable_interrupts enable_interrupts_raw
@@ -34,6 +27,45 @@ void restore_interrupts_raw(interrupt_state_t saved) RELEASE(INTERRUPT);
 #define restore_interrupts(saved, full_sync) restore_interrupts_raw(saved)
 
 #endif  // !ENABLE_TSAN
+
+static inline ALWAYS_INLINE
+void enable_interrupts_raw(void) {
+  asm volatile ("csrsi sstatus, 0x2\n\t");
+}
+
+static inline ALWAYS_INLINE
+void disable_interrupts_raw(void) {
+  asm volatile ("csrci sstatus, 0x2\n\t");
+}
+
+static inline ALWAYS_INLINE
+interrupt_state_t get_interrupts_state(void) {
+  interrupt_state_t val;
+  asm volatile(
+      "csrr %0, sstatus\n\t"
+      "andi %0, %0, 0x2\n\t"
+      : "=r"(val));
+  return val;
+}
+
+static inline ALWAYS_INLINE
+int save_and_disable_interrupts_raw(void) ACQUIRE(INTERRUPT) {
+  uint64_t x;
+  asm volatile (
+      "csrrci %0, sstatus, 0x2\n\t"
+      "andi %0, %0, 0x2\n\t"
+      : "=r"(x));
+  _interrupt_noop_acquire();
+  return x;
+}
+
+static inline ALWAYS_INLINE
+void restore_interrupts_raw(interrupt_state_t saved) RELEASE(INTERRUPT) {
+  if (saved) {
+    asm volatile ("csrsi sstatus, 0x2\n\t");
+  }
+  _interrupt_noop_release();
+}
 
 // Software-triggered supervisor interrupts.
 

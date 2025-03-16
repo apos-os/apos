@@ -19,41 +19,6 @@
 .set SSTATUS_SPP,  0x100
 .set SSTATUS_SAVE_MASK, SSTATUS_SPIE | SSTATUS_SPP
 
-# void enable_interrupts(void)
-.global enable_interrupts_raw
-enable_interrupts_raw:
-  csrsi sstatus, SSTATUS_SIE
-  ret
-
-# void disable_interrupts(void)
-.global disable_interrupts_raw
-disable_interrupts_raw:
-  csrci sstatus, SSTATUS_SIE
-  ret
-
-# interrupt_state_t get_interrupts_state(void)
-.global get_interrupts_state
-get_interrupts_state:
-  csrr a0, sstatus
-  andi a0, a0, SSTATUS_SIE
-  ret
-
-# interrupt_state_t save_and_disable_interrupts(void)
-.global save_and_disable_interrupts_raw
-save_and_disable_interrupts_raw:
-  # Read sstatus and clear SIE
-  csrrci a0, sstatus, SSTATUS_SIE
-  andi a0, a0, SSTATUS_SIE
-  ret
-
-# void restore_interrupts(interrupt_state_t saved)
-.global restore_interrupts_raw
-restore_interrupts_raw:
-  beqz a0, .done
-  csrsi sstatus, SSTATUS_SIE
-.done:
-  ret
-
 .global _int_handlers_start
 .global _int_handlers_end
 _int_handlers_start:

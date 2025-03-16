@@ -17,6 +17,8 @@
 
 #include "archs/common/arch/dev/interrupts.h"
 
+interrupt_state_t get_interrupts_state(void);
+
 #define IF_FLAG 0x200
 
 #endif

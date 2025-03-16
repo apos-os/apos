@@ -44,7 +44,8 @@ void restore_interrupts(interrupt_state_t saved, bool full_sync)
     RELEASE(INTERRUPT);
 
 // Return the current IF flag state (as per save_and_disable_interrupts).
-interrupt_state_t get_interrupts_state(void);
+// May be defined inline.
+// interrupt_state_t get_interrupts_state(void);
 
 // Helpers to acquire and release INTERRUPT (for use in arch implementations of
 // the above).
