@@ -27,11 +27,14 @@
 #include "proc/exec.h"
 #include "proc/fork.h"
 #include "proc/notification.h"
+#include "proc/preemption_hook.h"
+#include "proc/sleep.h"
 #include "proc/wait.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/user.h"
 #include "test/ktest.h"
+#include "test/test_params.h"
 #include "test/vfs_test_util.h"
 #include "vfs/mount.h"
 #include "vfs/ramfs.h"
@@ -41,6 +44,7 @@
 #include "vfs/vfs_mode.h"
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
+#include "vfs/vnode.h"
 
 static fs_t* ramfsA = 0x0;
 static fs_t* ramfsB = 0x0;
@@ -585,6 +589,69 @@ static void unmount_busy_child1(void* arg) {
   }
 }
 
+static void* unmount_thread1(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  notification_t* done = (notification_t*)arg;
+  int orig_fd = vfs_open("vfs_mount_test", VFS_O_RDONLY | VFS_O_DIRECTORY);
+  file_t* file = NULL;
+  KEXPECT_EQ(0, lookup_fd(orig_fd, &file));
+  while (!ntfn_has_been_notified(done)) {
+    vfs_ref(file->vnode);
+    sched_preempt_me(5);
+    vfs_put(file->vnode);
+  }
+  file_unref(file);
+  KEXPECT_EQ(0, vfs_close(orig_fd));
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* unmount_thread2(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  notification_t* done = (notification_t*)arg;
+  apos_stat_t stat;
+  while (!ntfn_has_been_notified(done)) {
+    int fd = vfs_open("vfs_mount_test/a", VFS_O_RDONLY | VFS_O_DIRECTORY);
+    KEXPECT_GE(fd, 0);
+    KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+
+    KEXPECT_EQ(0, vfs_close(fd));
+    fd = vfs_open("vfs_mount_test/a/dir", VFS_O_RDONLY | VFS_O_DIRECTORY);
+    KEXPECT_GE(fd, 0);
+    KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+    KEXPECT_EQ(0, vfs_close(fd));
+  }
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void unmount_thread_test(const char* abs_mount_a) {
+  KTEST_BEGIN("vfs mount: multithreaded busy unmount test");
+
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  int fd = vfs_open("vfs_mount_test/a", VFS_O_RDONLY | VFS_O_DIRECTORY);
+  KEXPECT_GE(fd, 0);
+
+  notification_t done;
+  ntfn_init(&done);
+  kthread_t thread1, thread2;
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &unmount_thread1, &done));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &unmount_thread2, &done));
+
+  fs_t* unmounted_fs = 0x0;
+  for (int i = 0; i < 10 * CONCURRENCY_TEST_ITERS_MULT; ++i) {
+    KEXPECT_EQ(-EBUSY, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+  }
+  ntfn_notify(&done);
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+}
+
 static void unmount_busy_test(void) {
   KTEST_BEGIN("vfs mount: cannot unmount busy directory test setup");
   KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
@@ -765,6 +832,7 @@ static void unmount_busy_test(void) {
   KEXPECT_EQ(0, vfs_close(fd));
   KEXPECT_EQ(0, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
 
+  unmount_thread_test(abs_mount_a);
 
   KTEST_BEGIN("vfs busy mount test: cleanup");
   KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
