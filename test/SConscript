@@ -90,12 +90,12 @@ subdirs = ['dtb_testdata']
 if FindFile(os.path.join(env['ARCH'], 'SConscript'), '.') is not None:
   subdirs.append(env['ARCH'])
 
-if env['TSAN']:
+if env['TSAN_LIB'] or env['TSAN_FULL']:
   subdirs.append('tsan')
 
 extra_cflags = []
 # TODO(aoates): get frame sizes small enough to reduce this.
-if env['TSAN']:
+if env['TSAN_LIB'] or env['TSAN_FULL']:
   extra_cflags.append('-Wframe-larger-than=10000')
 else:
   extra_cflags.append('-Wframe-larger-than=5000')

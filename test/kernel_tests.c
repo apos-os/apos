@@ -105,7 +105,11 @@ static const test_entry_t TESTS[] = {
   { "atomic", &atomic_test, 1 },
 
 #if ENABLE_TSAN
-  { "tsan", &tsan_test, 1 },
+  // Only run tsan tests by default if we're in tsan-lib mode (as in full-kernel
+  // mode, currently, they won't work).
+  // TODO(tsan): when these can run and pass even in full-kernel TSAN mode,
+  // remove this distinction.
+  { "tsan", &tsan_test, ENABLE_TSAN_LIB },
 #endif
 
 #if ARCH == ARCH_i586
