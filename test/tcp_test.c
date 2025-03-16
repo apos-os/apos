@@ -4552,6 +4552,108 @@ static void out_of_order_recv_test2(void) {
   cleanup_tcp_test(&s);
 }
 
+static void out_of_order_recv_test3(void) {
+  KTEST_BEGIN("TCP: receive OOO data (#3, newest packet fully replaces queued packets)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
+
+  char buf[100];
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+  vfs_make_nonblock(s.socket);
+
+  // TODO(aoates): should the window size be updated to account for queued
+  // packets?
+  SEND_PKT(&s, DATA_PKT(/* seq */ 503, /* ack */ 101, "CDE"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 501, /* wndsize */ 500));
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 100));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 506, /* ack */ 101, "FGH"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 501, /* wndsize */ 500));
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 100));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abcdefgh"));
+
+  // We should get an ACK for the whole bunch.
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 509, /* wndsize */ 492));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(8, vfs_read(s.socket, buf, 100));
+  buf[8] = '\0';
+  KEXPECT_STREQ("abcdefgh", buf);
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 100));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 8));
+  cleanup_tcp_test(&s);
+}
+
+static void out_of_order_recv_test3b(void) {
+  KTEST_BEGIN("TCP: receive OOO data (#3b, newest packet fully replaces queued packets, plus more)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
+
+  char buf[100];
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+  vfs_make_nonblock(s.socket);
+
+  // TODO(aoates): should the window size be updated to account for queued
+  // packets?
+  SEND_PKT(&s, DATA_PKT(/* seq */ 503, /* ack */ 101, "CDE"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 501, /* wndsize */ 500));
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 100));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 506, /* ack */ 101, "FGH"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 501, /* wndsize */ 500));
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 100));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abcdefghi"));
+
+  // We should get an ACK for the whole bunch.
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 510, /* wndsize */ 491));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(9, vfs_read(s.socket, buf, 100));
+  buf[9] = '\0';
+  KEXPECT_STREQ("abcdefghi", buf);
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 100));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 9));
+  cleanup_tcp_test(&s);
+}
+
+static void out_of_order_recv_test3c(void) {
+  KTEST_BEGIN("TCP: receive OOO data (#3c, newest packet fully replaces queued packets [inc. FIN], plus more)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
+
+  char buf[100];
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+  vfs_make_nonblock(s.socket);
+
+  // TODO(aoates): should the window size be updated to account for queued
+  // packets?
+  SEND_PKT(&s, DATA_PKT(/* seq */ 503, /* ack */ 101, "CDE"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 501, /* wndsize */ 500));
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 100));
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 506, /* ack */ 101, "FGH"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 501, /* wndsize */ 500));
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 100));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abcdefghi"));
+
+  // We should get an ACK for the whole bunch.
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 510, /* wndsize */ 491));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(9, vfs_read(s.socket, buf, 100));
+  buf[9] = '\0';
+  KEXPECT_STREQ("abcdefghi", buf);
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 100));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 9));
+  cleanup_tcp_test(&s);
+}
+
 static void out_of_order_recv_multi_hole_test(void) {
   KTEST_BEGIN("TCP: receive OOO data (multiple queued holes)");
   tcp_test_state_t s;
@@ -4727,6 +4829,46 @@ static void out_of_order_recv_datafin_test(void) {
   KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 100));
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+
+  // We should get an ACK for the whole bunch.
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 509, /* wndsize */ 493));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(7, vfs_read(s.socket, buf, 100));
+  buf[7] = '\0';
+  KEXPECT_STREQ("abcdefg", buf);
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 100));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 509));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 509, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void out_of_order_recv_datafin_overlap_test(void) {
+  KTEST_BEGIN("TCP: receive OOO data (queued overlapping DATA+FIN)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
+
+  char buf[100];
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+  vfs_make_nonblock(s.socket);
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 503, /* ack */ 101, "cde"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 501, /* wndsize */ 500));
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 100));
+
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 506, /* ack */ 101, "fg"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 501, /* wndsize */ 500));
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 100));
+
+  // Send a packet that covers everything BUT the FIN.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abcdefg"));
 
   // We should get an ACK for the whole bunch.
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 509, /* wndsize */ 493));
@@ -5057,10 +5199,14 @@ static void out_of_order_recv_close_before_processing_test(void) {
 static void ooo_queue_tests(void) {
   out_of_order_recv_test();
   out_of_order_recv_test2();
+  out_of_order_recv_test3();
+  out_of_order_recv_test3b();
+  out_of_order_recv_test3c();
   out_of_order_recv_multi_hole_test();
   out_of_order_recv_multi_overlap_test();
   out_of_order_recv_fin_test();
   out_of_order_recv_datafin_test();
+  out_of_order_recv_datafin_overlap_test();
   out_of_order_recv_fin_with_trailing_data_test();
   out_of_order_recv_fin_with_trailing_data_test2();
   out_of_order_recv_fin_with_trailing_data_test3();

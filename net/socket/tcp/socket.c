@@ -886,13 +886,24 @@ done:
     if (seq_gt(pkt->seq, socket->recv_next)) {
       break;
     }
+    // Note: the packet may have started before the current receive window.  It
+    // will be trimmed below, when dispatched.
     list_pop(&socket->ooo_recv_queue);
     KLOG(DEBUG3, "TCP: socket %p processing queued OOO packet seq %u\n",
          socket, pkt->seq);
 
+    // We must re-validate the packet --- it may not be in the (current) window.
+    const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pkt->pb);
+    if (!validate_seq(socket, pkt->seq, tcp_packet_octets(tcp_hdr, &pkt->md))) {
+      KLOG(DEBUG2, "TCP: socket %p got out-of-window QUEUED OOO packet, dropping\n",
+           socket);
+      pbuf_free(pkt->pb);
+      kfree(pkt);
+      continue;
+    }
+
     action.action = TCP_ACTION_NOT_SET;
     action.send_ack = false;
-    const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pkt->pb);
     tcp_dispatch_to_sock_one(socket, pkt->pb, &pkt->md, tcp_hdr, &action);
     kspin_unlock(&socket->spin_mu);
 
