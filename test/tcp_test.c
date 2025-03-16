@@ -311,21 +311,27 @@ static int do_setsockopt_int(int socket, int domain, int option, int val) {
   return net_setsockopt(socket, domain, option, &val, sizeof(int));
 }
 
-static const char* get_sock_state(int socket) {
-  static char buf[40];
-  socklen_t len = 40;
+static const char* get_sock_state_r(int socket, char* buf, socklen_t len) {
   buf[0] = '\0';
   int result = net_getsockopt(socket, IPPROTO_TCP, SO_TCP_SOCKSTATE, buf, &len);
   KEXPECT_EQ(0, result);
   return buf;
 }
 
+static const char* get_sock_state(int socket) {
+  static char buf[40];
+  socklen_t len = 40;
+  return get_sock_state_r(socket, buf, len);
+}
+
 // Force a socket that is in TIME_WAIT to close.
 static void kill_time_wait(int socket) {
-  KEXPECT_STREQ("TIME_WAIT", get_sock_state(socket));
+  char buf[40];
+  socklen_t len = 40;
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state_r(socket, buf, len));
   KEXPECT_EQ(0,
              do_setsockopt_int(socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 0));
-  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(socket));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state_r(socket, buf, len));
 }
 
 static void close_time_wait(int socket) {
