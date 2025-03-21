@@ -17,6 +17,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "dev/net/nic.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
@@ -33,12 +34,16 @@
 // work (which can itself cause a positive feedback loop with e.g. TCP
 // retransmits feeding back into the starvation).
 #define LOOPBACK_MAX_PACKETS 50
-#define LOOPBACK_RETASKLET_DELAY 100
+#define LOOPBACK_RETASKLET_DELAY_INITIAL 10
+#define LOOPBACK_MAX_DELAY 1000
 
 typedef struct {
   nic_t public;
   list_t queue;
   tasklet_t tasklet;
+  // How long to wait until re-triggering the tasklet if we're getting behind in
+  // processing packets.
+  int tasklet_delay;
 } loopback_nic_t;
 
 static void dispatch_link_local_timer(void* arg) {
@@ -52,6 +57,7 @@ static void dispatch_link_local(tasklet_t* tl, void* arg) {
   while (num_packets < LOOPBACK_MAX_PACKETS) {
     kspin_lock(&nic->public.lock);
     if (list_empty(&nic->queue)) {
+      nic->tasklet_delay = LOOPBACK_RETASKLET_DELAY_INITIAL;
       kspin_unlock(&nic->public.lock);
       nic_put(&nic->public);
       return;
@@ -70,10 +76,13 @@ static void dispatch_link_local(tasklet_t* tl, void* arg) {
   }
 
   // Schedule another to do more work.
-  if (register_event_timer(get_time_ms() + LOOPBACK_RETASKLET_DELAY,
+  kspin_lock(&nic->public.lock);
+  nic->tasklet_delay = min(nic->tasklet_delay * 2, LOOPBACK_MAX_DELAY);
+  if (register_event_timer(get_time_ms() + nic->tasklet_delay,
                            &dispatch_link_local_timer, nic, NULL) != 0) {
     KLOG(WARNING, "Unable to schedule link-local dispatch timer\n");
   }
+  kspin_unlock(&nic->public.lock);
 }
 
 void loopback_send(nic_t* public, pbuf_t* pb, ethertype_t protocol) {
@@ -122,6 +131,7 @@ nic_t* loopback_create(void) {
   nic->public.ops = &kLoopbackNicOps;
   nic->queue = LIST_INIT;
   tasklet_init(&nic->tasklet, &dispatch_link_local, nic);
+  nic->tasklet_delay = LOOPBACK_RETASKLET_DELAY_INITIAL;
   nic_create(&nic->public, "lo");
   KLOG(INFO, "net: created loopback device %s\n", nic->public.name);
   return &nic->public;
