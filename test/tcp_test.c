@@ -5111,7 +5111,7 @@ static void out_of_order_recv_urg_test(void) {
 }
 
 static void out_of_order_recv_causes_retransmit_test(void) {
-  KTEST_BEGIN("TCP: receive out of order ACKs that trigger retransmit");
+  KTEST_BEGIN("TCP: receive out of order ACKs that [don't] trigger retransmit");
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
   KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
@@ -5134,7 +5134,7 @@ static void out_of_order_recv_causes_retransmit_test(void) {
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 104, /* ack */ 501, /* wndsize */ 500));
 
   // Send three dup ACKs.  Should get no retransmits yet because they're still
-  // queued.
+  // queued (or, more accurately, discarded).
   SEND_PKT(&s, ACK_PKT(/* seq */ 506, /* ack */ 101));
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 104, /* ack */ 501, /* wndsize */ 500));
   SEND_PKT(&s, ACK_PKT(/* seq */ 506, /* ack */ 101));
@@ -5145,12 +5145,8 @@ static void out_of_order_recv_causes_retransmit_test(void) {
   KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 100));
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
 
-  // We should get a retransmit of the data that ACKs the data received in the
-  // first queued packet.  Note --- this is dependent on the way the code
-  // internally sorts queued packets; it would also be valid for it to process
-  // the "fghi" packet fully before the dup-acks, and ACK the entire
-  // transmission here (rather than separate retransmit then ACK).
-  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 506, "123"));
+  // A retransmit isn't actually triggered, as the ACKs are discarded (rather
+  // than queued).  We should just get a plain ACK back.
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 104, /* ack */ 510));
   KEXPECT_FALSE(raw_has_packets(&s));
   KEXPECT_EQ(9, vfs_read(s.socket, buf, 100));

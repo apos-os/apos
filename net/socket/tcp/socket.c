@@ -826,7 +826,8 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   // Check the sequence number of the packet.  The packet must overlap with the
   // receive window.
   uint32_t seq = btoh32(tcp_hdr->seq);
-  if (!validate_seq(socket, seq, tcp_packet_octets(tcp_hdr, md))) {
+  uint32_t seq_len = tcp_packet_octets(tcp_hdr, md);
+  if (!validate_seq(socket, seq, seq_len)) {
     tcp_coverage_log("recv:invalid_seq", socket);
     // Special case for FIN in TIME_WAIT.
     if (socket->state == TCP_TIME_WAIT) {
@@ -846,9 +847,16 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
       KLOG(DEBUG2,
            "TCP: socket %p dropping OOO RST/SYN packet (%u past start of window %u)\n",
            socket, seq, socket->recv_next);
+    } else if (seq_len == 0) {
+      // Don't queue ACK-only packets.  Queuing provides no value, and can cause
+      // pathological runaway spirals when two sockets are talking to each
+      // other.
+      KLOG(DEBUG2,
+           "TCP: socket %p dropping OOO zero-length packet (%u past start of window %u)\n",
+           socket, seq, socket->recv_next);
     } else {
       KLOG(DEBUG2,
-           "TCP: socket %p dropping OOO packet (%u past start of window %u)\n",
+           "TCP: socket %p queueing OOO packet (%u past start of window %u)\n",
            socket, seq, socket->recv_next);
       tcp_ooo_pkt_t* queued = KMALLOC(tcp_ooo_pkt_t);
       // TODO(aoates): avoid this copy.
