@@ -24,6 +24,7 @@
 #include "common/kstring.h"
 #include "common/math.h"
 #include "dev/interrupts.h"
+#include "proc/spinlock.h"
 
 #if ENABLE_KMALLOC_HEAP_PROFILE
 #define TRACETBL_ENTRIES 750
@@ -42,9 +43,32 @@ typedef struct {
 
 static entry_t g_tracetbl[TRACETBL_ENTRIES];
 static int g_tblsize = 0;
+static kspinlock_intsafe_t g_tracetbl_mu = KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC;
 
 extern addr_t _int_handlers_start;
 extern addr_t _int_handlers_end;
+
+static inline ALWAYS_INLINE interrupt_state_t _tracetbl_lock(void)
+    ACQUIRE(g_tracetbl_mu) NO_THREAD_SAFETY_ANALYSIS {
+  if (kthread_current_thread()) {
+    kspin_lock_int(&g_tracetbl_mu);
+    return 0;
+  } else {
+    return save_and_disable_interrupts(true);
+  }
+}
+
+static inline ALWAYS_INLINE void _tracetbl_unlock(interrupt_state_t s)
+    RELEASE(g_tracetbl_mu) NO_THREAD_SAFETY_ANALYSIS {
+  if (kthread_current_thread()) {
+    kspin_unlock_int(&g_tracetbl_mu);
+  } else {
+    restore_interrupts(s, true);
+  }
+}
+
+#define TRACETBL_LOCK() interrupt_state_t _SAVED_INTERRUPTS = _tracetbl_lock()
+#define TRACETBL_UNLOCK() _tracetbl_unlock(_SAVED_INTERRUPTS);
 
 trace_id_t tracetbl_put(const addr_t* trace, int len) {
   len = min(len, TRACETBL_MAX_TRACE_LEN);
@@ -62,14 +86,14 @@ trace_id_t tracetbl_put(const addr_t* trace, int len) {
   const uint32_t trace_hash = fnv_hash_array(trace, sizeof(addr_t) * len);
   int id = trace_hash % TRACETBL_ENTRIES;
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  TRACETBL_LOCK();
   KASSERT_DBG(g_tblsize >= 0 && g_tblsize <= TRACETBL_ENTRIES);
   if (g_tblsize == TRACETBL_ENTRIES) {
     klogfm(KL_GENERAL, DEBUG, "Stack trace table full; dropping trace @");
     for (int i = 0; i < len; ++i)
       klogfm(KL_GENERAL, DEBUG, " %#" PRIxADDR, trace[i]);
     klogfm(KL_GENERAL, DEBUG, "\n");
-    POP_INTERRUPTS();
+    TRACETBL_UNLOCK();
     return -ENOMEM;
   }
 
@@ -91,7 +115,7 @@ trace_id_t tracetbl_put(const addr_t* trace, int len) {
     g_tracetbl[id].refcount++;
   }
 
-  POP_INTERRUPTS();
+  TRACETBL_UNLOCK();
   return id;
 }
 
@@ -99,7 +123,7 @@ int tracetbl_get(trace_id_t id, addr_t* trace) {
   if (id < 0 || id >= TRACETBL_ENTRIES)
     return -EINVAL;
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  TRACETBL_LOCK();
   int result;
   if (g_tracetbl[id].len == 0) {
     result = -EINVAL;
@@ -108,16 +132,16 @@ int tracetbl_get(trace_id_t id, addr_t* trace) {
     for (int i = 0; i < result; ++i)
       trace[i] = g_tracetbl[id].trace[i];
   }
-  POP_INTERRUPTS();
+  TRACETBL_UNLOCK();
   return result;
 }
 
 void tracetbl_unref(trace_id_t id) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+  TRACETBL_LOCK();
   KASSERT(id >= 0 && id < TRACETBL_ENTRIES);
   KASSERT(g_tracetbl[id].refcount > 0);
   g_tracetbl[id].refcount--;
   if (g_tracetbl[id].refcount == 0)
     g_tblsize--;
-  POP_INTERRUPTS();
+  TRACETBL_UNLOCK();
 }
