@@ -62,28 +62,6 @@ static vm_area_t g_root_heap_vm_area;
 
 static int g_test_mode = 0;
 
-static inline ALWAYS_INLINE interrupt_state_t _kmalloc_lock(void)
-    ACQUIRE(g_kmalloc_mu) NO_THREAD_SAFETY_ANALYSIS {
-  if (kthread_current_thread()) {
-    kspin_lock_int(&g_kmalloc_mu);
-    return 0;
-  } else {
-    return save_and_disable_interrupts(true);
-  }
-}
-
-static inline ALWAYS_INLINE void _kmalloc_unlock(interrupt_state_t s)
-    RELEASE(g_kmalloc_mu) NO_THREAD_SAFETY_ANALYSIS {
-  if (kthread_current_thread()) {
-    kspin_unlock_int(&g_kmalloc_mu);
-  } else {
-    restore_interrupts(s, true);
-  }
-}
-
-#define KMALLOC_LOCK() interrupt_state_t _SAVED_INTERRUPTS = _kmalloc_lock()
-#define KMALLOC_UNLOCK() _kmalloc_unlock(_SAVED_INTERRUPTS);
-
 // Ensure all addresses in the range [ptr, ptr + len) are backed by pages.
 static void preallocate_block(void* ptr, size_t len) REQUIRES(g_kmalloc_mu) {
   addr_t end = (addr_t)ptr + len;
@@ -124,13 +102,13 @@ void kmalloc_init(void) {
   KASSERT(meminfo->heap_size_max <= meminfo->heap.len);
   KASSERT(meminfo->heap_size_max % PAGE_SIZE == 0);
   KASSERT(meminfo->heap_size_max >= 1024 * 1024);
-  KMALLOC_LOCK();
+  kspin_lock_early(&g_kmalloc_mu);
   g_kmalloc_top = meminfo->heap.base;
   block_t* head = (block_t*)meminfo->heap.base;
   init_block(head);
   head->length = meminfo->heap_size_max - sizeof(block_t);
   g_block_list = head;
-  KMALLOC_UNLOCK();
+  kspin_unlock_early(&g_kmalloc_mu);
   g_initialized = 1;
 }
 
@@ -247,7 +225,7 @@ void* kmalloc_alloc(void* arg, size_t n, size_t alignment) {
   const trace_id_t stack_trace_id = tracetbl_put(stack_trace, stack_trace_len);
 #endif
 
-  KMALLOC_LOCK();
+  kspin_lock_early(&g_kmalloc_mu);
   // Try to find a free block that's big enough.
   block_t* cblock = g_block_list;
   addr_t block_addr, next_aligned;
@@ -265,7 +243,7 @@ void* kmalloc_alloc(void* arg, size_t n, size_t alignment) {
   }
 
   if (!cblock || cblock->length < n) {
-    KMALLOC_UNLOCK();
+    kspin_unlock_early(&g_kmalloc_mu);
     return 0;
   }
 
@@ -291,7 +269,7 @@ void* kmalloc_alloc(void* arg, size_t n, size_t alignment) {
 
   // No need to preallocate here --- split_block() calls preallocate_block() on
   // the next block, ensuring this entire block is itself preallocated as well.
-  KMALLOC_UNLOCK();
+  kspin_unlock_early(&g_kmalloc_mu);
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
     fill_block(cblock, 0xAAAAAAAA);
@@ -344,20 +322,20 @@ void kfree(void* x) {
   tsan_sync_free((addr_t)&b->data, b->length);
 #endif
 
-  KMALLOC_LOCK();
+  kspin_lock_early(&g_kmalloc_mu);
   b->free = true;
 #if ENABLE_KMALLOC_HEAP_PROFILE
   if (b->stack_trace >= 0) tracetbl_unref(b->stack_trace);
 #endif
   merge_block(b);
-  KMALLOC_UNLOCK();
+  kspin_unlock_early(&g_kmalloc_mu);
 }
 
 void kmalloc_log_state(void) {
   KLOG(INFO, "kmalloc block list:\n");
   size_t total = 0;
   size_t free = 0;
-  KMALLOC_LOCK();
+  kspin_lock_early(&g_kmalloc_mu);
   block_t* cblock = g_block_list;
   while (cblock) {
     total += cblock->length + sizeof(block_t);
@@ -374,13 +352,13 @@ void kmalloc_log_state(void) {
 
     cblock = cblock->next;
   }
-  KMALLOC_UNLOCK();
+  kspin_unlock_early(&g_kmalloc_mu);
   KLOG(INFO, "total memory: 0x%zx bytes (%zu MB)\n", total, total / 1024 / 1024);
   KLOG(INFO, "free memory: 0x%zx bytes (%zu MB)\n", free, free / 1024 / 1024);
 }
 
 void kmalloc_log_heap_profile(bool include_pages) {
-  KMALLOC_LOCK();
+  kspin_lock_early(&g_kmalloc_mu);
   size_t total_objects = 0, total_bytes = 0;
 
   block_t* cblock = g_block_list;
@@ -433,7 +411,7 @@ void kmalloc_log_heap_profile(bool include_pages) {
     KLOG(INFO, "Total pages allocated: %zu\n", pages_allocated);
   }
 
-  KMALLOC_UNLOCK();
+  kspin_unlock_early(&g_kmalloc_mu);
 }
 
 void kmalloc_enable_test_mode(void) {

@@ -102,6 +102,24 @@ NO_TSAN void kspin_unlock_int(kspinlock_intsafe_t* l)
   restore_interrupts(int_state, false);
 }
 
+NO_TSAN void kspin_lock_early(kspinlock_intsafe_t* l)
+    NO_THREAD_SAFETY_ANALYSIS {
+  if (kthread_current_thread()) {
+    kspin_lock_int(l);
+  } else {
+    l->int_state = save_and_disable_interrupts(false);
+  }
+}
+
+NO_TSAN void kspin_unlock_early(kspinlock_intsafe_t* l)
+    NO_THREAD_SAFETY_ANALYSIS {
+  if (kthread_current_thread()) {
+    kspin_unlock_int(l);
+  } else {
+    restore_interrupts(l->int_state, false);
+  }
+}
+
 NO_TSAN bool kspin_is_held(const kspinlock_t* l) {
   return (l->_lock.holder == kthread_current_thread()->id);
 }

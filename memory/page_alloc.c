@@ -65,28 +65,6 @@ static phys_addr_t dma_reserved_first_frame;
 // de-allocating the DMA ranges, so we just keep a high-water mark as we go.
 static size_t dma_reserved_first_free_idx GUARDED_BY(g_page_alloc_mu) = 0;
 
-static inline ALWAYS_INLINE interrupt_state_t _page_alloc_lock(void)
-    ACQUIRE(g_page_alloc_mu) NO_THREAD_SAFETY_ANALYSIS {
-  if (kthread_current_thread()) {
-    kspin_lock_int(&g_page_alloc_mu);
-    return 0;
-  } else {
-    return save_and_disable_interrupts(true);
-  }
-}
-
-static inline ALWAYS_INLINE void _page_alloc_unlock(interrupt_state_t s)
-    RELEASE(g_page_alloc_mu) NO_THREAD_SAFETY_ANALYSIS {
-  if (kthread_current_thread()) {
-    kspin_unlock_int(&g_page_alloc_mu);
-  } else {
-    restore_interrupts(s, true);
-  }
-}
-
-#define PAGE_ALLOC_LOCK() interrupt_state_t _SAVED_INTERRUPTS = _page_alloc_lock()
-#define PAGE_ALLOC_UNLOCK() _page_alloc_unlock(_SAVED_INTERRUPTS);
-
 static size_t meminfo_mainmem_len(const memory_info_t* meminfo) {
   return meminfo->mainmem_phys.len;
 }
@@ -191,9 +169,9 @@ phys_addr_t NO_TSAN page_frame_alloc(void) {
   const trace_id_t stack_trace_id = tracetbl_put(stack_trace, stack_trace_len);
 #endif
 
-  PAGE_ALLOC_LOCK();
+  kspin_lock_early(&g_page_alloc_mu);
   if (stack_idx <= 0) {
-    PAGE_ALLOC_UNLOCK();
+    kspin_unlock_early(&g_page_alloc_mu);
     return 0;
   }
 
@@ -204,7 +182,7 @@ phys_addr_t NO_TSAN page_frame_alloc(void) {
 #if ENABLE_KMALLOC_HEAP_PROFILE
   md->trace = stack_trace_id;
 #endif
-  PAGE_ALLOC_UNLOCK();
+  kspin_unlock_early(&g_page_alloc_mu);
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
     KASSERT_DBG(frame < meminfo_mainmem_end(get_global_meminfo()));
@@ -230,7 +208,7 @@ void NO_TSAN page_frame_free(phys_addr_t frame_addr) {
     }
   }
 
-  PAGE_ALLOC_LOCK();
+  kspin_lock_early(&g_page_alloc_mu);
   KASSERT(stack_idx < stack_entries);
   page_alloc_metadata_t* md = get_page_md(frame_addr);
   KASSERT(md->allocated == true);
@@ -249,11 +227,11 @@ void NO_TSAN page_frame_free(phys_addr_t frame_addr) {
   }
 
   free_frame_stack[stack_idx++] = frame_addr;
-  PAGE_ALLOC_UNLOCK();
+  kspin_unlock_early(&g_page_alloc_mu);
 }
 
 void page_frame_free_nocheck(phys_addr_t frame_addr) {
-  PAGE_ALLOC_LOCK();
+  kspin_lock_early(&g_page_alloc_mu);
   KASSERT(is_page_aligned(frame_addr));
   KASSERT(stack_idx < stack_entries);
   page_alloc_metadata_t* md = get_page_md(frame_addr);
@@ -265,13 +243,13 @@ void page_frame_free_nocheck(phys_addr_t frame_addr) {
 #endif
 
   free_frame_stack[stack_idx++] = frame_addr;
-  PAGE_ALLOC_UNLOCK();
+  kspin_unlock_early(&g_page_alloc_mu);
 }
 
 phys_addr_t page_frame_dma_alloc(size_t pages) {
-  PAGE_ALLOC_LOCK();
+  kspin_lock_early(&g_page_alloc_mu);
   if (pages == 0 || pages > DMA_RESERVED_FRAMES - dma_reserved_first_free_idx) {
-    PAGE_ALLOC_UNLOCK();
+    kspin_unlock_early(&g_page_alloc_mu);
     return 0;
   }
   const phys_addr_t result =
@@ -286,19 +264,19 @@ phys_addr_t page_frame_dma_alloc(size_t pages) {
   KASSERT_DBG(stack_trace_len > 3);
   md->trace = tracetbl_put(stack_trace, stack_trace_len);
 #endif
-  PAGE_ALLOC_UNLOCK();
+  kspin_unlock_early(&g_page_alloc_mu);
   return result;
 }
 
 size_t page_frame_allocated_pages(void) {
-  PAGE_ALLOC_LOCK();
+  kspin_lock_early(&g_page_alloc_mu);
   size_t result = stack_entries - stack_idx;
-  PAGE_ALLOC_UNLOCK();
+  kspin_unlock_early(&g_page_alloc_mu);
   return result;
 }
 
 void page_frame_log_profile(void) {
-  PAGE_ALLOC_LOCK();
+  kspin_lock_early(&g_page_alloc_mu);
   for (size_t i = 0; i < g_page_md_entries; ++i) {
     if (!g_page_md[i].allocated) continue;
 
@@ -316,5 +294,5 @@ void page_frame_log_profile(void) {
 #endif
       klog("\n");
   }
-  PAGE_ALLOC_UNLOCK();
+  kspin_unlock_early(&g_page_alloc_mu);
 }
