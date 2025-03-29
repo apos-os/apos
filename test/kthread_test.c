@@ -34,9 +34,6 @@
 // Enable this to run a test that catches a deadlock (and panics the kernel).
 #define RUN_DEADLOCK_DETECTION_FALIURE_TEST 0
 
-// TODO(aoates): other things to test:
-//  * multiple threads join()'d onto one thread
-
 static void* thread_func(void* arg) {
   KEXPECT_EQ(KTCTX_THREAD, kthread_execution_context());
   int id = (intptr_t)arg;
@@ -167,6 +164,33 @@ static void join_chain_test2(void) {
 
   int out = (intptr_t)kthread_join(thread);
   KEXPECT_EQ(JOIN_CHAIN_TEST_SIZE, out);
+}
+
+static void* sleep_thread(void* arg) {
+  ksleep(20);
+  return (void*)(intptr_t)1;
+}
+
+static void* join_thread(void* arg) {
+  kthread_t target = (kthread_t)arg;
+  KEXPECT_EQ(1, (intptr_t)kthread_join(target));
+  return NULL;
+}
+
+static void join_multi_test(void) {
+  KTEST_BEGIN("kthread: multiple threads join the same target thread");
+  kthread_t target;
+  kthread_t joiners[3];
+
+  KEXPECT_EQ(0, kthread_create(&target, &sleep_thread, NULL));
+  for (int i = 0; i < 3; ++i) {
+    KEXPECT_EQ(0, kthread_create(&joiners[i], &join_thread, target));
+    scheduler_make_runnable(joiners[i]);
+  }
+  scheduler_make_runnable(target);
+  for (int i = 0; i < 3; ++i) {
+    KEXPECT_EQ(NULL, kthread_join(joiners[i]));
+  }
 }
 
 static void* noop_func(void* arg) { return 0; }
@@ -1738,6 +1762,7 @@ void kthread_test(void) {
   kthread_return_test();
   join_chain_test();
   join_chain_test2();
+  join_multi_test();
   queue_test();
   scheduler_wait_on_test();
   scheduler_wake_test();
