@@ -60,10 +60,8 @@ static void kthread_init_kthread(kthread_data_t* t) NO_THREAD_SAFETY_ANALYSIS {
   t->prev = t->next = 0x0;
   t->queue = 0x0;
   t->stack = 0x0;
-  t->detached = false;
   t->runnable = true;
   kthread_queue_init(&t->join_list);
-  t->join_list_pending = 0;
   t->process = 0x0;
   ksigemptyset(&t->signal_mask);
   ksigemptyset(&t->assigned_signals);
@@ -231,10 +229,6 @@ void kthread_destroy(kthread_t thread) {
 }
 
 void kthread_detach(kthread_t thread_ptr) {
-  kthread_data_t* thread = thread_ptr;
-  KASSERT(!thread->detached);
-  KASSERT(thread->join_list_pending == 0);
-  thread->detached = true;
   kthread_unref(thread_ptr);
 }
 
@@ -242,26 +236,17 @@ void* kthread_join(kthread_t thread_ptr) {
   kthread_data_t* thread = thread_ptr;
   KASSERT(thread->state == KTHREAD_PENDING ||
           thread->state == KTHREAD_DONE);
-  KASSERT(!thread->detached);
 
   if (thread->state != KTHREAD_DONE) {
-    thread->join_list_pending++;
     scheduler_wait_on(&thread->join_list);
-    thread->join_list_pending--;
   }
 #if ENABLE_TSAN
   tsan_thread_join(thread_ptr);
 #endif
   KASSERT(thread->state == KTHREAD_DONE);
   void* retval = thread->retval;
-  // If we're last, clean up after the thread.
-  // TODO(aoates): find all places we have multiple threads joining (should only
-  // be in tests) and update them to each hold a reference --- then get rid of
-  // join_list_pending.
-  if (thread->join_list_pending == 0) {
-    kthread_unref(thread);  // Our (the caller's) reference.
-    kthread_unref(thread);  // The thread's own reference.
-  }
+  // Return our reference.  This will free the thread if we're last.
+  kthread_unref(thread);
   return retval;
 }
 
@@ -282,11 +267,8 @@ void kthread_exit(void* x) {
   // Schedule all the waiting threads.
   scheduler_wake_all(&g_current_thread->join_list);
 
-  if (g_current_thread->detached) {
-    // Transfer our reference to the reap queue.
-    kthread_queue_push(&g_reap_queue, g_current_thread);
-  }
-  // Otherwise, someone will join us and consume our reference there.
+  // Transfer our reference to the reap queue.
+  kthread_queue_push(&g_reap_queue, g_current_thread);
 
   scheduler_yield_no_reschedule();
 

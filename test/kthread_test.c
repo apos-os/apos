@@ -184,10 +184,12 @@ static void join_multi_test(void) {
 
   KEXPECT_EQ(0, kthread_create(&target, &sleep_thread, NULL));
   for (int i = 0; i < 3; ++i) {
+    kthread_ref(target);
     KEXPECT_EQ(0, kthread_create(&joiners[i], &join_thread, target));
     scheduler_make_runnable(joiners[i]);
   }
   scheduler_make_runnable(target);
+  kthread_detach(target);
   for (int i = 0; i < 3; ++i) {
     KEXPECT_EQ(NULL, kthread_join(joiners[i]));
   }
