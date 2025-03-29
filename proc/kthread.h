@@ -49,7 +49,7 @@ kthread_t kthread_current_thread(void);
 //
 // All threads should be either joined (with kthread_join()), from another
 // thread, or detached (with kthread_detach()).  Not doing so will leak
-// resources.
+// resources.  This returns the thread with a reference.
 //
 // The created thread is a raw kernel thread, unattached to any process.  It
 // must not reference user memory, file descriptors, etc.  To create a process
@@ -62,7 +62,8 @@ kthread_t kthread_current_thread(void);
 int kthread_create(kthread_t* thread, void *(*start_routine)(void*), void *arg);
 
 // Join the given thread.  Will return once the other thread has exited
-// (implicitly or explicitly), and return's the thread's return value.
+// (implicitly or explicitly), and return's the thread's return value.  Consumes
+// a reference.
 //
 // Note: since the join()'ing thread cleans up the join()'ed threads data, it's
 // not safe for multiple threads to join() on a single other thread, UNLESS they
@@ -74,7 +75,7 @@ void* kthread_join(kthread_t thread);
 bool kthread_is_done(kthread_t thread);
 
 // Detach the given thread.  When the thread exits, its resources will be
-// collected immediately.
+// collected immediately.  Consumes a reference.
 //
 // Note that a detached thread cannot be join()'d (doing so will KASSERT(0)).
 void kthread_detach(kthread_t thread);

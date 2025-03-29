@@ -23,6 +23,7 @@
 #include "common/atomic.h"
 #include "common/kassert.h"
 #include "common/list.h"
+#include "common/refcount.h"
 #include "common/types.h"
 #include "proc/kthread-queue.h"
 #include "proc/process.h"
@@ -94,7 +95,7 @@ struct kthread_data {
   // Link on the global thread list.
   // TODO(aoates): once we support multiple threads per process, consider using
   // a per-process thread list rather than a global one.
-  list_link_t all_threads_link;
+  list_link_t all_threads_link;  // Note: does _not_ hold a reference.
 
   // Link on the per-process thread list.
   list_link_t proc_threads_link;
@@ -104,6 +105,10 @@ struct kthread_data {
   // decrementing on finish, and setting to zero when user mode is entered.
   // Atomic only due to interrupt access, not synchronization.
   atomic32_t interrupt_level;
+
+  // Refcount.  The thread execution context holds a reference to itself, as
+  // does the creator.
+  refcount_t ref;
 
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   // List of currently-held mutexes.
@@ -116,6 +121,13 @@ struct kthread_data {
 #endif
 };
 typedef struct kthread_data kthread_data_t;
+
+_Static_assert(offsetof(kthread_data_t, context) == 8,
+               "Bad offset of arch context; mismatch with ASM");
+
+// Add and remove references to the given thread.
+static inline ALWAYS_INLINE void kthread_ref(kthread_t thread);
+static inline ALWAYS_INLINE void kthread_unref(kthread_t thread);
 
 // Destroy a thread object and clean up its storage.
 //
@@ -154,6 +166,17 @@ static inline void kthread_assert_proc_spin_held(const kthread_data_t* thread)
     ASSERT_CAPABILITY(thread->process->spin_mu)
         ASSERT_CAPABILITY(thread->process_spin_mu) {
   kspin_assert_is_held(&thread->process->spin_mu);
+}
+
+// Implementations.
+static inline ALWAYS_INLINE
+void kthread_ref(kthread_t thread) { refcount_inc(&thread->ref); }
+
+static inline ALWAYS_INLINE
+void kthread_unref(kthread_t thread) {
+  if (refcount_dec(&thread->ref) == 0) {
+    kthread_destroy(thread);
+  }
 }
 
 #endif

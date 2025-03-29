@@ -23,6 +23,7 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/list.h"
+#include "common/refcount.h"
 #include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
@@ -52,6 +53,7 @@ static list_t g_all_threads = LIST_INIT_STATIC;
 static kthread_queue_t g_reap_queue;
 
 static void kthread_init_kthread(kthread_data_t* t) NO_THREAD_SAFETY_ANALYSIS {
+  t->ref = REFCOUNT_INIT;
   t->state = KTHREAD_PENDING;
   t->id = 0;
   t->retval = 0x0;
@@ -195,12 +197,17 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
   tsan_thread_create(thread);
 #endif
 
+  // Create a reference for the thread execution itself, to be released when the
+  // thread exits.
+  kthread_ref(thread);
+
   POP_INTERRUPTS();
   return 0;
 }
 
 void kthread_destroy(kthread_t thread) {
   KASSERT(thread->state == KTHREAD_DONE);
+  KASSERT(refcount_get(&thread->ref) == 0);
   PUSH_AND_DISABLE_INTERRUPTS();
   list_remove(&g_all_threads, &thread->all_threads_link);
   POP_INTERRUPTS();
@@ -228,6 +235,7 @@ void kthread_detach(kthread_t thread_ptr) {
   KASSERT(!thread->detached);
   KASSERT(thread->join_list_pending == 0);
   thread->detached = true;
+  kthread_unref(thread_ptr);
 }
 
 void* kthread_join(kthread_t thread_ptr) {
@@ -247,8 +255,12 @@ void* kthread_join(kthread_t thread_ptr) {
   KASSERT(thread->state == KTHREAD_DONE);
   void* retval = thread->retval;
   // If we're last, clean up after the thread.
+  // TODO(aoates): find all places we have multiple threads joining (should only
+  // be in tests) and update them to each hold a reference --- then get rid of
+  // join_list_pending.
   if (thread->join_list_pending == 0) {
-    kthread_destroy(thread);
+    kthread_unref(thread);  // Our (the caller's) reference.
+    kthread_unref(thread);  // The thread's own reference.
   }
   return retval;
 }
@@ -271,8 +283,10 @@ void kthread_exit(void* x) {
   scheduler_wake_all(&g_current_thread->join_list);
 
   if (g_current_thread->detached) {
+    // Transfer our reference to the reap queue.
     kthread_queue_push(&g_reap_queue, g_current_thread);
   }
+  // Otherwise, someone will join us and consume our reference there.
 
   scheduler_yield_no_reschedule();
 
@@ -370,7 +384,7 @@ NO_TSAN void kthread_switch(kthread_t new_thread) {
   // Clean up any thread stacks waiting to be reaped.
   kthread_t t = kthread_queue_pop(&g_reap_queue);
   while (t) {
-    kthread_destroy(t);
+    kthread_unref(t);
     t = kthread_queue_pop(&g_reap_queue);
   }
 
