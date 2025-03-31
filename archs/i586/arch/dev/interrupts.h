@@ -21,4 +21,9 @@ interrupt_state_t get_interrupts_state(void);
 
 #define IF_FLAG 0x200
 
+#define enable_interrupts_raw() enable_interrupts()
+#define disable_interrupts_raw() disable_interrupts()
+#define save_and_disable_interrupts_raw() save_and_disable_interrupts(false)
+#define restore_interrupts_raw(saved) restore_interrupts(saved, false)
+
 #endif
