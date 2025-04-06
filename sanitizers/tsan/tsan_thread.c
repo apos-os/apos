@@ -174,10 +174,8 @@ void tsan_thread_join(kthread_t joined) {
 }
 
 void tsan_lock_init(tsan_lock_data_t* lock) {
-  KASSERT_DBG(kthread_execution_context() == KTCTX_THREAD ||
-              kthread_execution_context() == KTCTX_DEFINT);
   tsan_vc_init(&lock->clock);
-  kthread_t thread = kthread_current_thread();
+  kthread_t thread = tsan_current_thread();
   if (thread) {
     // TODO(tsan): write a test for this.
     tsan_vc_acquire(&lock->clock, &thread->tsan.clock);
