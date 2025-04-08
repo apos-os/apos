@@ -23,6 +23,7 @@
 
 #include <stdbool.h>
 
+#include "proc/kthread-queue.h"
 #include "proc/kthread.h"
 
 struct kthread_pool;

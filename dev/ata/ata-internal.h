@@ -18,7 +18,7 @@
 #include <stdbool.h>
 
 #include "dev/io.h"
-#include "proc/kthread.h"
+#include "proc/kthread-queue.h"
 #include "proc/tasklet.h"
 
 #define ATA_DRIVE_MASTER 0

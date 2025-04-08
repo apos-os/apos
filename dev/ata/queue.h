@@ -20,7 +20,7 @@
 #include <stdint.h>
 
 #include "dev/ata/ata-internal.h"
-#include "proc/kthread.h"
+#include "proc/kthread-queue.h"
 
 // A single operation to apply to a disk.  Associated (on a queue) with a
 // particular channel.
