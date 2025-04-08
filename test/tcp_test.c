@@ -9811,135 +9811,139 @@ static void close_shutdown_test(void) {
 
 static void basic_listen_test(void) {
   KTEST_BEGIN("TCP: listen() basic test");
-  tcp_test_state_t s;
-  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  tcp_test_state_t* s = KMALLOC(tcp_test_state_t);
+  init_tcp_test(s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
   // Sholud not be able to listen on an unbound socket.
-  KEXPECT_EQ(-EDESTADDRREQ, net_listen(s.socket, 10));
+  KEXPECT_EQ(-EDESTADDRREQ, net_listen(s->socket, 10));
 
-  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_EQ(0, do_bind(s->socket, SRC_IP, 0x1234));
 
-  KEXPECT_EQ(0, net_listen(s.socket, 10));
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
-  KEXPECT_EQ(-EINVAL, net_listen(s.socket, 10));
-  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
-  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
-  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RDWR));
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_EQ(0, net_listen(s->socket, 10));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
+  KEXPECT_EQ(-EINVAL, net_listen(s->socket, 10));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s->socket, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s->socket, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s->socket, SHUT_RDWR));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
 
   // Should not be able to call connect() on a listening socket.
-  KEXPECT_EQ(-EOPNOTSUPP, do_connect(s.socket, DST_IP, 0x5678));
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
-  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+  KEXPECT_EQ(-EOPNOTSUPP, do_connect(s->socket, DST_IP, 0x5678));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s->socket));
 
   // Or read/write.
   char buf;
-  KEXPECT_EQ(-ENOTCONN, vfs_read(s.socket, &buf, 1));
-  KEXPECT_EQ(-ENOTCONN, vfs_write(s.socket, &buf, 1));
+  KEXPECT_EQ(-ENOTCONN, vfs_read(s->socket, &buf, 1));
+  KEXPECT_EQ(-ENOTCONN, vfs_write(s->socket, &buf, 1));
 
   struct sockaddr_in sin;
-  KEXPECT_EQ(0, getsockname_inet(s.socket, &sin));
+  KEXPECT_EQ(0, getsockname_inet(s->socket, &sin));
   KEXPECT_STREQ(SRC_IP ":4660", sin2str(&sin));
-  KEXPECT_EQ(-ENOTCONN, getpeername_inet(s.socket, &sin));
+  KEXPECT_EQ(-ENOTCONN, getpeername_inet(s->socket, &sin));
 
   // Any packet other than a SYN should get a RST or be ignored.
-  SEND_PKT(&s, RST_PKT(/* seq */ 500, /* ack */ 101));
-  KEXPECT_FALSE(raw_has_packets(&s));
+  SEND_PKT(s, RST_PKT(/* seq */ 500, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets(s));
 
-  SEND_PKT(&s, ACK_PKT(/* seq */ 500, /* ack */ 101));
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
-  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 5000));
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
-  SEND_PKT(&s, DATA_PKT(/* seq */ 500, /* ack */ 101, "abc"));
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
-  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc"));
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
-  SEND_PKT(&s, FIN_PKT(/* seq */ 500, /* ack */ 101));
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(s, ACK_PKT(/* seq */ 500, /* ack */ 101));
+  EXPECT_PKT(s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 5000));
+  EXPECT_PKT(s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(s, DATA_PKT(/* seq */ 500, /* ack */ 101, "abc"));
+  EXPECT_PKT(s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(s, DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc"));
+  EXPECT_PKT(s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(s, FIN_PKT(/* seq */ 500, /* ack */ 101));
+  EXPECT_PKT(s, RST_NOACK_PKT(/* seq */ 101));
 
   // Try some mutants that don't have the ACK bit set for fun.
-  SEND_PKT(&s, NOACK(DATA_PKT(/* seq */ 500, /* ack */ 101, "abc")));
-  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 503));
-  SEND_PKT(&s, NOACK(DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc")));
-  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 504));
-  SEND_PKT(&s, NOACK(FIN_PKT(/* seq */ 500, /* ack */ 101)));
-  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 501));
+  SEND_PKT(s, NOACK(DATA_PKT(/* seq */ 500, /* ack */ 101, "abc")));
+  EXPECT_PKT(s, RST_PKT(/* seq */ 0, /* ack */ 503));
+  SEND_PKT(s, NOACK(DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc")));
+  EXPECT_PKT(s, RST_PKT(/* seq */ 0, /* ack */ 504));
+  SEND_PKT(s, NOACK(FIN_PKT(/* seq */ 500, /* ack */ 101)));
+  EXPECT_PKT(s, RST_PKT(/* seq */ 0, /* ack */ 501));
 
   // A SYN (or SYN-ACK) with data should also be rejected.
   test_packet_spec_t p = DATA_PKT(/* seq */ 500, /* ack */ 101, "abc");
   p.flags = TCP_FLAG_SYN;
-  SEND_PKT(&s, p);
-  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 504));
+  SEND_PKT(s, p);
+  EXPECT_PKT(s, RST_PKT(/* seq */ 0, /* ack */ 504));
   p.flags |= TCP_FLAG_ACK;
-  SEND_PKT(&s, p);
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(s, p);
+  EXPECT_PKT(s, RST_NOACK_PKT(/* seq */ 101));
 
   // Send a SYN, complete the connection.
-  tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, DST_IP, 2000);
-  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
-  EXPECT_PKT(&c1,
+  tcp_test_state_t* c1 = KMALLOC(tcp_test_state_t);
+  init_tcp_test_child(s, c1, DST_IP, 2000);
+  SEND_PKT(c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(c1,
              SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
-  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
-  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+  SEND_PKT(c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
+  KEXPECT_EQ(1, net_accept_queue_length(s->socket));
 
   // We should be able to accept() a child socket.
   char addr[SOCKADDR_PRETTY_LEN];
-  c1.socket = do_accept(s.socket, addr);
-  KEXPECT_GE(c1.socket, 0);
+  c1->socket = do_accept(s->socket, addr);
+  KEXPECT_GE(c1->socket, 0);
   KEXPECT_STREQ(DST_IP ":2000", addr);
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
-  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
-  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1->socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s->socket));
 
   // listen(), accept(), etc should not work on the child socket.
-  KEXPECT_EQ(-EINVAL, net_listen(c1.socket, 10));
-  KEXPECT_EQ(-EINVAL, do_accept(c1.socket, addr));
-  KEXPECT_EQ(-EINVAL, net_accept_queue_length(c1.socket));
+  KEXPECT_EQ(-EINVAL, net_listen(c1->socket, 10));
+  KEXPECT_EQ(-EINVAL, do_accept(c1->socket, addr));
+  KEXPECT_EQ(-EINVAL, net_accept_queue_length(c1->socket));
 
   // Do a second connection.
-  tcp_test_state_t c2;
-  init_tcp_test_child(&s, &c2, DST_IP_2, 600);
-  SEND_PKT(&c2, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
-  EXPECT_PKT(&c2,
+  tcp_test_state_t* c2 = KMALLOC(tcp_test_state_t);
+  init_tcp_test_child(s, c2, DST_IP_2, 600);
+  SEND_PKT(c2, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(c2,
              SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
-  SEND_PKT(&c2, ACK_PKT(/* seq */ 501, /* ack */ 101));
-  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
-  c2.socket = do_accept(s.socket, addr);
-  KEXPECT_GE(c2.socket, 0);
+  SEND_PKT(c2, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(1, net_accept_queue_length(s->socket));
+  c2->socket = do_accept(s->socket, addr);
+  KEXPECT_GE(c2->socket, 0);
   KEXPECT_STREQ(DST_IP_2 ":600", addr);
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
-  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
-  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1->socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s->socket));
 
-  // Should be able to pass data on both sockets.
-  SEND_PKT(&c1, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
-  SEND_PKT(&c2, DATA_PKT(/* seq */ 501, /* ack */ 101, "123"));
-  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 101, /* ack */ 504));
-  EXPECT_PKT(&c2, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  // Should be able to pass data on both sockets->
+  SEND_PKT(c1, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  SEND_PKT(c2, DATA_PKT(/* seq */ 501, /* ack */ 101, "123"));
+  EXPECT_PKT(c1, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  EXPECT_PKT(c2, ACK_PKT(/* seq */ 101, /* ack */ 504));
 
-  KEXPECT_STREQ("abc", do_read(c1.socket));
-  KEXPECT_STREQ("123", do_read(c2.socket));
+  KEXPECT_STREQ("abc", do_read(c1->socket));
+  KEXPECT_STREQ("123", do_read(c2->socket));
 
-  KEXPECT_EQ(5, vfs_write(c1.socket, "ABCDE", 5));
-  KEXPECT_EQ(5, vfs_write(c2.socket, "67890", 5));
-  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 101, /* ack */ 504, "ABCDE"));
-  EXPECT_PKT(&c2, DATA_PKT(/* seq */ 101, /* ack */ 504, "67890"));
-  SEND_PKT(&c1, ACK_PKT(/* seq */ 504, /* ack */ 106));
-  SEND_PKT(&c2, ACK_PKT(/* seq */ 504, /* ack */ 106));
+  KEXPECT_EQ(5, vfs_write(c1->socket, "ABCDE", 5));
+  KEXPECT_EQ(5, vfs_write(c2->socket, "67890", 5));
+  EXPECT_PKT(c1, DATA_PKT(/* seq */ 101, /* ack */ 504, "ABCDE"));
+  EXPECT_PKT(c2, DATA_PKT(/* seq */ 101, /* ack */ 504, "67890"));
+  SEND_PKT(c1, ACK_PKT(/* seq */ 504, /* ack */ 106));
+  SEND_PKT(c2, ACK_PKT(/* seq */ 504, /* ack */ 106));
 
-  KEXPECT_TRUE(do_standard_finish(&c1, 5, 3));
-  KEXPECT_TRUE(do_standard_finish(&c2, 5, 3));
+  KEXPECT_TRUE(do_standard_finish(c1, 5, 3));
+  KEXPECT_TRUE(do_standard_finish(c2, 5, 3));
 
-  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(c1.socket));
-  KEXPECT_EQ(-EINVAL, net_listen(c1.socket, 10));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(c1->socket));
+  KEXPECT_EQ(-EINVAL, net_listen(c1->socket, 10));
 
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
 
-  cleanup_tcp_test(&s);
-  cleanup_tcp_test(&c1);
-  cleanup_tcp_test(&c2);
+  cleanup_tcp_test(s);
+  cleanup_tcp_test(c1);
+  cleanup_tcp_test(c2);
+
+  kfree(s);
+  kfree(c1);
+  kfree(c2);
 }
 
 static void listen_queue_max_test(void) {
@@ -14293,139 +14297,143 @@ static void sockmap_tests(void) {
 
 static void basic_ipv6_test(void) {
   KTEST_BEGIN("TCP: listen() basic test (IPv6)");
-  tcp_test_state_t s;
-  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+  tcp_test_state_t* s = KMALLOC(tcp_test_state_t);
+  init_tcp_test(s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
 
   // Should not be able to listen on an unbound socket.
-  KEXPECT_EQ(-EDESTADDRREQ, net_listen(s.socket, 10));
+  KEXPECT_EQ(-EDESTADDRREQ, net_listen(s->socket, 10));
 
-  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "1.2.3.4", 0x1234));
-  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, SRC_IP, 0x1234));
-  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "0.0.0.0", 0x1234));
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s->socket, "1.2.3.4", 0x1234));
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s->socket, SRC_IP, 0x1234));
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s->socket, "0.0.0.0", 0x1234));
 
-  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+  KEXPECT_EQ(0, do_bind(s->socket, "2001:db8::1", 0x1234));
 
-  KEXPECT_EQ(0, net_listen(s.socket, 10));
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
-  KEXPECT_EQ(-EINVAL, net_listen(s.socket, 10));
-  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
-  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
-  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RDWR));
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_EQ(0, net_listen(s->socket, 10));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
+  KEXPECT_EQ(-EINVAL, net_listen(s->socket, 10));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s->socket, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s->socket, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s->socket, SHUT_RDWR));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
 
   // Should not be able to call connect() on a listening socket.
-  KEXPECT_EQ(-EOPNOTSUPP, do_connect(s.socket, "2001:db8::2", 0x5678));
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
-  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+  KEXPECT_EQ(-EOPNOTSUPP, do_connect(s->socket, "2001:db8::2", 0x5678));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s->socket));
 
   // Or read/write.
   char buf;
-  KEXPECT_EQ(-ENOTCONN, vfs_read(s.socket, &buf, 1));
-  KEXPECT_EQ(-ENOTCONN, vfs_write(s.socket, &buf, 1));
+  KEXPECT_EQ(-ENOTCONN, vfs_read(s->socket, &buf, 1));
+  KEXPECT_EQ(-ENOTCONN, vfs_write(s->socket, &buf, 1));
 
-  KEXPECT_STREQ("[2001:db8::1]:4660", getsockname_str(s.socket));
-  KEXPECT_STREQ("ENOTCONN", getpeername_str(s.socket));
+  KEXPECT_STREQ("[2001:db8::1]:4660", getsockname_str(s->socket));
+  KEXPECT_STREQ("ENOTCONN", getpeername_str(s->socket));
 
   // Any packet other than a SYN should get a RST or be ignored.
-  SEND_PKT(&s, RST_PKT(/* seq */ 500, /* ack */ 101));
-  KEXPECT_FALSE(raw_has_packets(&s));
+  SEND_PKT(s, RST_PKT(/* seq */ 500, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets(s));
 
-  SEND_PKT(&s, ACK_PKT(/* seq */ 500, /* ack */ 101));
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
-  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 5000));
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
-  SEND_PKT(&s, DATA_PKT(/* seq */ 500, /* ack */ 101, "abc"));
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
-  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc"));
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
-  SEND_PKT(&s, FIN_PKT(/* seq */ 500, /* ack */ 101));
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(s, ACK_PKT(/* seq */ 500, /* ack */ 101));
+  EXPECT_PKT(s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 5000));
+  EXPECT_PKT(s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(s, DATA_PKT(/* seq */ 500, /* ack */ 101, "abc"));
+  EXPECT_PKT(s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(s, DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc"));
+  EXPECT_PKT(s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(s, FIN_PKT(/* seq */ 500, /* ack */ 101));
+  EXPECT_PKT(s, RST_NOACK_PKT(/* seq */ 101));
 
   // Try some mutants that don't have the ACK bit set for fun.
-  SEND_PKT(&s, NOACK(DATA_PKT(/* seq */ 500, /* ack */ 101, "abc")));
-  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 503));
-  SEND_PKT(&s, NOACK(DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc")));
-  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 504));
-  SEND_PKT(&s, NOACK(FIN_PKT(/* seq */ 500, /* ack */ 101)));
-  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 501));
+  SEND_PKT(s, NOACK(DATA_PKT(/* seq */ 500, /* ack */ 101, "abc")));
+  EXPECT_PKT(s, RST_PKT(/* seq */ 0, /* ack */ 503));
+  SEND_PKT(s, NOACK(DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc")));
+  EXPECT_PKT(s, RST_PKT(/* seq */ 0, /* ack */ 504));
+  SEND_PKT(s, NOACK(FIN_PKT(/* seq */ 500, /* ack */ 101)));
+  EXPECT_PKT(s, RST_PKT(/* seq */ 0, /* ack */ 501));
 
   // A SYN (or SYN-ACK) with data should also be rejected.
   test_packet_spec_t p = DATA_PKT(/* seq */ 500, /* ack */ 101, "abc");
   p.flags = TCP_FLAG_SYN;
-  SEND_PKT(&s, p);
-  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 504));
+  SEND_PKT(s, p);
+  EXPECT_PKT(s, RST_PKT(/* seq */ 0, /* ack */ 504));
   p.flags |= TCP_FLAG_ACK;
-  SEND_PKT(&s, p);
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(s, p);
+  EXPECT_PKT(s, RST_NOACK_PKT(/* seq */ 101));
 
   // Send a SYN, complete the connection.
-  tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "2001:db8::2", 2000);
-  c1.flow_label = 966464;
-  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
-  EXPECT_PKT(&c1,
+  tcp_test_state_t* c1 = KMALLOC(tcp_test_state_t);
+  init_tcp_test_child(s, c1, "2001:db8::2", 2000);
+  c1->flow_label = 966464;
+  SEND_PKT(c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(c1,
              SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
-  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
-  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+  SEND_PKT(c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
+  KEXPECT_EQ(1, net_accept_queue_length(s->socket));
 
   // We should be able to accept() a child socket.
   char addr[SOCKADDR_PRETTY_LEN];
-  c1.socket = do_accept(s.socket, addr);
-  KEXPECT_GE(c1.socket, 0);
+  c1->socket = do_accept(s->socket, addr);
+  KEXPECT_GE(c1->socket, 0);
   KEXPECT_STREQ("[2001:db8::2]:2000", addr);
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
-  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
-  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1->socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s->socket));
 
   // listen(), accept(), etc should not work on the child socket.
-  KEXPECT_EQ(-EINVAL, net_listen(c1.socket, 10));
-  KEXPECT_EQ(-EINVAL, do_accept(c1.socket, addr));
-  KEXPECT_EQ(-EINVAL, net_accept_queue_length(c1.socket));
+  KEXPECT_EQ(-EINVAL, net_listen(c1->socket, 10));
+  KEXPECT_EQ(-EINVAL, do_accept(c1->socket, addr));
+  KEXPECT_EQ(-EINVAL, net_accept_queue_length(c1->socket));
 
   // Do a second connection.
-  tcp_test_state_t c2;
-  init_tcp_test_child(&s, &c2, "2001:db8::3", 600);
-  c2.flow_label = 54956;
-  SEND_PKT(&c2, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
-  EXPECT_PKT(&c2,
+  tcp_test_state_t* c2 = KMALLOC(tcp_test_state_t);
+  init_tcp_test_child(s, c2, "2001:db8::3", 600);
+  c2->flow_label = 54956;
+  SEND_PKT(c2, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(c2,
              SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
-  SEND_PKT(&c2, ACK_PKT(/* seq */ 501, /* ack */ 101));
-  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
-  c2.socket = do_accept(s.socket, addr);
-  KEXPECT_GE(c2.socket, 0);
+  SEND_PKT(c2, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(1, net_accept_queue_length(s->socket));
+  c2->socket = do_accept(s->socket, addr);
+  KEXPECT_GE(c2->socket, 0);
   KEXPECT_STREQ("[2001:db8::3]:600", addr);
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
-  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
-  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1->socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s->socket));
 
-  // Should be able to pass data on both sockets.
-  SEND_PKT(&c1, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
-  SEND_PKT(&c2, DATA_PKT(/* seq */ 501, /* ack */ 101, "123"));
-  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 101, /* ack */ 504));
-  EXPECT_PKT(&c2, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  // Should be able to pass data on both sockets->
+  SEND_PKT(c1, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  SEND_PKT(c2, DATA_PKT(/* seq */ 501, /* ack */ 101, "123"));
+  EXPECT_PKT(c1, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  EXPECT_PKT(c2, ACK_PKT(/* seq */ 101, /* ack */ 504));
 
-  KEXPECT_STREQ("abc", do_read(c1.socket));
-  KEXPECT_STREQ("123", do_read(c2.socket));
+  KEXPECT_STREQ("abc", do_read(c1->socket));
+  KEXPECT_STREQ("123", do_read(c2->socket));
 
-  KEXPECT_EQ(5, vfs_write(c1.socket, "ABCDE", 5));
-  KEXPECT_EQ(5, vfs_write(c2.socket, "67890", 5));
-  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 101, /* ack */ 504, "ABCDE"));
-  EXPECT_PKT(&c2, DATA_PKT(/* seq */ 101, /* ack */ 504, "67890"));
-  SEND_PKT(&c1, ACK_PKT(/* seq */ 504, /* ack */ 106));
-  SEND_PKT(&c2, ACK_PKT(/* seq */ 504, /* ack */ 106));
+  KEXPECT_EQ(5, vfs_write(c1->socket, "ABCDE", 5));
+  KEXPECT_EQ(5, vfs_write(c2->socket, "67890", 5));
+  EXPECT_PKT(c1, DATA_PKT(/* seq */ 101, /* ack */ 504, "ABCDE"));
+  EXPECT_PKT(c2, DATA_PKT(/* seq */ 101, /* ack */ 504, "67890"));
+  SEND_PKT(c1, ACK_PKT(/* seq */ 504, /* ack */ 106));
+  SEND_PKT(c2, ACK_PKT(/* seq */ 504, /* ack */ 106));
 
-  KEXPECT_TRUE(do_standard_finish(&c1, 5, 3));
-  KEXPECT_TRUE(do_standard_finish(&c2, 5, 3));
+  KEXPECT_TRUE(do_standard_finish(c1, 5, 3));
+  KEXPECT_TRUE(do_standard_finish(c2, 5, 3));
 
-  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(c1.socket));
-  KEXPECT_EQ(-EINVAL, net_listen(c1.socket, 10));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(c1->socket));
+  KEXPECT_EQ(-EINVAL, net_listen(c1->socket, 10));
 
-  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s->socket));
 
-  cleanup_tcp_test(&s);
-  cleanup_tcp_test(&c1);
-  cleanup_tcp_test(&c2);
+  cleanup_tcp_test(s);
+  cleanup_tcp_test(c1);
+  cleanup_tcp_test(c2);
+
+  kfree(s);
+  kfree(c1);
+  kfree(c2);
 }
 
 static void basic_ipv6_connect_test(void) {
