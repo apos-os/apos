@@ -16,6 +16,7 @@
 
 #include "common/hash.h"
 #include "common/kassert.h"
+#include "common/klog_control.h"
 #include "common/types.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"

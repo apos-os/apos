@@ -17,6 +17,7 @@
 #include "arch/common/die.h"
 #include "arch/proc/stack_trace.h"
 #include "common/klog.h"
+#include "common/klog_control.h"
 #include "common/kstring.h"
 #include "dev/interrupts.h"
 #include "memory/memory.h"

@@ -21,6 +21,7 @@
 #include "common/arch-config.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/klog_control.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
 #include "dev/timer.h"

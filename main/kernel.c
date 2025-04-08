@@ -23,6 +23,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/klog_control.h"
 #include "common/kstring.h"
 #include "common/perf_trace.h"
 #include "dev/devicetree/devicetree.h"
