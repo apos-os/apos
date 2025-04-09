@@ -15,8 +15,11 @@
 
 #include "common/kassert.h"
 #include "proc/kthread-internal.h"
+#include "proc/raw_spinlock.h"
 
 void kthread_queue_init(kthread_queue_t* lst) {
+  raw_spin_ctor(&lst->spin);
+  lst->spin = RAW_SPIN_INIT;
   lst->head = lst->tail = 0x0;
 }
 
@@ -30,8 +33,13 @@ static void kthread_queue_insert(kthread_data_t* A, kthread_data_t* B) {
   A->next = B;
 }
 
-// Push a thread onto the end of a list.
 void kthread_queue_push(kthread_queue_t* lst, kthread_data_t* thread) {
+  raw_spin_lock(&lst->spin);
+  kthread_queue_push_locked(lst, thread);
+  raw_spin_unlock(&lst->spin);
+}
+
+void kthread_queue_push_locked(kthread_queue_t* lst, kthread_data_t* thread) {
   KASSERT(thread->prev == 0);
   KASSERT(thread->next == 0);
   KASSERT(thread->queue == NULL);
@@ -50,8 +58,14 @@ void kthread_queue_push(kthread_queue_t* lst, kthread_data_t* thread) {
   thread->queue = lst;
 }
 
-// Pop a thread off the front of a list.
 kthread_t kthread_queue_pop(kthread_queue_t* lst) {
+  raw_spin_lock(&lst->spin);
+  kthread_t result = kthread_queue_pop_locked(lst);
+  raw_spin_unlock(&lst->spin);
+  return result;
+}
+
+kthread_t kthread_queue_pop_locked(kthread_queue_t* lst) {
   if (!lst->head) {
     return lst->head;
   }
@@ -71,7 +85,15 @@ kthread_t kthread_queue_pop(kthread_queue_t* lst) {
 }
 
 void kthread_queue_remove(kthread_t thread) {
+  kthread_queue_t* q = thread->queue;
+  raw_spin_lock(&q->spin);
+  kthread_queue_remove_locked(thread);
+  raw_spin_unlock(&q->spin);
+}
+
+void kthread_queue_remove_locked(kthread_t thread) {
   KASSERT_DBG(thread->queue != NULL);
+  raw_spin_assert_held(&thread->queue->spin);
   if (thread->queue->head == thread)
     thread->queue->head = thread->next;
   if (thread->queue->tail == thread)
@@ -85,6 +107,12 @@ void kthread_queue_remove(kthread_t thread) {
 }
 
 int kthread_queue_empty(kthread_queue_t* lst) {
-  return lst->head == 0x0;
+  raw_spin_lock(&lst->spin);
+  int result = kthread_queue_empty_locked(lst);
+  raw_spin_unlock(&lst->spin);
+  return result;
 }
 
+int kthread_queue_empty_locked(kthread_queue_t* lst) {
+  return lst->head == 0x0;
+}

@@ -197,7 +197,7 @@ static void join_multi_test(void) {
 
 static void* noop_func(void* arg) { return 0; }
 
-static void queue_test(void) {
+static void queue_test(void) NO_THREAD_SAFETY_ANALYSIS {
   KTEST_BEGIN("queue operations test");
   kthread_t thread1, thread2, thread3;
   int ret = kthread_create(&thread1, &noop_func, 0x0);

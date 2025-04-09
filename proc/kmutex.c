@@ -15,9 +15,12 @@
 
 #include "common/kassert.h"
 #include "dev/interrupts.h"
+#include "proc/kthread-queue.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
+#include "proc/raw_spinlock.h"
 #include "proc/scheduler.h"
+#include "proc/spinlock.h"
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_lock.h"
@@ -138,7 +141,8 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) RELEASE(m) {
 
   KASSERT(m->locked == 1);
   KASSERT(m->holder == kthread_current_thread());
-  if (!kthread_queue_empty(&m->wait_queue)) {
+  raw_spin_lock(&m->wait_queue.spin);
+  if (!kthread_queue_empty_locked(&m->wait_queue)) {
     // Try to find the first non-disabled waiter.
     kthread_t next_holder = m->wait_queue.head;
     while (next_holder && !next_holder->runnable) {
@@ -147,13 +151,15 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) RELEASE(m) {
     if (!next_holder) {
       next_holder = m->wait_queue.head;
     }
-    kthread_queue_remove(next_holder);
+    kthread_queue_remove_locked(next_holder);
     m->holder = next_holder;
+    raw_spin_unlock(&m->wait_queue.spin);
     scheduler_make_runnable(next_holder);
     if (yield) scheduler_yield();
   } else {
     m->locked = 0;
     m->holder = 0x0;
+    raw_spin_unlock(&m->wait_queue.spin);
   }
   POP_INTERRUPTS();
   _kmutex_rel(m);

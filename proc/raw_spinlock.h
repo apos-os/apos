@@ -16,6 +16,7 @@
 #ifndef APOO_PROC_RAW_SPINLOCK_H
 #define APOO_PROC_RAW_SPINLOCK_H
 
+#include "common/kassert.h"
 #include "dev/interrupts.h"
 #include "common/atomic.h"
 
@@ -25,16 +26,31 @@ typedef struct CAPABILITY("spinlock") {
   interrupt_state_t int_state;
 } raw_spinlock_t;
 
+#define RAW_SPIN_INIT (raw_spinlock_t){ ATOMIC32_INIT(0), 0 }
+
 static inline NO_TSAN ALWAYS_INLINE
 void raw_spin_lock(raw_spinlock_t* sp)
     ACQUIRE(sp) NO_THREAD_SAFETY_ANALYSIS {
   sp->int_state = save_and_disable_interrupts_raw();
+  KASSERT(atomic_load_relaxed(&sp->flag) == 0);
+  atomic_store_relaxed(&sp->flag, 1);
 }
 
 static inline NO_TSAN ALWAYS_INLINE
 void raw_spin_unlock(raw_spinlock_t* sp)
     RELEASE(sp) NO_THREAD_SAFETY_ANALYSIS {
+  KASSERT(atomic_load_relaxed(&sp->flag) == 1);
+  atomic_store_relaxed(&sp->flag, 0);
   restore_interrupts_raw(sp->int_state);
 }
+
+static inline ALWAYS_INLINE
+void raw_spin_assert_held(const raw_spinlock_t* l) ASSERT_CAPABILITY(l) {
+  // TODO(SMP): assert holder is current thread.
+  KASSERT(atomic_load_relaxed(&l->flag));
+}
+
+static inline ALWAYS_INLINE
+void raw_spin_ctor(const raw_spinlock_t* l) ASSERT_CAPABILITY(l) {}
 
 #endif

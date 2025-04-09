@@ -106,13 +106,15 @@ void scheduler_yield(void) {
 
 void scheduler_yield_no_reschedule(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
+  raw_spin_lock(&g_run_queue.spin);
   kthread_data_t* new_thread = g_run_queue.head;
   // This is inefficient, but disabled threads are not expected to be used much.
   while (new_thread && !new_thread->runnable) {
     new_thread = new_thread->next;
   }
   if (new_thread) {
-    kthread_queue_remove(new_thread);
+    kthread_queue_remove_locked(new_thread);
+    raw_spin_unlock(&g_run_queue.spin);
     if (ENABLE_PROFILE_IDLE && g_idling) {
       g_idling = false;
       uint64_t idle_len = arch_real_timer() - g_idling_start;
@@ -124,6 +126,7 @@ void scheduler_yield_no_reschedule(void) {
       perftrace_log_trace(idle_len, stack_trace + 1, len);
     }
   } else {
+    raw_spin_unlock(&g_run_queue.spin);
     new_thread = g_idle_thread;
     if (ENABLE_PROFILE_IDLE && !g_idling) {
       g_idling = true;

@@ -18,6 +18,7 @@
 #include "memory/kmalloc.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
+#include "proc/kthread-queue.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "proc/process.h"
@@ -31,6 +32,13 @@
 static bool has_sigpipe(void) {
   const ksigset_t sigset = proc_pending_signals(proc_current());
   return ksigismember(&sigset, SIGPIPE);
+}
+
+static kthread_t qhead(kthread_queue_t* q) {
+  raw_spin_lock(&q->spin);
+  kthread_t result = q->head;
+  raw_spin_unlock(&q->spin);
+  return result;
 }
 
 // TODO(aoates): use signals to synchronize the threads.
@@ -127,7 +135,7 @@ static void open_test(void) {
   KEXPECT_EQ(false, reader_open_finished);
   KEXPECT_EQ(2, fifo.num_readers);
   KEXPECT_EQ(0, fifo.num_writers);
-  KEXPECT_EQ(thread, fifo.read_queue.head);
+  KEXPECT_EQ(thread, qhead(&fifo.read_queue));
 
   // Opening then closing immediately shouldn't make the original call return.
   KEXPECT_EQ(0, fifo_open(&fifo, FIFO_WRITE, true, false));
@@ -156,7 +164,7 @@ static void open_test(void) {
   KEXPECT_EQ(false, writer_open_finished);
   KEXPECT_EQ(0, fifo.num_readers);
   KEXPECT_EQ(2, fifo.num_writers);
-  KEXPECT_EQ(thread, fifo.write_queue.head);
+  KEXPECT_EQ(thread, qhead(&fifo.write_queue));
 
   // Opening then closing immediately shouldn't make the original call return.
   KEXPECT_EQ(0, fifo_open(&fifo, FIFO_READ, true, false));
@@ -489,7 +497,7 @@ static void write_testA(apos_fifo_t* f, void* big_buf, void* big_buf2) {
 
   // Open up some space, but not enough.
   KEXPECT_EQ(50, fifo_read(f, big_buf2, 50, true));
-  for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
+  for (int i = 0; i < 10 && !qhead(&f->write_queue); ++i) scheduler_yield();
   KEXPECT_EQ(false, args.finished);
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
   KEXPECT_EQ(0, check_buffer(big_buf2, 'x', 50, 'X', 0));
@@ -548,7 +556,7 @@ static void write_testB(apos_fifo_t* f, void* big_buf, void* big_buf2) {
 
   // Open up some space, but not enough.
   KEXPECT_EQ(50, fifo_read(f, big_buf2, 50, true));
-  for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
+  for (int i = 0; i < 10 && !qhead(&f->write_queue); ++i) scheduler_yield();
   circbuf_realign(&f->cbuf);
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
   KEXPECT_EQ(0,
@@ -620,7 +628,7 @@ static void write_testC(apos_fifo_t* f, void* big_buf, void* big_buf2) {
     if (read_size1 > 0) {
       // Open up some space, but not enough.
       KEXPECT_EQ(read_size1, fifo_read(f, big_buf2, read_size1, true));
-      for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
+      for (int i = 0; i < 10 && !qhead(&f->write_queue); ++i) scheduler_yield();
       KEXPECT_EQ(false, args.finished);
       KEXPECT_EQ(orig_write_size - read_size1, f->cbuf.len);
       KEXPECT_EQ(0, check_buffer(big_buf2, 'x', read_size1, 'X', 0));
@@ -688,11 +696,11 @@ static void write_testD(apos_fifo_t* f, void* big_buf, void* big_buf2) {
 
   // Open up some space, but not enough.
   KEXPECT_EQ(50, fifo_read(f, big_buf2, 50, true));
-  for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
+  for (int i = 0; i < 10 && !qhead(&f->write_queue); ++i) scheduler_yield();
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
 
   KEXPECT_EQ(50, fifo_read(f, big_buf2, 50, true));
-  for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
+  for (int i = 0; i < 10 && !qhead(&f->write_queue); ++i) scheduler_yield();
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
 
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE,
@@ -772,7 +780,7 @@ static void write_testD(apos_fifo_t* f, void* big_buf, void* big_buf2) {
 
   // Close second-to-last reader.
   fifo_close(f, FIFO_READ);
-  for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
+  for (int i = 0; i < 10 && !qhead(&f->write_queue); ++i) scheduler_yield();
   KEXPECT_EQ(false, args.finished);
 
   // Close last reader.
@@ -804,7 +812,7 @@ static void write_testD(apos_fifo_t* f, void* big_buf, void* big_buf2) {
 
   // Close second-to-last reader.
   fifo_close(f, FIFO_READ);
-  for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
+  for (int i = 0; i < 10 && !qhead(&f->write_queue); ++i) scheduler_yield();
   KEXPECT_EQ(false, args.finished);
 
   // Close last reader.
