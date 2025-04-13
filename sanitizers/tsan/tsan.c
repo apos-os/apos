@@ -139,6 +139,11 @@ void tsan_init_shadow_mem(void) {
   tsan_map_vregion(meminfo->kernel_writable_data.base,
                    meminfo->kernel_writable_data.len);
 
+  // Allocate shadow and metadata for the root thread stack.
+  // Note: ideally we should do this for all .init data sections, but currently
+  // the initial thread stack is the only one we access via TSAN paths.
+  tsan_map_vregion(meminfo->thread0_stack.base, meminfo->thread0_stack.len);
+
   // Statically allocate the sync object table.
   KASSERT(TSAN_SYNC_OBJ_TABLE_LEN % PAGE_SIZE == 0);
   tsan_alloc_pages(TSAN_SYNC_OBJ_TABLE_START,
