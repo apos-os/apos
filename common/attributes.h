@@ -16,6 +16,7 @@
 #define APOO_COMMON_ATTRIBUTES_H
 
 #define ALWAYS_INLINE __attribute__((always_inline))
+#define NO_INLINE __attribute__ ((noinline))
 
 // Use NO_TSAN for functions whose accesses should not be annotated/intercepted.
 // The functions themselves will still be instrumented (function entry/exit).

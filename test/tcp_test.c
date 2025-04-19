@@ -9809,7 +9809,7 @@ static void close_shutdown_test(void) {
   close_shutdown_test8b();
 }
 
-static void basic_listen_test(void) {
+NO_INLINE static void basic_listen_test(void) {
   KTEST_BEGIN("TCP: listen() basic test");
   tcp_test_state_t* s = KMALLOC(tcp_test_state_t);
   init_tcp_test(s, SRC_IP, 0x1234, DST_IP, 0x5678);
@@ -9946,7 +9946,7 @@ static void basic_listen_test(void) {
   kfree(c2);
 }
 
-static void listen_queue_max_test(void) {
+NO_INLINE static void listen_queue_max_test(void) {
   KTEST_BEGIN("TCP: listen() hits max queue length test");
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, NULL, 0);
@@ -10045,7 +10045,7 @@ static void do_backlog_test(tcp_test_state_t* s, int backlog) {
   kfree(c);
 }
 
-static void listen_backlog_values_test(void) {
+NO_INLINE static void listen_backlog_values_test(void) {
   KTEST_BEGIN("TCP: listen() backlog negative");
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, NULL, 0);
@@ -10079,7 +10079,7 @@ static void listen_backlog_values_test(void) {
   cleanup_tcp_test(&c1);
 }
 
-static void accept_blocks_test(void) {
+NO_INLINE static void accept_blocks_test(void) {
   KTEST_BEGIN("TCP: accept() blocks until socket available");
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, NULL, 0);
@@ -10131,7 +10131,7 @@ static void accept_blocks_test(void) {
   cleanup_tcp_test(&c3);
 }
 
-static void accept_blocks_test2(void) {
+NO_INLINE static void accept_blocks_test2(void) {
   KTEST_BEGIN("TCP: accept() interrupted by signal");
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, NULL, 0);
@@ -10164,7 +10164,7 @@ static void accept_blocks_test2(void) {
   cleanup_tcp_test(&c1);
 }
 
-static void accept_blocks_test3(void) {
+NO_INLINE static void accept_blocks_test3(void) {
   KTEST_BEGIN("TCP: accept() blocks when socket is already in SYN_RCVD");
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, NULL, 0);
