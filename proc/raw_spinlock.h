@@ -31,17 +31,19 @@ typedef struct CAPABILITY("spinlock") {
 static inline NO_TSAN ALWAYS_INLINE
 void raw_spin_lock(raw_spinlock_t* sp)
     ACQUIRE(sp) NO_THREAD_SAFETY_ANALYSIS {
-  sp->int_state = save_and_disable_interrupts_raw();
-  KASSERT(atomic_load_relaxed(&sp->flag) == 0);
+  interrupt_state_t int_state = save_and_disable_interrupts_raw();
+  KASSERT(atomic_load_acquire(&sp->flag) == 0);
   atomic_store_relaxed(&sp->flag, 1);
+  sp->int_state = int_state;
 }
 
 static inline NO_TSAN ALWAYS_INLINE
 void raw_spin_unlock(raw_spinlock_t* sp)
     RELEASE(sp) NO_THREAD_SAFETY_ANALYSIS {
   KASSERT(atomic_load_relaxed(&sp->flag) == 1);
-  atomic_store_relaxed(&sp->flag, 0);
-  restore_interrupts_raw(sp->int_state);
+  interrupt_state_t int_state = sp->int_state;
+  atomic_store_release(&sp->flag, 0);
+  restore_interrupts_raw(int_state);
 }
 
 static inline ALWAYS_INLINE

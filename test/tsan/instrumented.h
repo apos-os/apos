@@ -19,6 +19,7 @@
 
 #include "common/atomic.h"
 #include "common/types.h"
+#include "proc/raw_spinlock.h"
 
 // Reads the given value, then stores an incremented value back to the pointer.
 void tsan_rw_value(int* x);
@@ -68,5 +69,9 @@ uint32_t tsan_atomic_rmw(atomic32_t* x, uint32_t val, int memorder);
 bool tsan_flag_get(const atomic_flag_t* f);
 void tsan_flag_set(atomic_flag_t* f);
 void tsan_flag_clear(atomic_flag_t* f);
+
+// Lock and unlock a raw spinlock.
+void tsan_raw_lock(raw_spinlock_t* rsp) ACQUIRE(rsp);
+void tsan_raw_unlock(raw_spinlock_t* rsp) RELEASE(rsp);
 
 #endif

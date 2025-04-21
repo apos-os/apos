@@ -19,6 +19,7 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/kstring-tsan.h"
+#include "proc/raw_spinlock.h"
 
 #if !__has_feature(thread_sanitizer)
 #error TSAN must be enabled in this module
@@ -183,4 +184,12 @@ void tsan_flag_set(atomic_flag_t* f) {
 
 void tsan_flag_clear(atomic_flag_t* f) {
   atomic_flag_clear(f);
+}
+
+void tsan_raw_lock(raw_spinlock_t* rsp) {
+  raw_spin_lock(rsp);
+}
+
+void tsan_raw_unlock(raw_spinlock_t* rsp) {
+  raw_spin_unlock(rsp);
 }

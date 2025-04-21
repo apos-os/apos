@@ -25,6 +25,7 @@
 #include "proc/kthread.h"
 #include "proc/notification.h"
 #include "proc/process.h"
+#include "proc/raw_spinlock.h"
 #include "proc/scheduler.h"
 #include "proc/sleep.h"
 #include "proc/spinlock.h"
@@ -215,6 +216,7 @@ typedef struct {
   kmutex_t* mu;
   kspinlock_t* spin;
   kspinlock_intsafe_t* spin_int;
+  raw_spinlock_t* raw_spin;
   uint64_t* val;
 } mutex_test_args_t;
 
@@ -434,6 +436,62 @@ static void tsan_basic_sanity_test3_spinlock_intsafe(void) {
   kspin_lock_int(args.spin_int);
   tsan_rw_u64(args.val);
   kspin_unlock_int(args.spin_int);
+
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  // A join should act as a synchronization point between the threads.
+  tsan_rw_u64(args.val);
+
+  sched_disable_preemption();
+
+  KEXPECT_EQ(6, args.val[0]);
+  KEXPECT_EQ(2, args.val[1]);
+  KEXPECT_EQ(2, args.val[2]);
+  KEXPECT_EQ(2, args.val[3]);
+  tsan_test_cleanup();
+}
+
+static void* rw_value_thread_raw_spinlock(void* arg) {
+  KASSERT(sched_preemption_enabled());
+
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  // Non-racing accesses.  Should be OK.
+  tsan_rw_u64(&args->val[1]);
+  tsan_rw_u64(&args->val[3]);
+
+  tsan_raw_lock(args->raw_spin);
+  tsan_rw_u64(args->val);
+  tsan_raw_unlock(args->raw_spin);
+
+  tsan_raw_lock(args->raw_spin);
+  tsan_rw_u64(args->val);
+  tsan_raw_unlock(args->raw_spin);
+  return NULL;
+}
+
+static void tsan_basic_sanity_test3_raw_spinlock(void) {
+  KTEST_BEGIN("TSAN: basic R/W heap value (two threads, raw-spin-locked)");
+  mutex_test_args_t args;
+  raw_spinlock_t spin = RAW_SPIN_INIT;
+  args.raw_spin = &spin;
+  args.val = tsan_test_alloc(sizeof(uint64_t) * 4);
+  for (int i = 0; i < 4; ++i) {
+    args.val[i] = 0;
+    tsan_rw_u64(args.val + i);
+  }
+  kthread_t thread;
+  sched_enable_preemption_for_test();
+  KEXPECT_EQ(0, proc_thread_create(&thread, &rw_value_thread_raw_spinlock, &args));
+  // Non-racing access.
+  tsan_rw_u64(&args.val[2]);
+
+  tsan_raw_lock(args.raw_spin);
+  tsan_rw_u64(args.val);
+  tsan_raw_unlock(args.raw_spin);
+
+  tsan_raw_lock(args.raw_spin);
+  tsan_rw_u64(args.val);
+  tsan_raw_unlock(args.raw_spin);
 
   KEXPECT_EQ(NULL, kthread_join(thread));
   // A join should act as a synchronization point between the threads.
@@ -1088,6 +1146,7 @@ static void basic_tests(void) {
   tsan_basic_sanity_test3();
   tsan_basic_sanity_test3_spinlock();
   tsan_basic_sanity_test3_spinlock_intsafe();
+  tsan_basic_sanity_test3_raw_spinlock();
   tsan_basic_sanity_test4();
   size1_safe_test();
   size1_memset_safe_test();
