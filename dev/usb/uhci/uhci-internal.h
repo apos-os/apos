@@ -22,6 +22,8 @@
 #include "common/config.h"
 #include "dev/usb/hcd.h"
 #include "dev/usb/uhci/uhci_hub.h"
+#include "proc/tasklet.h"
+#include "proc/thread_annotations.h"
 
 #if ARCH_IS_64_BIT
 #  define EXTRA_ADDRESS_MASK_BITS 0xFFFFFFFF00000000
@@ -103,6 +105,8 @@ struct uhci_pending_irp {
 typedef struct uhci_pending_irp uhci_pending_irp_t;
 
 struct usb_uhci {
+  kspinlock_intsafe_t lock;
+
   devio_t io;  // USBBASE register.
   irq_t irq;
   addr32_t* frame_list;  // Pointer to the frame list.
@@ -115,8 +119,15 @@ struct usb_uhci {
   // Linked-list of pending IRPs.
   usb_hcdi_irp_t* pending_irps;
 
+  // Linked-list of completed IRPs.
+  usb_hcdi_irp_t* completed_irps GUARDED_BY(&lock);
+  usb_hcdi_irp_t* completed_irps_end GUARDED_BY(&lock);
+
   // Fake controller for the root hub.
   uhci_hub_t* root_hub;
+
+  // Tasklet for handling completed IRPs.
+  tasklet_t tasklet;
 };
 
 // HACK

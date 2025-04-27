@@ -38,7 +38,7 @@ static int g_usb_initialized = 0;
 static slab_alloc_t* g_buffer_allocs[BUFSLAB_MAX_EXPONENT + 1];
 
 // Dedicated USB thread pool.  Used to run all driver callbacks and background
-// processes to keep them off the interrupt contexts.
+// processes to keep them off the defint contexts.
 #define USB_POOL_SIZE 4
 static kthread_pool_t g_pool;
 
@@ -158,7 +158,7 @@ struct usb_irp_context {
 
   // The next callback to run in handling the request.  This will be pushed onto
   // the USB thread pool by the trampoline function (which is called by the
-  // HCD, possibly on an interrupt context).
+  // HCD, possibly on an defint context).
   //
   // The argument is a usb_irp_context_t*.
   void (*callback)(void*);
@@ -169,7 +169,7 @@ static void usb_irp_finish(usb_irp_context_t* context, int do_callback);
 static void usb_irp_check_endpoint(void* arg);
 
 // Trampoline function.  This is set as the callback for the HCD IRP, and is
-// invoked on an interrupt context (or possibly synchronously from
+// invoked on an defint context (or possibly synchronously from
 // schedule_irp).  Trampolines the next callback onto the USB thread pool.
 static void usb_irp_trampoline(usb_hcdi_irp_t* irp, void* arg) {
   usb_irp_context_t* context = (usb_irp_context_t*)arg;

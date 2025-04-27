@@ -33,10 +33,12 @@
 #include "dev/usb/usb_driver.h"
 #include "memory/kmalloc.h"
 #include "memory/page_alloc.h"
+#include "memory/slab_alloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/sleep.h"
-#include "memory/slab_alloc.h"
+#include "proc/spinlock.h"
+#include "proc/tasklet.h"
 
 #define KLOG(...) klogfm(KL_USB_UHCI, __VA_ARGS__)
 
@@ -236,6 +238,32 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
   return 0;
 }
 
+static void uhci_tasklet_handler(tasklet_t* tl, void* arg) {
+  usb_uhci_t* c = (usb_uhci_t*)arg;
+  usb_hcdi_irp_t* completed_irps = NULL;
+
+  // Safely get the list of completed IRPs from the interrupt handler.
+  kspin_lock_int(&c->lock);
+  completed_irps = c->completed_irps;
+  c->completed_irps = c->completed_irps_end = NULL;
+  kspin_unlock_int(&c->lock);
+
+  // Process the completed IRPs and invoke their callbacks.
+  usb_hcdi_irp_t* irp = completed_irps;
+  while (irp) {
+    usb_hcdi_irp_t* next_irp = ((uhci_pending_irp_t*)irp->hcd_data)->next;
+
+    // Invoke the callback.
+    if (irp->callback) {
+      irp->callback(irp, irp->callback_arg);
+    }
+
+    // TODO(aoates): Clean up memory for TDs, QHs, and pirp.
+
+    irp = next_irp;
+  }
+}
+
 static void uhci_interrupt(void* arg) {
   usb_uhci_t* c = (usb_uhci_t*)arg;
   uint16_t status = io_read16(c->io, USBSTS);
@@ -251,6 +279,10 @@ static void uhci_interrupt(void* arg) {
   // Find the transaction that finished.
   usb_hcdi_irp_t* prev = 0x0;
   usb_hcdi_irp_t* irp = c->pending_irps;
+  bool schedule_tasklet = false;
+  // TODO(SMP): rewrite the rest of UHCI to be SMP-safe --- there is other
+  // shared data here.
+  kspin_lock_int(&c->lock);
   while (irp) {
     uhci_pending_irp_t* pirp = (uhci_pending_irp_t*)irp->hcd_data;
     // Save the next IRP now since we NULL pirp->next if it's finished.
@@ -309,10 +341,14 @@ static void uhci_interrupt(void* arg) {
       // Remove the QH from the type queue.
       // TODO
 
-      // Invoke the callback.
-      if (irp->callback) {
-        irp->callback(irp, irp->callback_arg);
+      // Add the completed IRP to the end of the completed_irps queue.
+      if (c->completed_irps_end) {
+        ((uhci_pending_irp_t*)c->completed_irps_end->hcd_data)->next = irp;
+        c->completed_irps_end = irp;
+      } else {
+        c->completed_irps = c->completed_irps_end = irp;
       }
+      schedule_tasklet = true;
     } else {
       // Don't update prev if we deleted the current node.
       prev = irp;
@@ -320,11 +356,21 @@ static void uhci_interrupt(void* arg) {
 
     irp = next_irp;
   }
+  kspin_unlock_int(&c->lock);
+
+  if (schedule_tasklet) {
+    // If we found any completed IRPs, schedule the tasklet to handle them.
+    tasklet_schedule(&c->tasklet);
+  }
 }
 
 // Initialize the UHCI HCD.  Called by usb_init().
 static int uhci_init_controller(usb_hcdi_t* hcd) {
   usb_uhci_t* c = (usb_uhci_t*)hcd->dev_data;
+
+  kspin_int_constructor(&c->lock);
+  c->lock = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  c->completed_irps = c->completed_irps_end = NULL;
 
   if (!td_alloc) {
     td_alloc = slab_alloc_create(sizeof(uhci_td_t), SLAB_MAX_PAGES);
@@ -391,6 +437,9 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
 
   // Initialize the root hub controller.
   KASSERT(0 == uhci_hub_init(c));
+
+  // Initialize the tasklet.
+  tasklet_init(&c->tasklet, &uhci_tasklet_handler, c);
 
   // Start the controller.
   cmd = io_read16(c->io, USBCMD);
@@ -484,10 +533,6 @@ void usb_uhci_register_controller(devio_t io, uint8_t irq) {
   hcdi->schedule_irp = &uhci_schedule_irp;
   hcdi->dev_data = c;
   usb_create_bus(hcdi);
-}
-
-void usb_uhci_interrupt(int handle) {
-  KASSERT(handle >= 0 && handle < g_num_controllers);
 }
 
 int usb_uhci_num_controllers(void) {
