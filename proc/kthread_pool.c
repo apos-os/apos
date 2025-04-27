@@ -20,18 +20,19 @@
 #include "proc/kthread.h"
 #include "proc/kthread_pool.h"
 #include "proc/scheduler.h"
+#include "proc/spinlock.h"
 
 static void* worker_func(void* arg) {
   kthread_pool_t* pool = (kthread_pool_t*)arg;
   while (1) {
-    PUSH_AND_DISABLE_INTERRUPTS();
+    kspin_lock(&pool->spin);
     while (pool->queue_head == 0x0 && pool->running) {
-      scheduler_wait_on(&pool->wait_queue);
+      scheduler_wait_on_splocked(&pool->wait_queue, -1, &pool->spin);
     }
 
     if (pool->queue_head == 0x0) {
       KASSERT_DBG(!pool->running);
-      POP_INTERRUPTS();
+      kspin_unlock(&pool->spin);
       break;
     }
 
@@ -41,7 +42,7 @@ static void* worker_func(void* arg) {
       KASSERT(pool->queue_tail == item);
       pool->queue_tail = 0x0;
     }
-    POP_INTERRUPTS();
+    kspin_unlock(&pool->spin);
 
     item->cb(item->arg);
     kfree(item);
@@ -50,6 +51,8 @@ static void* worker_func(void* arg) {
 }
 
 int kthread_pool_init(kthread_pool_t* pool, int size) {
+  kspin_constructor(&pool->spin);
+  pool->spin = KSPINLOCK_NORMAL_INIT;
   pool->running = true;
   pool->size = size;
   pool->threads = (kthread_t*)kmalloc(sizeof(kthread_t) * size);
@@ -78,12 +81,15 @@ int kthread_pool_init(kthread_pool_t* pool, int size) {
 }
 
 void kthread_pool_destroy(kthread_pool_t* pool) {
-  KASSERT(pool->running);
   KASSERT(pool->size > 0);
+  kspin_lock(&pool->spin);
+  KASSERT(pool->running);
   pool->running = false;
+  kspin_unlock(&pool->spin);
   scheduler_wake_all(&pool->wait_queue);
   for (int i = 0; i < pool->size; ++i)
     kthread_join(pool->threads[i]);
+  kspin_destructor(&pool->spin);
   KASSERT(pool->queue_head == NULL);
   KASSERT(pool->queue_tail == NULL);
   KASSERT(kthread_queue_empty(&pool->wait_queue));
@@ -108,7 +114,7 @@ int kthread_pool_push(kthread_pool_t* pool, kthread_pool_cb_t cb, void* arg) {
   item->arg = arg;
   item->next = 0x0;
   {
-    PUSH_AND_DISABLE_INTERRUPTS();
+    kspin_lock(&pool->spin);
     if (!pool->queue_head) {
       KASSERT(pool->queue_tail == 0x0);
       pool->queue_head = pool->queue_tail = item;
@@ -116,10 +122,8 @@ int kthread_pool_push(kthread_pool_t* pool, kthread_pool_cb_t cb, void* arg) {
       pool->queue_tail->next = item;
       pool->queue_tail = item;
     }
-    if (!kthread_queue_empty(&pool->wait_queue)) {
-      scheduler_make_runnable(kthread_queue_pop(&pool->wait_queue));
-    }
-    POP_INTERRUPTS();
+    scheduler_wake_one(&pool->wait_queue);
+    kspin_unlock(&pool->spin);
   }
   return 0;
 }

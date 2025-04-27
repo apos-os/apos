@@ -25,6 +25,8 @@
 
 #include "proc/kthread-queue.h"
 #include "proc/kthread.h"
+#include "proc/spinlock.h"
+#include "proc/thread_annotations.h"
 
 struct kthread_pool;
 typedef struct kthread_pool kthread_pool_t;
@@ -47,8 +49,8 @@ void kthread_pool_destroy(kthread_pool_t* pool);
 // Push a callback (and args) onto the thread pool's queue.  When a worker
 // thread is available, it will invoke the callback on that thread.
 //
-// Note: this is interrupt-safe (that is, it is safe to invoke this from
-// both interrupt and non-interrupt contexts without additional protection).  It
+// Note: this is defint-safe (that is, it is safe to invoke this from
+// both defint and non-defint contexts without additional protection).  It
 // will not block.
 //
 // Returns -errno on failure.
@@ -63,12 +65,13 @@ struct kthread_pool_item {
 typedef struct kthread_pool_item kthread_pool_item_t;
 
 struct kthread_pool {
-  int size;
-  kthread_t* threads;
-  kthread_pool_item_t* queue_head;
-  kthread_pool_item_t* queue_tail;
-  kthread_queue_t wait_queue;
-  bool running;
+  int size;  // const after construction
+  kthread_t* threads;  // const after construction
+  kspinlock_t spin;
+  kthread_pool_item_t* queue_head GUARDED_BY(&spin);
+  kthread_pool_item_t* queue_tail GUARDED_BY(&spin);
+  kthread_queue_t wait_queue GUARDED_BY(&spin);
+  bool running GUARDED_BY(&spin);
 };
 
 #endif

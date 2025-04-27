@@ -18,9 +18,10 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "dev/timer.h"
+#include "proc/defint_timer.h"
 #include "proc/kthread_pool.h"
-#include "proc/sleep.h"
 #include "proc/scheduler.h"
+#include "proc/sleep.h"
 #include "test/ktest.h"
 
 static atomic32_t counter;
@@ -36,13 +37,24 @@ static void pool_cb(void* arg) {
   }
 }
 
-static void timer_cb(void* arg) {
-  kthread_pool_t* pool = (kthread_pool_t*)arg;
-  int result = kthread_pool_push(pool, &pool_cb, arg);
+struct defint_timer_arg {
+  kthread_pool_t* pool;
+  atomic32_t count;
+};
+
+static void defint_timer_pool_cb(defint_timer_t* timer, void* arg) {
+  struct defint_timer_arg* timer_arg = (struct defint_timer_arg*)arg;
+  kthread_pool_t* pool = timer_arg->pool;
+
+  int result = kthread_pool_push(pool, &pool_cb, pool);
   if (result != 0) {
     KLOG("ERROR: couldn't kthread_pool_push: %s\n",
          errorname(-result));
     KASSERT(result == 0);
+  }
+
+  if (atomic_sub_acq_rel(&timer_arg->count, 1) > 0) {
+    defint_timer_create(get_time_ms() + 1, &defint_timer_pool_cb, timer_arg, timer);
   }
 }
 
@@ -59,7 +71,13 @@ void kthread_pool_test(void) {
   scheduler_yield();  // Check the empty-queue logic.
   kthread_queue_init(&wait_queue);
 
-  register_timer_callback(1, TEST_SIZE / 2, &timer_cb, &pool);
+  defint_timer_t defint_timer;
+  struct defint_timer_arg timer_arg = {
+    .pool = &pool,
+    .count = ATOMIC32_INIT(TEST_SIZE / 2),
+  };
+  defint_timer_create(get_time_ms() + 1, &defint_timer_pool_cb, &timer_arg, &defint_timer);
+
   for (int i = 0; i < TEST_SIZE / 2; ++i) {
     int result = kthread_pool_push(&pool, &pool_cb, &pool);
     if (result != 0) {
