@@ -145,7 +145,7 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) RELEASE(m) {
   if (!kthread_queue_empty_locked(&m->wait_queue)) {
     // Try to find the first non-disabled waiter.
     kthread_t next_holder = m->wait_queue.head;
-    while (next_holder && !next_holder->runnable) {
+    while (next_holder && !atomic_load_relaxed(&next_holder->runnable)) {
       next_holder = next_holder->next;
     }
     if (!next_holder) {

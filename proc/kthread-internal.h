@@ -53,7 +53,7 @@ struct kthread_data {
   kthread_queue_t* queue;  // The queue we're waiting on, if any.
   addr_t* stack;  // The block of memory allocated for the thread's stack.
   addrdiff_t stacklen;
-  bool runnable;  // Crude way to disable threads for tests.
+  atomic32_t runnable;  // Crude way to disable threads for tests.
   kthread_queue_t join_list;  // List of thread's join()'d to this one.
   process_t* process;  // The process owning this thread.
   analysis_lock_t process_spin_mu;  // Shadows process->spin_mu

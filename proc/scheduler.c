@@ -109,7 +109,7 @@ void scheduler_yield_no_reschedule(void) {
   raw_spin_lock(&g_run_queue.spin);
   kthread_data_t* new_thread = g_run_queue.head;
   // This is inefficient, but disabled threads are not expected to be used much.
-  while (new_thread && !new_thread->runnable) {
+  while (new_thread && !atomic_load_relaxed(&new_thread->runnable)) {
     new_thread = new_thread->next;
   }
   if (new_thread) {

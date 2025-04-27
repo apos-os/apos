@@ -60,7 +60,7 @@ static void kthread_init_kthread(kthread_data_t* t) NO_THREAD_SAFETY_ANALYSIS {
   t->prev = t->next = 0x0;
   t->queue = 0x0;
   t->stack = 0x0;
-  t->runnable = true;
+  atomic_store_relaxed(&t->runnable, 1);
   kthread_queue_init(&t->join_list);
   t->process = 0x0;
   ksigemptyset(&t->signal_mask);
@@ -302,15 +302,11 @@ void kthread_reset_interrupt_level(void) {
 }
 
 void kthread_disable(kthread_t thread) {
-  PUSH_AND_DISABLE_INTERRUPTS();
-  thread->runnable = false;
-  POP_INTERRUPTS();
+  atomic_store_relaxed(&thread->runnable, 0);
 }
 
 void kthread_enable(kthread_t thread) {
-  PUSH_AND_DISABLE_INTERRUPTS();
-  thread->runnable = true;
-  POP_INTERRUPTS();
+  atomic_store_relaxed(&thread->runnable, 1);
 }
 
 // NO_TSAN: this manipulates the current thread execution state, which confuses
