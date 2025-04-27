@@ -22,6 +22,7 @@
 #include "dev/usb/usb.h"
 #include "dev/usb/usb_driver.h"
 #include "memory/kmalloc.h"
+#include "proc/kthread.h"
 #include "proc/kthread_pool.h"
 #include "memory/slab_alloc.h"
 
@@ -172,6 +173,7 @@ static void usb_irp_check_endpoint(void* arg);
 // invoked on an defint context (or possibly synchronously from
 // schedule_irp).  Trampolines the next callback onto the USB thread pool.
 static void usb_irp_trampoline(usb_hcdi_irp_t* irp, void* arg) {
+  KASSERT_DBG(kthread_execution_context() != KTCTX_INTERRUPT);
   usb_irp_context_t* context = (usb_irp_context_t*)arg;
   int result = kthread_pool_push(&g_pool, &usb_irp_check_endpoint, context);
   KASSERT(result == 0);

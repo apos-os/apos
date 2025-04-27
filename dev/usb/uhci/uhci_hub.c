@@ -26,6 +26,7 @@
 #include "dev/usb/uhci/uhci_hub.h"
 #include "dev/usb/uhci/uhci_registers.h"
 #include "memory/kmalloc.h"
+#include "proc/defint.h"
 
 #define KLOG(...) klogfm(KL_USB_UHCI, __VA_ARGS__)
 
@@ -756,6 +757,12 @@ static int handle_dcp_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
   return status;
 }
 
+// Defint function that runs the callback of the given IRP.
+static void uhci_hub_irp_done(void* arg) {
+  usb_hcdi_irp_t* irp = (usb_hcdi_irp_t*)arg;
+  irp->callback(irp, irp->callback_arg);
+}
+
 // Run in an interrupt context.  Checks for status changes and finishes the IRP
 // if they exist.  Otherwise re-schedules the timer.
 struct uhci_check_sc_timer_args {
@@ -794,7 +801,9 @@ void uhci_check_sc_timer(void* arg) {
     }
     irp->status = USB_IRP_SUCCESS;
     kfree(args);
-    irp->callback(irp, irp->callback_arg);
+    if (irp->callback) {
+      defint_schedule(&uhci_hub_irp_done, irp);
+    }
   } else {
     // "NACK" the packet and schedule a timer to run in 250ms to check again.
     register_event_timer(get_time_ms() + UHCI_HUB_STATUS_CHANGE_INTERVAL,
