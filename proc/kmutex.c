@@ -141,22 +141,18 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) RELEASE(m) {
 
   KASSERT(m->locked == 1);
   KASSERT(m->holder == kthread_current_thread());
+
   raw_spin_lock(&m->wait_queue.spin);
-  if (!kthread_queue_empty_locked(&m->wait_queue)) {
-    // Try to find the first non-disabled waiter.
-    kthread_t next_holder = m->wait_queue.head;
-    while (next_holder && !atomic_load_relaxed(&next_holder->runnable)) {
-      next_holder = next_holder->next;
-    }
-    if (!next_holder) {
-      next_holder = m->wait_queue.head;
-    }
+  kthread_t next_holder = scheduler_pick_next(&m->wait_queue, /* prefer_runnable= */ true);
+  if (next_holder) {
+    // We have a next holder, so we need to remove it from the wait queue.
     kthread_queue_remove_locked(next_holder);
     m->holder = next_holder;
     raw_spin_unlock(&m->wait_queue.spin);
     scheduler_make_runnable(next_holder);
     if (yield) scheduler_yield();
   } else {
+    // No next holder, so we can unlock the mutex.
     m->locked = 0;
     m->holder = 0x0;
     raw_spin_unlock(&m->wait_queue.spin);

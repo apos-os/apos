@@ -23,12 +23,15 @@
 #include "common/perf_trace.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
+#include "proc/kthread-queue.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
+#include "proc/raw_spinlock.h"
 #include "proc/signal/signal.h"
 #include "memory/memory.h"
 #include "proc/scheduler.h"
 #include "proc/spinlock.h"
+#include "proc/thread_annotations.h"
 #include "sanitizers/tsan/tsan_lock.h"
 
 _Static_assert(!(ENABLE_PROFILING && ENABLE_PROFILE_IDLE),
@@ -107,12 +110,10 @@ void scheduler_yield(void) {
 void scheduler_yield_no_reschedule(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   raw_spin_lock(&g_run_queue.spin);
-  kthread_data_t* new_thread = g_run_queue.head;
-  // This is inefficient, but disabled threads are not expected to be used much.
-  while (new_thread && !atomic_load_relaxed(&new_thread->runnable)) {
-    new_thread = new_thread->next;
-  }
-  if (new_thread) {
+  kthread_data_t* new_thread = scheduler_pick_next(&g_run_queue, true);
+  // Note: this is racey with changes in runnable --- that is OK.  If we get a
+  // non-runnable thread here, assume that there _are_ no runnable threads.
+  if (new_thread && atomic_load_relaxed(&new_thread->runnable)) {
     kthread_queue_remove_locked(new_thread);
     raw_spin_unlock(&g_run_queue.spin);
     if (ENABLE_PROFILE_IDLE && g_idling) {
@@ -152,6 +153,47 @@ static void scheduler_timeout(void* arg) {
     scheduler_make_runnable(thread);
   }
   POP_INTERRUPTS();
+}
+
+kthread_t scheduler_pick_next(kthread_queue_t* queue, bool prefer_runnable) {
+  kthread_t candidate = NULL;
+  raw_spin_assert_held(&queue->spin);
+  // If queue is empty, return NULL.
+  if (!queue->head) {
+    return NULL;
+  }
+
+  if (prefer_runnable) {
+    // Look for a runnable thread.
+    kthread_data_t* thread = queue->head;
+    while (thread) {
+      if (atomic_load_relaxed(&thread->runnable)) {
+        candidate = thread;
+        break;
+      }
+      thread = thread->next;
+    }
+  }
+
+  // If there is no runnable thread, or we don't care, take the first.
+  if (!candidate) {
+    candidate = queue->head;
+  }
+
+  return candidate;
+}
+
+kthread_t scheduler_pop(kthread_queue_t* queue, bool prefer_runnable) {
+  raw_spin_lock(&queue->spin);
+  kthread_t thread = scheduler_pick_next(queue, prefer_runnable);
+  if (!thread) {
+    raw_spin_unlock(&queue->spin);
+    return NULL; // Queue was empty
+  }
+  kthread_queue_remove_locked(thread);
+  raw_spin_unlock(&queue->spin);
+
+  return thread;
 }
 
 int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
@@ -249,8 +291,10 @@ void scheduler_wake_one(kthread_queue_t* queue) {
 #if ENABLE_TSAN
   tsan_release(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
 #endif
-  if (!kthread_queue_empty(queue)) {
-    scheduler_make_runnable(kthread_queue_pop(queue));
+  // Wake one should always prefer a runnable thread.
+  kthread_t thread = scheduler_pop(queue, /* prefer_runnable= */ true);
+  if (thread) {
+    scheduler_make_runnable(thread);
   }
   POP_INTERRUPTS();
 }
@@ -260,8 +304,10 @@ void scheduler_wake_all(kthread_queue_t* queue) {
 #if ENABLE_TSAN
   tsan_release(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
 #endif
-  while (!kthread_queue_empty(queue)) {
-    scheduler_make_runnable(kthread_queue_pop(queue));
+  kthread_t thread;
+  // Wake all does not need to prefer runnable, just drain the queue.
+  while ((thread = scheduler_pop(queue, /* prefer_runnable= */ false)) != NULL) {
+    scheduler_make_runnable(thread);
   }
   POP_INTERRUPTS();
 }

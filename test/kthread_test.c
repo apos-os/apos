@@ -210,7 +210,7 @@ static void queue_test(void) NO_THREAD_SAFETY_ANALYSIS {
   kthread_queue_t queue;
   kthread_queue_init(&queue);
   KEXPECT_EQ(1, kthread_queue_empty(&queue));
-  KEXPECT_EQ(NULL, kthread_queue_pop(&queue));
+  KEXPECT_EQ(NULL, scheduler_pop(&queue, false));
 
   kthread_queue_push(&queue, thread1);
   KEXPECT_EQ(0, kthread_queue_empty(&queue));
@@ -220,21 +220,21 @@ static void queue_test(void) NO_THREAD_SAFETY_ANALYSIS {
   KEXPECT_EQ(0, kthread_queue_empty(&queue));
   KEXPECT_EQ(&queue, thread2->queue);
 
-  kthread_t popped = kthread_queue_pop(&queue);
+  kthread_t popped = scheduler_pop(&queue, false);
   KEXPECT_EQ(NULL, popped->next);
   KEXPECT_EQ(NULL, popped->prev);
   KEXPECT_EQ(NULL, popped->queue);
   KEXPECT_EQ(thread1, popped);
   KEXPECT_EQ(0, kthread_queue_empty(&queue));
 
-  popped = kthread_queue_pop(&queue);
+  popped = scheduler_pop(&queue, false);
   KEXPECT_EQ(NULL, popped->next);
   KEXPECT_EQ(NULL, popped->prev);
   KEXPECT_EQ(NULL, popped->queue);
   KEXPECT_EQ(thread2, popped);
   KEXPECT_EQ(1, kthread_queue_empty(&queue));
 
-  KEXPECT_EQ(NULL, kthread_queue_pop(&queue));
+  KEXPECT_EQ(NULL, scheduler_pop(&queue, false));
 
   KTEST_BEGIN("kthread_queue_remove(): only element on list");
   kthread_queue_push(&queue, thread1);
@@ -255,7 +255,7 @@ static void queue_test(void) NO_THREAD_SAFETY_ANALYSIS {
   KEXPECT_EQ((void*)0x0, thread1->next);
   KEXPECT_EQ((void*)0x0, thread2->prev);
   KEXPECT_EQ((void*)0x0, thread2->next);
-  kthread_queue_pop(&queue);
+  scheduler_pop(&queue, false);
 
   KTEST_BEGIN("kthread_queue_remove(): last element of list");
   kthread_queue_push(&queue, thread2);
@@ -269,7 +269,7 @@ static void queue_test(void) NO_THREAD_SAFETY_ANALYSIS {
   KEXPECT_EQ((void*)0x0, thread1->next);
   KEXPECT_EQ((void*)0x0, thread2->prev);
   KEXPECT_EQ((void*)0x0, thread2->next);
-  kthread_queue_pop(&queue);
+  scheduler_pop(&queue, false);
 
   KTEST_BEGIN("kthread_queue_remove(): middle element of list");
   kthread_queue_push(&queue, thread2);
@@ -286,8 +286,8 @@ static void queue_test(void) NO_THREAD_SAFETY_ANALYSIS {
   KEXPECT_EQ((void*)0x0, thread1->prev);
   KEXPECT_EQ((void*)0x0, thread1->next);
   KEXPECT_EQ((void*)0x0, thread1->queue);
-  kthread_queue_pop(&queue);
-  kthread_queue_pop(&queue);
+  scheduler_pop(&queue, false);
+  scheduler_pop(&queue, false);
 
   // Clean up.
   kthread_detach(thread1);
@@ -348,9 +348,9 @@ static void scheduler_wait_on_test(void) {
   KEXPECT_EQ(1, d3.waiting);
   KEXPECT_EQ(0, d3.ran);
 
-  scheduler_make_runnable(kthread_queue_pop(&queue));
-  scheduler_make_runnable(kthread_queue_pop(&queue));
-  scheduler_make_runnable(kthread_queue_pop(&queue));
+  scheduler_make_runnable(scheduler_pop(&queue, false));
+  scheduler_make_runnable(scheduler_pop(&queue, false));
+  scheduler_make_runnable(scheduler_pop(&queue, false));
 
   scheduler_yield();
   KEXPECT_EQ(1, d1.waiting);

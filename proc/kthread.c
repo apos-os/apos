@@ -34,6 +34,7 @@
 #include "proc/kthread-queue.h"
 #include "proc/process-internal.h"
 #include "proc/process.h"
+#include "proc/raw_spinlock.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 
@@ -360,10 +361,15 @@ NO_TSAN void kthread_switch(kthread_t new_thread) {
   defint_set_state(defint);
 
   // Clean up any thread stacks waiting to be reaped.
-  kthread_t t = kthread_queue_pop(&g_reap_queue);
-  while (t) {
-    kthread_unref(t);
-    t = kthread_queue_pop(&g_reap_queue);
+  raw_spin_lock(&g_reap_queue.spin);
+  kthread_t reap_list = g_reap_queue.head;
+  g_reap_queue.head = g_reap_queue.tail = NULL;
+  raw_spin_unlock(&g_reap_queue.spin);
+
+  while (reap_list) {
+    kthread_t next = reap_list->next;
+    kthread_unref(reap_list);
+    reap_list = next;
   }
 
   POP_INTERRUPTS();

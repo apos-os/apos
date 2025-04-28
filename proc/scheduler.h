@@ -28,6 +28,7 @@
 #include "proc/kthread-queue.h"
 #include "proc/pmutex.h"
 #include "proc/spinlock.h"
+#include "proc/thread_annotations.h"
 
 // Initialize the scheduler.
 void scheduler_init(void);
@@ -93,6 +94,20 @@ int scheduler_wait_on_plocked(kthread_queue_t* queue, long timeout_ms,
 // As above, but with a spinlock rather than a mutex.
 int scheduler_wait_on_splocked(kthread_queue_t* queue, long timeout_ms,
                                kspinlock_t* sp) REQUIRES(sp);
+
+// Picks the next thread from the queue.  If prefer_runnable is true, it
+// prioritizes runnable threads.  Does *not* remove the thread from the queue.
+//
+// The queue must be locked, and will be returned locked, BUT the lock may be
+// released and re-acquired during the function.
+kthread_t scheduler_pick_next(kthread_queue_t* queue, bool prefer_runnable)
+    REQUIRES(queue->spin);
+
+// Pops the next thread from the queue using scheduler_pick_next logic.
+// Removes the thread from the queue and returns it unlocked.
+// If prefer_runnable is true, it prioritizes runnable threads.
+// TODO(aoates): should this return the thread with a reference?
+kthread_t scheduler_pop(kthread_queue_t* queue, bool prefer_runnable);
 
 // Wake one thread waiting on the given thread queue.
 void scheduler_wake_one(kthread_queue_t* queue);

@@ -33,7 +33,7 @@ static void pool_cb(void* arg) {
   scheduler_yield();
 
   if (val == 0) {
-    scheduler_make_runnable(kthread_queue_pop(&wait_queue));
+    scheduler_make_runnable(scheduler_pop(&wait_queue, true));
   }
 }
 

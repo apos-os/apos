@@ -58,32 +58,6 @@ void kthread_queue_push_locked(kthread_queue_t* lst, kthread_data_t* thread) {
   thread->queue = lst;
 }
 
-kthread_t kthread_queue_pop(kthread_queue_t* lst) {
-  raw_spin_lock(&lst->spin);
-  kthread_t result = kthread_queue_pop_locked(lst);
-  raw_spin_unlock(&lst->spin);
-  return result;
-}
-
-kthread_t kthread_queue_pop_locked(kthread_queue_t* lst) {
-  if (!lst->head) {
-    return lst->head;
-  }
-  kthread_data_t* front = lst->head;
-  lst->head = front->next;
-  if (front->next) {
-    KASSERT(front->next->prev == front);
-    front->next->prev = 0x0;
-  } else {
-    lst->tail = 0x0;
-  }
-  front->next = 0x0;
-  KASSERT(front->next == 0x0 && front->prev == 0x0);
-  KASSERT(front->queue == lst);
-  front->queue = NULL;
-  return front;
-}
-
 void kthread_queue_remove(kthread_t thread) {
   kthread_queue_t* q = thread->queue;
   raw_spin_lock(&q->spin);

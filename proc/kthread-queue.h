@@ -42,10 +42,6 @@ void kthread_queue_push(kthread_queue_t* queue, kthread_t thread)
 void kthread_queue_push_locked(kthread_queue_t* queue, kthread_t thread)
   REQUIRES(queue->spin);
 
-// Pops a thread off the front of the thread queue.
-kthread_t kthread_queue_pop(kthread_queue_t* queue) EXCLUDES(queue->spin);
-kthread_t kthread_queue_pop_locked(kthread_queue_t* queue) REQUIRES(queue->spin);
-
 // Removes the given thread from the list its on.
 void kthread_queue_remove(kthread_t thread);  // EXCLUDES(thread->queue->spin)
 void kthread_queue_remove_locked(kthread_t thread);  // REQUIRES(thread->queue->spin)
