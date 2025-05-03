@@ -20,6 +20,13 @@
 #include "proc/defint.h"
 #include "proc/spinlock.h"
 
+// Structure to hold timer data temporarily while the lock is released.
+typedef struct {
+  defint_timer_cb_t cb;
+  defint_timer_t* timer;
+  void* cb_arg;
+} defint_timer_data_t;
+
 kspinlock_t g_defint_timer_lock = KSPINLOCK_NORMAL_INIT_STATIC;
 static list_t g_defint_timers GUARDED_BY(g_defint_timer_lock) =
     LIST_INIT_STATIC;
@@ -33,29 +40,51 @@ static atomic32_t g_defint_timer_pending = ATOMIC32_INIT(0);
 
 static void defint_timer_defint(void* arg) {
   atomic_store_relaxed(&g_defint_timer_pending, 0);
-  apos_ms_t now = get_time_ms();
-  list_t run = LIST_INIT;
-  kspin_lock(&g_defint_timer_lock);
-  list_link_t* curr = g_defint_timers.head;
-  apos_ms_t next_time = APOS_MS_MAX;
-  while (curr) {
-    defint_timer_t* entry = container_of(curr, defint_timer_t, link);
-    if (entry->deadline > now) {
+
+  const int kBlockSize = 10;
+  defint_timer_data_t timers_to_run[kBlockSize];
+
+  while (true) {
+    apos_ms_t now = get_time_ms();
+    apos_ms_t next_time = APOS_MS_MAX;
+
+    kspin_lock(&g_defint_timer_lock);
+
+    // Process up to kBlockSize timers at a time.
+    int count = 0;
+    list_link_t* curr = g_defint_timers.head;
+    while (curr && count < kBlockSize) {
+      list_link_t* next = curr->next; // Save next pointer before potential removal
+      defint_timer_t* entry = container_of(curr, defint_timer_t, link);
+
       next_time = entry->deadline;
+      if (entry->deadline > now) {
+        break;
+      }
+
+      // Timer expired, copy data and remove from list
+      entry->started_run = true;
+      timers_to_run[count].cb = entry->cb;
+      timers_to_run[count].timer = entry;
+      timers_to_run[count].cb_arg = entry->cb_arg;
+      list_remove(&g_defint_timers, curr);
+      count++;
+
+      curr = next;
+    }
+
+    atomic_store_relaxed(&g_defint_timer_next, (uint32_t)next_time);
+    kspin_unlock(&g_defint_timer_lock);
+
+    // If no timers were found to run in this iteration, we are done.
+    if (count == 0) {
       break;
     }
-    entry->started_run = true;
-    list_remove(&g_defint_timers, curr);
-    list_push(&run, curr);
-    curr = g_defint_timers.head;
-  }
-  atomic_store_relaxed(&g_defint_timer_next, (uint32_t)next_time);
-  kspin_unlock(&g_defint_timer_lock);
 
-  while (!list_empty(&run)) {
-    list_link_t* link = list_pop(&run);
-    defint_timer_t* entry = container_of(link, defint_timer_t, link);
-    entry->cb(entry, entry->cb_arg);
+    // Run the callbacks for the collected timers
+    for (int i = 0; i < count; i++) {
+      timers_to_run[i].cb(timers_to_run[i].timer, timers_to_run[i].cb_arg);
+    }
   }
 }
 

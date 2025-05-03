@@ -51,10 +51,8 @@ void defint_timer_create(apos_ms_t deadline_ms, defint_timer_cb_t cb, void* arg,
 // running, or has already run, this is a no-op.  Returns true if the timer is
 // cancelled, false if not (concurrently running or already run).
 //
-// Note: the caller MUST ensure the timer object lives long enough for all
-// possible callbacks and cancellations to finish.  Because there is no way to
-// block until a timer is done running, this means any cancellable timers should
-// be used with a refcount.
+// Note: after calling defint_timer_cancel(), regardless of return value, the
+// caller may free or reuse the timer handle for another timer.
 bool defint_timer_cancel(defint_timer_t* handle);
 
 // Run from an interrupt context to schedule any timers that are due.
