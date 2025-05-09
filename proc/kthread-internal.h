@@ -80,6 +80,9 @@ struct kthread_data {
   // first.
   bool wait_timeout_ran;
 
+  // Defint timer for thread timeouts.
+  defint_timer_t timeout_timer;
+
   // Current preemption-disabled counter.  If zero, preemption is allowed.  Only
   // accessed from the current thread or an interrupt context thereon.
   atomic32_t preemption_disables;

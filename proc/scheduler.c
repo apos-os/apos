@@ -138,11 +138,23 @@ void scheduler_yield_no_reschedule(void) {
   POP_INTERRUPTS();
 }
 
-static void scheduler_timeout(void* arg) {
+static void scheduler_timeout(defint_timer_t* timer, void* arg) {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_data_t* thread = arg;
+  if (!thread->interruptable) {
+    // This means the thread was already woken up by something else and we raced
+    // to cancel the timeout.  Note: this is techincally racy, as (in theory)
+    // the thread could have slept again (with a new timeout) before this ran.
+    // This is highly unlikely, and mostly harmless --- worst case scenario we
+    // end up with a spurious thread timeout.
+    // TODO(aoates): consider a generation count, or check against the timeout
+    // value, to avoid this causing a spurious timeout.
+    // TODO(SMP): add a test that exercises this race.
+    POP_INTERRUPTS();
+    kthread_unref(thread);
+    return;
+  }
   KASSERT_DBG(thread->wait_status != SWAIT_TIMEOUT);
-  KASSERT_DBG(thread->interruptable);
   thread->wait_timeout_ran = true;
   if (thread->wait_status == SWAIT_DONE && thread->queue != &g_run_queue) {
     KASSERT_DBG(thread->state == KTHREAD_PENDING);
@@ -153,6 +165,7 @@ static void scheduler_timeout(void* arg) {
     scheduler_make_runnable(thread);
   }
   POP_INTERRUPTS();
+  kthread_unref(thread);
 }
 
 kthread_t scheduler_pick_next(kthread_queue_t* queue, bool prefer_runnable) {
@@ -204,7 +217,6 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
   // one we're unlocking atomically as part of this call).
   KASSERT_DBG(current->spinlocks_held == (sp ? 1 : 0));
 
-  timer_handle_t timeout_handle;
   bool interruptable = !(flags & SWAIT_NO_INTERRUPT);
   if (interruptable) {
     if (!(flags & SWAIT_NO_SIGNAL_CHECK)) {
@@ -217,10 +229,14 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
     }
 
     if (timeout_ms > 0) {
-      int result =
-          register_event_timer(get_time_ms() + timeout_ms, &scheduler_timeout,
-                               current, &timeout_handle);
-      KASSERT_DBG(result == 0);
+      // TODO(aoates): this ref/unref, if expensive, would be a good candidate
+      // for an RCU-type approach.  It's logically possible for the defint timer
+      // to outlive the thread (even when cancelled), but I suspect impossible
+      // in practice --- we just need a way to say "wait until all timers have
+      // run" after we cancel.
+      kthread_ref(current);
+      defint_timer_create(get_time_ms() + timeout_ms, &scheduler_timeout,
+                          current, &current->timeout_timer);
     }
   } else {
     KASSERT_DBG(timeout_ms == -1);
@@ -249,8 +265,12 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
   }
 #endif
   int result = current->wait_status;
-  if (timeout_ms > 0 && !current->wait_timeout_ran)
-    cancel_event_timer(timeout_handle);
+  if (timeout_ms > 0 && !current->wait_timeout_ran) {
+    current->interruptable = false;
+    if (defint_timer_cancel(&current->timeout_timer)) {
+      kthread_unref(current);
+    }
+  }
   if (mu) {
     kmutex_lock(mu);
   }
