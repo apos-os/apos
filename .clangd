@@ -1,9 +1,5 @@
 CompileFlags:
   CompilationDatabase: build-scons/latest
-  # Disable thread safety analysis in clangd, due to false positives.  See
-  # https://github.com/clangd/clangd/issues/2386.
-  # TODO(aoates): Remove this when clangd is fixed.
-  Remove: [-Wthread-safety, -Wthread-safety-beta]
 ---
 If:
   PathMatch: archs/i586/.*
