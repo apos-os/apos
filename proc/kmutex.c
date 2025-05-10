@@ -145,11 +145,13 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) RELEASE(m) {
   raw_spin_lock(&m->wait_queue.spin);
   kthread_t next_holder = scheduler_pick_next(&m->wait_queue, /* prefer_runnable= */ true);
   if (next_holder) {
+    kspin_assert_is_held_int(&next_holder->spin);
     // We have a next holder, so we need to remove it from the wait queue.
-    kthread_queue_remove_locked(next_holder);
+    kthread_queue_remove_locked(&m->wait_queue, next_holder);
     m->holder = next_holder;
     raw_spin_unlock(&m->wait_queue.spin);
-    scheduler_make_runnable(next_holder);
+    scheduler_make_runnable_locked(next_holder);
+    kspin_unlock_int(&next_holder->spin);
     if (yield) scheduler_yield();
   } else {
     // No next holder, so we can unlock the mutex.

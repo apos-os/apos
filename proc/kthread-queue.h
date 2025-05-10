@@ -38,12 +38,13 @@ int kthread_queue_empty_locked(kthread_queue_t* queue) REQUIRES(queue->spin);
 
 // Enqueue a thread on the back of the given thread queue.
 void kthread_queue_push(kthread_queue_t* queue, kthread_t thread)
-  EXCLUDES(queue->spin);
+    EXCLUDES(queue->spin);  // EXCLUDES(thread->spin)
 void kthread_queue_push_locked(kthread_queue_t* queue, kthread_t thread)
-  REQUIRES(queue->spin);
+    REQUIRES(queue->spin);  // REQUIRES(thread->spin)
 
 // Removes the given thread from the list its on.
 void kthread_queue_remove(kthread_t thread);  // EXCLUDES(thread->queue->spin)
-void kthread_queue_remove_locked(kthread_t thread);  // REQUIRES(thread->queue->spin)
+void kthread_queue_remove_locked(kthread_queue_t* q, kthread_t thread)
+    REQUIRES(q->spin);  // REQUIRES(thread->spin)
 
 #endif

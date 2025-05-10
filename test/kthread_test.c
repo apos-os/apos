@@ -22,6 +22,7 @@
 #include "proc/defint.h"
 #include "proc/kthread-internal.h"
 #include "proc/kthread.h"
+#include "proc/kthread-queue.h"
 #include "proc/notification.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
@@ -33,6 +34,13 @@
 
 // Enable this to run a test that catches a deadlock (and panics the kernel).
 #define RUN_DEADLOCK_DETECTION_FALIURE_TEST 0
+
+static kthread_queue_t* get_queue(kthread_t thread) {
+  kspin_lock_int(&thread->spin);
+  kthread_queue_t* queue = thread->queue;
+  kspin_unlock_int(&thread->spin);
+  return queue;
+}
 
 static void* thread_func(void* arg) {
   KEXPECT_EQ(KTCTX_THREAD, kthread_execution_context());
@@ -214,23 +222,23 @@ static void queue_test(void) NO_THREAD_SAFETY_ANALYSIS {
 
   kthread_queue_push(&queue, thread1);
   KEXPECT_EQ(0, kthread_queue_empty(&queue));
-  KEXPECT_EQ(&queue, thread1->queue);
+  KEXPECT_EQ(&queue, get_queue(thread1));
 
   kthread_queue_push(&queue, thread2);
   KEXPECT_EQ(0, kthread_queue_empty(&queue));
-  KEXPECT_EQ(&queue, thread2->queue);
+  KEXPECT_EQ(&queue, get_queue(thread2));
 
   kthread_t popped = scheduler_pop(&queue, false);
   KEXPECT_EQ(NULL, popped->next);
   KEXPECT_EQ(NULL, popped->prev);
-  KEXPECT_EQ(NULL, popped->queue);
+  KEXPECT_EQ(NULL, get_queue(popped));
   KEXPECT_EQ(thread1, popped);
   KEXPECT_EQ(0, kthread_queue_empty(&queue));
 
   popped = scheduler_pop(&queue, false);
   KEXPECT_EQ(NULL, popped->next);
   KEXPECT_EQ(NULL, popped->prev);
-  KEXPECT_EQ(NULL, popped->queue);
+  KEXPECT_EQ(NULL, get_queue(popped));
   KEXPECT_EQ(thread2, popped);
   KEXPECT_EQ(1, kthread_queue_empty(&queue));
 
@@ -248,7 +256,7 @@ static void queue_test(void) NO_THREAD_SAFETY_ANALYSIS {
   kthread_queue_push(&queue, thread2);
   kthread_queue_remove(thread1);
   KEXPECT_EQ(0, kthread_queue_empty(&queue));
-  KEXPECT_EQ((void*)0x0, thread1->queue);
+  KEXPECT_EQ((void*)0x0, get_queue(thread1));
   KEXPECT_EQ(thread2, queue.head);
   KEXPECT_EQ(thread2, queue.tail);
   KEXPECT_EQ((void*)0x0, thread1->prev);
@@ -261,7 +269,7 @@ static void queue_test(void) NO_THREAD_SAFETY_ANALYSIS {
   kthread_queue_push(&queue, thread2);
   kthread_queue_push(&queue, thread1);
   kthread_queue_remove(thread1);
-  KEXPECT_EQ((void*)0x0, thread1->queue);
+  KEXPECT_EQ((void*)0x0, get_queue(thread1));
   KEXPECT_EQ(0, kthread_queue_empty(&queue));
   KEXPECT_EQ(thread2, queue.head);
   KEXPECT_EQ(thread2, queue.tail);
@@ -285,7 +293,7 @@ static void queue_test(void) NO_THREAD_SAFETY_ANALYSIS {
   KEXPECT_EQ((void*)0x0, thread3->next);
   KEXPECT_EQ((void*)0x0, thread1->prev);
   KEXPECT_EQ((void*)0x0, thread1->next);
-  KEXPECT_EQ((void*)0x0, thread1->queue);
+  KEXPECT_EQ((void*)0x0, get_queue(thread1));
   scheduler_pop(&queue, false);
   scheduler_pop(&queue, false);
 
@@ -617,7 +625,7 @@ static void scheduler_interrupt_test(void) {
     scheduler_make_runnable(thread1);
     while (!d1.waiting) scheduler_yield();
 
-    KEXPECT_EQ(&queue, thread1->queue);
+    KEXPECT_EQ(&queue, get_queue(thread1));
     scheduler_interrupt_thread(thread1);
     for (int i = 0; i < 5 && !d1.ran; ++i) scheduler_yield();
     KEXPECT_EQ(1, d1.ran);
@@ -633,7 +641,7 @@ static void scheduler_interrupt_test(void) {
     scheduler_make_runnable(thread1);
     while (!d2.waiting) scheduler_yield();
 
-    KEXPECT_EQ(&queue, thread1->queue);
+    KEXPECT_EQ(&queue, get_queue(thread1));
     scheduler_interrupt_thread(thread1);
     for (int i = 0; i < 5 && !d2.ran; ++i) scheduler_yield();
     KEXPECT_EQ(0, d2.ran);
@@ -679,10 +687,10 @@ static void scheduler_interrupt_test(void) {
   }
 
   KTEST_BEGIN("scheduler_interrupt_thread(): current thread (running)");
-  KEXPECT_EQ((void*)0x0, kthread_current_thread()->queue);
+  KEXPECT_EQ((void*)0x0, get_queue(kthread_current_thread()));
 
   scheduler_interrupt_thread(kthread_current_thread());
-  KEXPECT_EQ((void*)0x0, kthread_current_thread()->queue);
+  KEXPECT_EQ((void*)0x0, get_queue(kthread_current_thread()));
   KEXPECT_EQ(SWAIT_DONE, kthread_current_thread()->wait_status);
 
   // TODO(aoates): test a thread that does an interruptable wait followed by a
@@ -705,7 +713,7 @@ static void scheduler_interrupt_timeout_test(void) {
     scheduler_make_runnable(thread1);
     while (!d1.waiting) scheduler_yield();
 
-    KEXPECT_EQ(&queue, thread1->queue);
+    KEXPECT_EQ(&queue, get_queue(thread1));
     scheduler_interrupt_thread(thread1);
     for (int i = 0; i < 5 && !d1.ran; ++i) scheduler_yield();
     KEXPECT_EQ(1, d1.ran);
@@ -739,7 +747,7 @@ static void scheduler_interrupt_timeout_test(void) {
     scheduler_make_runnable(thread1);
     while (!d1.waiting) scheduler_yield();
 
-    KEXPECT_EQ(&queue, thread1->queue);
+    KEXPECT_EQ(&queue, get_queue(thread1));
     ksleep(100);
     scheduler_wake_all(&queue);
     apos_ms_t start = get_time_ms();
@@ -774,7 +782,7 @@ static void scheduler_interrupt_timeout_test(void) {
     scheduler_make_runnable(thread1);
     while (!d1.waiting) scheduler_yield();
 
-    KEXPECT_EQ(&queue, thread1->queue);
+    KEXPECT_EQ(&queue, get_queue(thread1));
     scheduler_interrupt_thread(thread1);
     apos_ms_t start = get_time_ms();
     // Spin until the timeout (should have) fired.  We can't yield, since we
@@ -798,7 +806,7 @@ static void scheduler_interrupt_timeout_test(void) {
     scheduler_make_runnable(thread1);
     while (!d1.waiting) scheduler_yield();
 
-    KEXPECT_EQ(&queue, thread1->queue);
+    KEXPECT_EQ(&queue, get_queue(thread1));
     scheduler_wake_all(&queue);
     apos_ms_t start = get_time_ms();
     // Spin until the timeout (should have) fired.  We can't yield, since we
@@ -836,7 +844,7 @@ static void kthread_is_done_test(void) {
   KEXPECT_EQ(false, kthread_is_done(thread));
 
   KTEST_BEGIN("kthread_is_done(): blocked-on-queue thread");
-  while (thread->queue != &queue) scheduler_yield();
+  while (get_queue(thread) != &queue) scheduler_yield();
   KEXPECT_EQ(KTHREAD_PENDING, thread->state);
   KEXPECT_EQ(false, kthread_is_done(thread));
 

@@ -25,6 +25,7 @@
 
 #include "proc/kmutex.h"
 #include "proc/kthread.h"
+#include "proc/kthread-internal.h"
 #include "proc/kthread-queue.h"
 #include "proc/pmutex.h"
 #include "proc/spinlock.h"
@@ -34,7 +35,8 @@
 void scheduler_init(void);
 
 // Add the given thread to the run queue.
-void scheduler_make_runnable(kthread_t thread);
+void scheduler_make_runnable(kthread_t thread) EXCLUDES(&thread->spin);
+void scheduler_make_runnable_locked(kthread_t thread) REQUIRES(&thread->spin);
 
 // Force the given thread to wake up (and be runnable) if its currently blocked
 // on a kthread_queue_t.  If the thread isn't blocking (is on the run queue), or
@@ -100,6 +102,8 @@ int scheduler_wait_on_splocked(kthread_queue_t* queue, long timeout_ms,
 //
 // The queue must be locked, and will be returned locked, BUT the lock may be
 // released and re-acquired during the function.
+//
+// Returns the thread locked, or NULL if the queue is empty.
 kthread_t scheduler_pick_next(kthread_queue_t* queue, bool prefer_runnable)
     REQUIRES(queue->spin);
 

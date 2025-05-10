@@ -503,7 +503,9 @@ static void raw_poll_test(void) {
   KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll_helper, &recv_sock));
   // Make sure we get good and stuck in vfs_poll()
   for (int i = 0; i < 20; ++i) scheduler_yield();
+  kspin_lock_int(&thread->spin);
   KEXPECT_NE(NULL, thread->queue);
+  kspin_unlock_int(&thread->spin);
 
   KEXPECT_EQ(3, net_sendto(send_sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
                            sizeof(dst_addr)));

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "proc/spinlock.h"
 #include "test/kernel_tests.h"
 
 #include "common/endian.h"
@@ -1005,7 +1006,9 @@ static void recv_poll_test(void) {
   KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll_helper, &recv_sock));
   // Make sure we get good and stuck in vfs_poll()
   for (int i = 0; i < 20; ++i) scheduler_yield();
+  kspin_lock_int(&thread->spin);
   KEXPECT_NE(NULL, thread->queue);
+  kspin_unlock_int(&thread->spin);
 
   KEXPECT_EQ(3, net_sendto(send_sock, "abc", 3, 0, NULL, 0));
   KEXPECT_EQ(1, (intptr_t)kthread_join(thread));

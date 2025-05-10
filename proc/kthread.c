@@ -37,6 +37,7 @@
 #include "proc/raw_spinlock.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
+#include "proc/spinlock.h"
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_thread.h"
@@ -53,7 +54,9 @@ static list_t g_all_threads = LIST_INIT_STATIC;
 // A queue of threads that have exited and we can clean up.
 static kthread_queue_t g_reap_queue;
 
-static void kthread_init_kthread(kthread_data_t* t) NO_THREAD_SAFETY_ANALYSIS {
+static void kthread_init_kthread(kthread_data_t* t) {
+  t->spin = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  kspin_int_constructor(&t->spin);
   t->ref = REFCOUNT_INIT;
   t->state = KTHREAD_PENDING;
   t->id = 0;

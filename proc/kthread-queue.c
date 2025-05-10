@@ -16,6 +16,7 @@
 #include "common/kassert.h"
 #include "proc/kthread-internal.h"
 #include "proc/raw_spinlock.h"
+#include "proc/spinlock.h"
 
 void kthread_queue_init(kthread_queue_t* lst) {
   raw_spin_ctor(&lst->spin);
@@ -34,12 +35,16 @@ static void kthread_queue_insert(kthread_data_t* A, kthread_data_t* B) {
 }
 
 void kthread_queue_push(kthread_queue_t* lst, kthread_data_t* thread) {
+  kspin_lock_int(&thread->spin);
   raw_spin_lock(&lst->spin);
   kthread_queue_push_locked(lst, thread);
   raw_spin_unlock(&lst->spin);
+  kspin_unlock_int(&thread->spin);
 }
 
 void kthread_queue_push_locked(kthread_queue_t* lst, kthread_data_t* thread) {
+  kspin_assert_is_held_int(&thread->spin);
+  raw_spin_assert_held(&lst->spin);
   KASSERT(thread->prev == 0);
   KASSERT(thread->next == 0);
   KASSERT(thread->queue == NULL);
@@ -59,15 +64,18 @@ void kthread_queue_push_locked(kthread_queue_t* lst, kthread_data_t* thread) {
 }
 
 void kthread_queue_remove(kthread_t thread) {
+  kspin_lock_int(&thread->spin);
   kthread_queue_t* q = thread->queue;
   raw_spin_lock(&q->spin);
-  kthread_queue_remove_locked(thread);
+  kthread_queue_remove_locked(q, thread);
   raw_spin_unlock(&q->spin);
+  kspin_unlock_int(&thread->spin);
 }
 
-void kthread_queue_remove_locked(kthread_t thread) {
-  KASSERT_DBG(thread->queue != NULL);
-  raw_spin_assert_held(&thread->queue->spin);
+void kthread_queue_remove_locked(kthread_queue_t* q, kthread_t thread) {
+  kspin_assert_is_held_int(&thread->spin);
+  KASSERT_DBG(thread->queue == q);
+  raw_spin_assert_held(&q->spin);
   if (thread->queue->head == thread)
     thread->queue->head = thread->next;
   if (thread->queue->tail == thread)

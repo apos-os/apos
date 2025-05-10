@@ -81,24 +81,34 @@ void scheduler_init(void) {
 }
 
 void scheduler_make_runnable(kthread_t thread) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock_int(&thread->spin);
+  scheduler_make_runnable_locked(thread);
+  kspin_unlock_int(&thread->spin);
+}
+
+void scheduler_make_runnable_locked(kthread_t thread) {
+  kspin_assert_is_held_int(&thread->spin);
   KASSERT_DBG(thread->state == KTHREAD_PENDING);
-  kthread_queue_push(&g_run_queue, thread);
-  POP_INTERRUPTS();
+  raw_spin_lock(&g_run_queue.spin);
+  kthread_queue_push_locked(&g_run_queue, thread);
+  raw_spin_unlock(&g_run_queue.spin);
 }
 
 void scheduler_interrupt_thread(kthread_t thread) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock_int(&thread->spin);
   if (thread->queue && thread->queue != &g_run_queue && thread->interruptable) {
     KASSERT_DBG(thread->state == KTHREAD_PENDING);
     KASSERT_DBG(kthread_current_thread()->queue == 0x0);
 
-    kthread_queue_remove(thread);
+    kthread_queue_t* queue = thread->queue;
+    raw_spin_lock(&queue->spin);
+    kthread_queue_remove_locked(queue, thread);
+    raw_spin_unlock(&queue->spin);
     KASSERT_DBG(thread->wait_status == SWAIT_DONE);
     thread->wait_status = SWAIT_INTERRUPTED;
-    scheduler_make_runnable(thread);
+    scheduler_make_runnable_locked(thread);
   }
-  POP_INTERRUPTS();
+  kspin_unlock_int(&thread->spin);
 }
 
 void scheduler_yield(void) {
@@ -114,8 +124,11 @@ void scheduler_yield_no_reschedule(void) {
   // Note: this is racey with changes in runnable --- that is OK.  If we get a
   // non-runnable thread here, assume that there _are_ no runnable threads.
   if (new_thread && atomic_load_relaxed(&new_thread->runnable)) {
-    kthread_queue_remove_locked(new_thread);
+    kspin_assert_is_held_int(&new_thread->spin);
+    kthread_queue_remove_locked(&g_run_queue, new_thread);
     raw_spin_unlock(&g_run_queue.spin);
+    // TODO(aoates): keep this locked into kthread_switch().
+    kspin_unlock_int(&new_thread->spin);
     if (ENABLE_PROFILE_IDLE && g_idling) {
       g_idling = false;
       uint64_t idle_len = arch_real_timer() - g_idling_start;
@@ -128,6 +141,10 @@ void scheduler_yield_no_reschedule(void) {
     }
   } else {
     raw_spin_unlock(&g_run_queue.spin);
+    if (new_thread) {
+      kspin_assert_is_held_int(&new_thread->spin);
+      kspin_unlock_int(&new_thread->spin);
+    }
     new_thread = g_idle_thread;
     if (ENABLE_PROFILE_IDLE && !g_idling) {
       g_idling = true;
@@ -139,8 +156,8 @@ void scheduler_yield_no_reschedule(void) {
 }
 
 static void scheduler_timeout(defint_timer_t* timer, void* arg) {
-  PUSH_AND_DISABLE_INTERRUPTS();
   kthread_data_t* thread = arg;
+  kspin_lock_int(&thread->spin);
   if (!thread->interruptable) {
     // This means the thread was already woken up by something else and we raced
     // to cancel the timeout.  Note: this is techincally racy, as (in theory)
@@ -150,7 +167,7 @@ static void scheduler_timeout(defint_timer_t* timer, void* arg) {
     // TODO(aoates): consider a generation count, or check against the timeout
     // value, to avoid this causing a spurious timeout.
     // TODO(SMP): add a test that exercises this race.
-    POP_INTERRUPTS();
+    kspin_unlock_int(&thread->spin);
     kthread_unref(thread);
     return;
   }
@@ -160,40 +177,63 @@ static void scheduler_timeout(defint_timer_t* timer, void* arg) {
     KASSERT_DBG(thread->state == KTHREAD_PENDING);
     KASSERT_DBG(kthread_current_thread()->queue == 0x0);
 
-    kthread_queue_remove(thread);
+    kthread_queue_t* queue = thread->queue;
+    raw_spin_lock(&queue->spin);
+    kthread_queue_remove_locked(queue, thread);
+    raw_spin_unlock(&queue->spin);
     thread->wait_status = SWAIT_TIMEOUT;
-    scheduler_make_runnable(thread);
+    scheduler_make_runnable_locked(thread);
   }
-  POP_INTERRUPTS();
+  kspin_unlock_int(&thread->spin);
   kthread_unref(thread);
 }
 
-kthread_t scheduler_pick_next(kthread_queue_t* queue, bool prefer_runnable) {
-  kthread_t candidate = NULL;
-  raw_spin_assert_held(&queue->spin);
-  // If queue is empty, return NULL.
-  if (!queue->head) {
-    return NULL;
-  }
-
-  if (prefer_runnable) {
-    // Look for a runnable thread.
-    kthread_data_t* thread = queue->head;
-    while (thread) {
-      if (atomic_load_relaxed(&thread->runnable)) {
-        candidate = thread;
-        break;
-      }
-      thread = thread->next;
+kthread_t scheduler_pick_next(kthread_queue_t* queue, bool prefer_runnable)
+    NO_THREAD_SAFETY_ANALYSIS {
+  while (true) {
+    kthread_t candidate = NULL;
+    raw_spin_assert_held(&queue->spin);
+    // If queue is empty, return NULL.
+    if (!queue->head) {
+      return NULL;
     }
-  }
 
-  // If there is no runnable thread, or we don't care, take the first.
-  if (!candidate) {
-    candidate = queue->head;
-  }
+    if (prefer_runnable) {
+      // Look for a runnable thread.
+      kthread_data_t* thread = queue->head;
+      while (thread) {
+        if (atomic_load_relaxed(&thread->runnable)) {
+          candidate = thread;
+          break;
+        }
+        thread = thread->next;
+      }
+    }
 
-  return candidate;
+    // If there is no runnable thread, or we don't care, take the first.
+    if (!candidate) {
+      candidate = queue->head;
+    }
+
+    // Found a candidate, ref it before unlocking queue.
+    kthread_ref(candidate);
+    raw_spin_unlock(&queue->spin);
+
+    // Lock the thread and check if it's still on the correct queue.
+    kspin_lock_int(&candidate->spin);
+    if (candidate->queue == queue) {
+      // Success!  Unref the thread (the queue's reference is still valid),
+      // re-lock the queue (in order after the thread's lock), and return it.
+      kthread_unref(candidate);
+      raw_spin_lock(&queue->spin);
+      return candidate;
+    }
+
+    // Race: thread was removed from the queue by another. Unlock and retry.
+    kspin_unlock_int(&candidate->spin);
+    kthread_unref(candidate);
+    raw_spin_lock(&queue->spin);
+  }
 }
 
 kthread_t scheduler_pop(kthread_queue_t* queue, bool prefer_runnable) {
@@ -203,8 +243,12 @@ kthread_t scheduler_pop(kthread_queue_t* queue, bool prefer_runnable) {
     raw_spin_unlock(&queue->spin);
     return NULL; // Queue was empty
   }
-  kthread_queue_remove_locked(thread);
+  kspin_assert_is_held_int(&thread->spin);
+
+  // Thread is locked from scheduler_pick_next. Remove it from the queue.
+  kthread_queue_remove_locked(queue, thread);
   raw_spin_unlock(&queue->spin);
+  kspin_unlock_int(&thread->spin);
 
   return thread;
 }

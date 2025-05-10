@@ -47,10 +47,12 @@ struct kthread_data {
   kthread_id_t id;
   kthread_state_t state;
   kthread_arch_context_t context;
+  // TODO(aoates): protect more thread state with the spinlock.
+  kspinlock_intsafe_t spin;
   void* retval;
   struct kthread_data* prev;
   struct kthread_data* next;
-  kthread_queue_t* queue;  // The queue we're waiting on, if any.
+  kthread_queue_t* queue GUARDED_BY(&spin);  // The queue we're waiting on, if any.
   addr_t* stack;  // The block of memory allocated for the thread's stack.
   addrdiff_t stacklen;
   atomic32_t runnable;  // Crude way to disable threads for tests.
