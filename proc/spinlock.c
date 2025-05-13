@@ -66,7 +66,7 @@ NO_TSAN static void kspin_unlock_internal(kspinlock_impl_t* l) {
 #endif
 }
 
-NO_TSAN void kspin_lock(kspinlock_t* l) NO_THREAD_SAFETY_ANALYSIS {
+NO_TSAN kspinstate_t kspin_lock(kspinlock_t* l) NO_THREAD_SAFETY_ANALYSIS {
   // TODO(aoates): write a test that that catches the scenario where we modify
   // the lock before we actually hold it (preemption and defints are disabled).
   bool defint_state = defint_set_state(false);
@@ -75,15 +75,17 @@ NO_TSAN void kspin_lock(kspinlock_t* l) NO_THREAD_SAFETY_ANALYSIS {
   // interrupt context.
   l->defint_state = defint_state;
   kspin_lock_internal(&l->_lock);
+  return defint_state;
 }
 
-NO_TSAN void kspin_lock_int(kspinlock_intsafe_t* l) NO_THREAD_SAFETY_ANALYSIS {
+NO_TSAN kspinstate_t kspin_lock_int(kspinlock_intsafe_t* l) NO_THREAD_SAFETY_ANALYSIS {
   // Disabling interrupts disables preemption and defints implicitly.  Later
   // code _could_ change the defint state on its own (which would be
   // ill-advised), but it won't matter since interrupts are disabled.
   interrupt_state_t int_state = save_and_disable_interrupts(false);
   l->int_state = int_state;
   kspin_lock_internal(&l->_lock);
+  return int_state;
 }
 
 NO_TSAN void kspin_unlock(kspinlock_t* l) NO_THREAD_SAFETY_ANALYSIS {
@@ -100,6 +102,21 @@ NO_TSAN void kspin_unlock_int(kspinlock_intsafe_t* l)
   kspin_unlock_internal(&l->_lock);
   KASSERT_DBG(interrupts_enabled() == false);
   restore_interrupts(int_state, false);
+}
+
+NO_TSAN void kspin_unlock2(kspinlock_t* l, kspinstate_t state)
+    NO_THREAD_SAFETY_ANALYSIS {
+  kspin_unlock_internal(&l->_lock);
+  sched_restore_preemption();
+  bool defint_prev_state = defint_set_state(state);
+  KASSERT(defint_prev_state == false);
+}
+
+NO_TSAN void kspin_unlock_int2(kspinlock_intsafe_t* l, kspinstate_t state)
+    NO_THREAD_SAFETY_ANALYSIS {
+  kspin_unlock_internal(&l->_lock);
+  KASSERT_DBG(interrupts_enabled() == false);
+  restore_interrupts(state, false);
 }
 
 NO_TSAN void kspin_lock_early(kspinlock_intsafe_t* l)

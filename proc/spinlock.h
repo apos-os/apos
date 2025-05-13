@@ -75,15 +75,25 @@ extern const kspinlock_intsafe_t KSPINLOCK_INTERRUPT_SAFE_INIT;
 # define KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC {{ -1 }, 0 }
 #endif
 
+typedef uint32_t kspinstate_t;
+
 // Lock the given spinlock.  In a non-SMP environment, simply disables
 // preemption, defints, and optionally interrupts (depending on the type).
 // Threads must not block while holding a spinlock.
-void kspin_lock(kspinlock_t* l) ACQUIRE(l);
-void kspin_lock_int(kspinlock_intsafe_t* l) ACQUIRE(l);
+kspinstate_t kspin_lock(kspinlock_t* l) ACQUIRE(l);
+kspinstate_t kspin_lock_int(kspinlock_intsafe_t* l) ACQUIRE(l);
 
 // Unlock the spinlock.
 void kspin_unlock(kspinlock_t* l) RELEASE(l);
 void kspin_unlock_int(kspinlock_intsafe_t* l) RELEASE(l);
+
+// Variants that allow out-of-order unlocking and other special use cases.  To
+// unlock out of order, the return value of kspin_lock() must be stored and
+// passed to kspin_unlock2() IN REVERSE LOCK ORDER.  This ensures the correct
+// interrupt/defint state is restored, following lexical ordering of the locking
+// rather than of the unlocking.
+void kspin_unlock2(kspinlock_t* l, kspinstate_t state) RELEASE(l);
+void kspin_unlock_int2(kspinlock_intsafe_t* l, kspinstate_t state) RELEASE(l);
 
 // A variant that is safe to use early in the boot process.  Before threads/proc
 // are set up, will simply disable/restore interrupts.

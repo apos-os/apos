@@ -1761,6 +1761,53 @@ static void tasklet_test(void) {
   kspin_unlock(&lock);
 }
 
+static void kspin_unlock2_normal_test(void) {
+  KTEST_BEGIN("kspin_unlock2 normal spinlock test");
+  kspinlock_t lock1 = KSPINLOCK_NORMAL_INIT;
+  kspinlock_t lock2 = KSPINLOCK_NORMAL_INIT;
+  kspinstate_t state1, state2;
+
+  KEXPECT_TRUE(defint_state()); // Defints should be enabled initially
+
+  state1 = kspin_lock(&lock1);
+  KEXPECT_FALSE(defint_state()); // Defints should be disabled
+
+  state2 = kspin_lock(&lock2);
+  KEXPECT_FALSE(defint_state()); // Defints should still be disabled
+
+  kspin_unlock2(&lock1, state2);
+  KEXPECT_FALSE(defint_state()); // Defints should still be disabled
+
+  kspin_unlock2(&lock2, state1);
+  KEXPECT_TRUE(defint_state()); // Defints should be enabled again
+}
+
+static void kspin_unlock2_intsafe_test(void) {
+  KTEST_BEGIN("kspin_unlock2 interrupt-safe spinlock test");
+  kspinlock_intsafe_t lock1 = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  kspinlock_intsafe_t lock2 = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  kspinstate_t state1, state2;
+
+  KEXPECT_TRUE(interrupts_enabled()); // Interrupts should be enabled initially
+
+  state1 = kspin_lock_int(&lock1);
+  KEXPECT_FALSE(interrupts_enabled()); // Interrupts should be disabled
+
+  state2 = kspin_lock_int(&lock2);
+  KEXPECT_FALSE(interrupts_enabled()); // Interrupts should still be disabled
+
+  kspin_unlock_int2(&lock1, state2);
+  KEXPECT_FALSE(interrupts_enabled()); // Interrupts should still be disabled
+
+  kspin_unlock_int2(&lock2, state1);
+  KEXPECT_TRUE(interrupts_enabled()); // Interrupts should be enabled again
+}
+
+static void kspin_tests(void) {
+  kspin_unlock2_normal_test();
+  kspin_unlock2_intsafe_test();
+}
+
 // TODO(aoates): add some more involved kmutex tests.
 
 void kthread_test(void) {
@@ -1802,4 +1849,6 @@ void kthread_test(void) {
   creation_interrupts_test();
   refcount_test();
   tasklet_test();
+
+  kspin_tests();
 }
