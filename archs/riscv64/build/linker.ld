@@ -89,6 +89,13 @@ SECTIONS
         *(.lbss)
         *(.sbss)
     }
+
+    .data.percpu ALIGN(0x1000) : AT(ADDR(.data.percpu) - _OFFSET)
+    {
+        _per_cpu_start = .;
+        *(.data.percpu)
+    }
+
     KERNEL_DATA_END = .;
     KERNEL_END_SYMBOL = .;
 

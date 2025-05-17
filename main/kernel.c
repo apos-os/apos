@@ -25,6 +25,7 @@
 #include "common/klog.h"
 #include "common/klog_control.h"
 #include "common/kstring.h"
+#include "common/per_cpu.h"
 #include "common/perf_trace.h"
 #include "dev/devicetree/devicetree.h"
 #include "dev/devicetree/drivers.h"
@@ -237,6 +238,9 @@ void kmain(boot_info_t* boot, const char* cmdline) {
   page_frame_alloc_init(boot->meminfo);
   klog("paging_init()\n");
   paging_init();
+
+  klog("per_cpu_init()\n");
+  per_cpu_init();
 
   klog("proc_init_stage1()\n");
   proc_init_stage1();
