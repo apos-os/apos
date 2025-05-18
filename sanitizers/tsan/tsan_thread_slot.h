@@ -21,12 +21,19 @@
 #include "sanitizers/tsan/internal_types.h"
 #include "sanitizers/tsan/tsan_event.h"
 
+typedef enum {
+  TSAN_TSLOT_THREAD = 1,     // A normal thread.
+  TSAN_TSLOT_INTERRUPT = 2,  // A synthetic interrupt thread.
+  TSAN_TSLOT_DEFINT = 3,     // A synthetic defint thread.
+} tsan_tslot_type_t;
+
 // A single thread slot.  When a thread is destroyed, the slot is not
 // immediately cleaned up --- its log data is kept to allow tracing races that
 // occur after the thread has exited.
 typedef struct {
   kthread_t thread;  // Slot's current thread, or NULL.
   kthread_id_t thread_id;  // Thread ID of the thread that is/was in this slot.
+  tsan_tslot_type_t type;
 
   // Latest epoch for this slot (survives across reuse).  Not relevant except at
   // thread assignment.

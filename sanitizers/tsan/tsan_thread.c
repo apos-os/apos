@@ -18,6 +18,7 @@
 #include "common/kstring.h"
 #include "common/kstring-tsan.h"
 #include "common/math.h"
+#include "common/per_cpu.h"
 #include "dev/interrupts.h"
 #include "proc/kthread-internal.h"
 #include "proc/kthread.h"
@@ -48,11 +49,16 @@ typedef struct {
 // preemption lock (and later SMP-mutex) is sufficient.
 static tsan_tslot_t g_tsan_slots[TSAN_THREAD_SLOTS];
 
-// TODO(SMP): make this per-CPU.
-static tsan_cpu_data_t g_tsan_cpu;
+static DECLARE_PER_CPU(tsan_cpu_data_t, g_tsan_cpu);
+
+// Assume for simplicity that the first N threads allocated in the kernel after
+// the boot thread and idle thread are for TSAN, so we can quickly determine if
+// a thread ID is special.
+#define SPECIAL_TID_MIN 2
+static int g_special_tid_max;
 
 static tsan_cpu_data_t* get_cpu_data(void) {
-  return &g_tsan_cpu;
+  return &PER_CPU(g_tsan_cpu);
 }
 
 // Body for the virtual interrupt/defint threads, which should never actually
@@ -62,13 +68,21 @@ static void* tsan_special_thread_body(void* arg) {
 }
 
 void tsan_per_cpu_init(void) {
-  KASSERT(0 == kthread_create(&g_tsan_cpu.interrupt_thread,
+  // TODO(SMP): do this for each CPU.
+  tsan_cpu_data_t* cpu = get_cpu_data();
+  KASSERT(0 == kthread_create(&cpu->interrupt_thread,
                               &tsan_special_thread_body, NULL));
-  KASSERT(g_tsan_cpu.interrupt_thread != NULL);
+  KASSERT(cpu->interrupt_thread != NULL);
+  KASSERT(cpu->interrupt_thread->id == SPECIAL_TID_MIN);
+  g_tsan_slots[cpu->interrupt_thread->tsan.sid].type = TSAN_TSLOT_INTERRUPT;
 
-  KASSERT(0 == kthread_create(&g_tsan_cpu.defint_thread,
+  KASSERT(0 == kthread_create(&cpu->defint_thread,
                               &tsan_special_thread_body, NULL));
-  KASSERT(g_tsan_cpu.defint_thread != NULL);
+  KASSERT(cpu->defint_thread != NULL);
+  KASSERT(cpu->defint_thread->id == cpu->interrupt_thread->id + 1);
+  g_tsan_slots[cpu->defint_thread->tsan.sid].type = TSAN_TSLOT_DEFINT;
+
+  g_special_tid_max = cpu->defint_thread->id;
 }
 
 kthread_t tsan_current_thread(void) {
@@ -133,6 +147,7 @@ void tsan_thread_create(kthread_t thread) {
   thread->tsan.tid = thread->id;
   thread->tsan.clock.ts[sid] = g_tsan_slots[sid].epoch;
   g_tsan_slots[sid].thread_id = thread->id;
+  g_tsan_slots[sid].type = TSAN_TSLOT_THREAD;
   tsan_event_init(&g_tsan_slots[sid].log);
   g_tsan_slots[sid].log.earliest_epoch = g_tsan_slots[sid].epoch;
   tsan_thread_epoch_inc(thread);
@@ -266,18 +281,27 @@ kthread_t tsan_get_thread(tsan_sid_t sid) {
 }
 
 bool tsan_is_stack_stomper(tsan_sid_t sid) {
-  return sid == g_tsan_cpu.interrupt_thread->tsan.sid ||
-         sid == g_tsan_cpu.defint_thread->tsan.sid;
+  switch (g_tsan_slots[sid].type) {
+    case TSAN_TSLOT_THREAD:
+      return false;
+
+    case TSAN_TSLOT_INTERRUPT:
+    case TSAN_TSLOT_DEFINT:
+      return true;
+  }
 }
 
 void tsan_print_thread_id(char* buf, size_t size, int id) {
   buf[size - 1] = '\0';
   if (id < 0) {
     kstrncpy(buf, "UNKNOWN", size);
-  } else if (id == g_tsan_cpu.interrupt_thread->id) {
-    kstrncpy(buf, "INTERRUPT", size);
-  } else if (id == g_tsan_cpu.defint_thread->id) {
-    kstrncpy(buf, "DEFINT", size);
+  } else if (id >= SPECIAL_TID_MIN && id <= g_special_tid_max) {
+    int idx = id - SPECIAL_TID_MIN;
+    if (idx % 2 == 0) {
+      ksnprintf(buf, size, "INTERRUPT.cpu%d", idx / 2);
+    } else {
+      ksnprintf(buf, size, "DEFINT.cpu%d", idx / 2);
+    }
   } else {
     ksnprintf(buf, size, "%d", id);
   }
