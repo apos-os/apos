@@ -52,9 +52,7 @@ NO_TSAN static void kspin_lock_internal(kspinlock_impl_t* l) {
 #endif
 }
 
-NO_TSAN static void kspin_unlock_internal(kspinlock_impl_t* l) {
-  kthread_t me = kthread_current_thread();
-  KASSERT(l->holder == me->id);
+NO_TSAN static void kspin_unlock_internal(kspinlock_impl_t* l, kthread_t me) {
   l->holder = -1;
   PUSH_AND_DISABLE_INTERRUPTS_NO_SYNC();
   KASSERT(me->spinlocks_held > 0);
@@ -89,8 +87,10 @@ NO_TSAN kspinstate_t kspin_lock_int(kspinlock_intsafe_t* l) NO_THREAD_SAFETY_ANA
 }
 
 NO_TSAN void kspin_unlock(kspinlock_t* l) NO_THREAD_SAFETY_ANALYSIS {
+  kthread_t me = kthread_current_thread();
+  KASSERT(l->_lock.holder == me->id);
   bool defint_state = l->defint_state;
-  kspin_unlock_internal(&l->_lock);
+  kspin_unlock_internal(&l->_lock, me);
   sched_restore_preemption();
   bool defint_prev_state = defint_set_state(defint_state);
   KASSERT(defint_prev_state == false);
@@ -98,15 +98,18 @@ NO_TSAN void kspin_unlock(kspinlock_t* l) NO_THREAD_SAFETY_ANALYSIS {
 
 NO_TSAN void kspin_unlock_int(kspinlock_intsafe_t* l)
     NO_THREAD_SAFETY_ANALYSIS {
+  kthread_t me = kthread_current_thread();
+  KASSERT(l->_lock.holder == me->id);
   interrupt_state_t int_state = l->int_state;
-  kspin_unlock_internal(&l->_lock);
+  kspin_unlock_internal(&l->_lock, me);
   KASSERT_DBG(interrupts_enabled() == false);
   restore_interrupts(int_state, false);
 }
 
 NO_TSAN void kspin_unlock2(kspinlock_t* l, kspinstate_t state)
     NO_THREAD_SAFETY_ANALYSIS {
-  kspin_unlock_internal(&l->_lock);
+  kthread_t me = kthread_current_thread();
+  kspin_unlock_internal(&l->_lock, me);
   sched_restore_preemption();
   bool defint_prev_state = defint_set_state(state);
   KASSERT(defint_prev_state == false);
@@ -114,7 +117,8 @@ NO_TSAN void kspin_unlock2(kspinlock_t* l, kspinstate_t state)
 
 NO_TSAN void kspin_unlock_int2(kspinlock_intsafe_t* l, kspinstate_t state)
     NO_THREAD_SAFETY_ANALYSIS {
-  kspin_unlock_internal(&l->_lock);
+  kthread_t me = kthread_current_thread();
+  kspin_unlock_internal(&l->_lock, me);
   KASSERT_DBG(interrupts_enabled() == false);
   restore_interrupts(state, false);
 }
