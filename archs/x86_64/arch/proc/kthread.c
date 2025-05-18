@@ -72,8 +72,9 @@ void kthread_arch_init_thread(kthread_t thread,
       "pushf\n\t"
       "pop %0\n\t"
       : "=r"(flags));
-  // Enable interrupts by default in the new thread.
-  flags = flags | IF_FLAG;
+  // Disable interrupts by default in the new thread.
+  // The kthread_trampoline will enable them.
+  flags = flags & ~IF_FLAG; // Explicitly clear the interrupt flag
   *(stack--) = flags;
 
   stack++;  // Point to last valid element.

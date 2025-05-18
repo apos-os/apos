@@ -16,7 +16,7 @@
 
 .global riscv_kthread_trampoline
 riscv_kthread_trampoline:
-  csrsi sstatus, 0x2  # Enable interrupts.
+  # Leave interrupts disabled. The C kthread_trampoline will enable them.
   mv a0, s2  # start_routine
   mv a1, s3  # arg
   jr s1
