@@ -23,6 +23,7 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/list.h"
+#include "common/per_cpu.h"
 #include "common/refcount.h"
 #include "dev/interrupts.h"
 #include "dev/timer.h"
@@ -47,7 +48,7 @@
 #define KTHREAD_STACK_SIZE \
   (ARCH_KTHREAD_BASE_STACK_SIZE + KTHREAD_STACK_PROTECT_LEN)
 
-static kthread_data_t* g_current_thread = 0;
+static DECLARE_PER_CPU(kthread_data_t*, g_current_thread) = 0;
 static int g_next_id = 0;
 static list_t g_all_threads = LIST_INIT_STATIC;
 
@@ -116,7 +117,7 @@ void kthread_init(void) {
   kthread_arch_init();
 
   PUSH_AND_DISABLE_INTERRUPTS();
-  KASSERT(g_current_thread == 0);
+  KASSERT(PER_CPU(g_current_thread) == 0);
 
   kthread_data_t* first = (kthread_data_t*)kmalloc(sizeof(kthread_data_t));
   KASSERT(first != 0x0);
@@ -134,14 +135,14 @@ void kthread_init(void) {
 
   kthread_queue_init(&g_reap_queue);
 
-  g_current_thread = first;
+  PER_CPU(g_current_thread) = first;
   kthread_arch_set_current_thread(first);
   POP_INTERRUPTS();
 }
 
 NO_SANITIZER
 kthread_t kthread_current_thread(void) {
-  return g_current_thread;
+  return PER_CPU(g_current_thread);
 }
 
 // TODO(aoates): reconsider the notion of unattached "kernel" threads ---
@@ -260,19 +261,19 @@ bool kthread_is_done(kthread_t thread) {
 
 void kthread_exit(void* x) {
   PUSH_AND_DISABLE_INTERRUPTS();
-  KASSERT(g_current_thread->spinlocks_held == 0);
-  KASSERT(g_current_thread->process == NULL);
+  KASSERT(PER_CPU(g_current_thread)->spinlocks_held == 0);
+  KASSERT(PER_CPU(g_current_thread)->process == NULL);
 
   // kthread_exit is basically the same as kthread_yield, but we don't put
   // ourselves back on the run queue.
-  g_current_thread->retval = x;
-  g_current_thread->state = KTHREAD_DONE;
+  PER_CPU(g_current_thread)->retval = x;
+  PER_CPU(g_current_thread)->state = KTHREAD_DONE;
 
   // Schedule all the waiting threads.
-  scheduler_wake_all(&g_current_thread->join_list);
+  scheduler_wake_all(&PER_CPU(g_current_thread)->join_list);
 
   // Transfer our reference to the reap queue.
-  kthread_queue_push(&g_reap_queue, g_current_thread);
+  kthread_queue_push(&g_reap_queue, PER_CPU(g_current_thread));
 
   scheduler_yield_no_reschedule();
 
@@ -293,9 +294,9 @@ void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg) {
 }
 
 void kthread_reset_interrupt_level(void) {
-  int ilevel = atomic_load_relaxed(&g_current_thread->interrupt_level);
+  int ilevel = atomic_load_relaxed(&PER_CPU(g_current_thread)->interrupt_level);
   KASSERT(ilevel == 0 || ilevel == 1);
-  atomic_store_relaxed(&g_current_thread->interrupt_level, 0);
+  atomic_store_relaxed(&PER_CPU(g_current_thread)->interrupt_level, 0);
 
 #if ENABLE_TSAN
   // Before we return to user-mode, release all writes above to the interrupt
@@ -319,8 +320,8 @@ void kthread_enable(kthread_t thread) {
 // most of it.
 NO_TSAN void kthread_switch(kthread_t new_thread) {
   PUSH_AND_DISABLE_INTERRUPTS();
-  KASSERT(g_current_thread->state != KTHREAD_RUNNING);
-  kthread_id_t my_id = g_current_thread->id;
+  KASSERT(PER_CPU(g_current_thread)->state != KTHREAD_RUNNING);
+  kthread_id_t my_id = PER_CPU(g_current_thread)->id;
   defint_state_t defint = defint_state();
 
 #if ENABLE_TSAN
@@ -334,9 +335,9 @@ NO_TSAN void kthread_switch(kthread_t new_thread) {
   // SMP-safe, see if we can remove this.
 #endif
 
-  kthread_data_t* old_thread = g_current_thread;
-  g_current_thread = new_thread;
-  kthread_arch_set_current_thread(g_current_thread);
+  kthread_data_t* old_thread = PER_CPU(g_current_thread);
+  PER_CPU(g_current_thread) = new_thread;
+  kthread_arch_set_current_thread(PER_CPU(g_current_thread));
   new_thread->state = KTHREAD_RUNNING;
 
   // If either the old or new thread isn't owned by a process (as with some
@@ -359,7 +360,7 @@ NO_TSAN void kthread_switch(kthread_t new_thread) {
 #endif
 
   // Verify that we're back on the proper stack!
-  KASSERT(g_current_thread->id == my_id);
+  KASSERT(PER_CPU(g_current_thread)->id == my_id);
 
   defint_set_state(defint);
 
@@ -383,10 +384,10 @@ NO_TSAN void kthread_switch(kthread_t new_thread) {
 NO_SANITIZER
 ktctx_type_t kthread_execution_context(void) {
   // Before kthread is initialized, just assume we're always in a thread ctx.
-  if (!g_current_thread) return KTCTX_THREAD;
+  if (!PER_CPU(g_current_thread)) return KTCTX_THREAD;
 
   defint_running_t s = defint_running_state();
-  int int_level = atomic_load_relaxed(&g_current_thread->interrupt_level);
+  int int_level = atomic_load_relaxed(&PER_CPU(g_current_thread)->interrupt_level);
   if (s == DEFINT_NONE) {
     return (int_level > 0) ? KTCTX_INTERRUPT : KTCTX_THREAD;
   } else if (s == DEFINT_THREAD_CTX) {
