@@ -23,6 +23,7 @@
 #include "common/kstring.h"
 #include "dev/devicetree/devicetree.h"
 #include "dev/pci/pcie.h"
+#include "dev/qemu-profiler.h"
 #include "dev/rtc/goldfish-rtc.h"
 #include "dev/serial/uart16550.h"
 #include "memory/kmalloc.h"
@@ -57,6 +58,9 @@ static dt_driver_t DTREE_DRIVERS[] = {
 
     {"pcie", (const char*[]){"pci-host-ecam-generic", NULL},
      &pcie_controller_driver},
+
+    {"qemu-profiler", (const char*[]){"qemu,profiler", NULL},
+     &qemu_profiler_driver},
 
     {NULL, NULL, NULL},
 };

@@ -20,6 +20,7 @@
 #include "common/kassert.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
+#include "dev/qemu-profiler.h"
 #include "proc/fork.h"
 #include "proc/signal/signal.h"
 #include "proc/user.h"
@@ -253,8 +254,10 @@ int kernel_run_ktests(const char** names, int len) {
   test_cmd_args_t args;
   args.num_entries = len;
   args.entry = tests;
+  qemu_profiler_enable();
   kpid_t child = proc_fork(&do_test_cmd, &args);
   KASSERT(child == proc_waitpid(child, NULL, 0));
+  qemu_profiler_disable();
   kfree(tests);
 
   if (proc_sigaction(SIGUSR1, &old_sigaction, NULL)) {
