@@ -15,9 +15,14 @@
 #ifndef APOO_ARCHS_COMMON_ARCH_COMMON_CPU_H
 #define APOO_ARCHS_COMMON_ARCH_COMMON_CPU_H
 
+#include "common/attributes.h"
+
 #define MAX_CPUS 10
 
 // Returns the index of the current CPU.
-int arch_cpu_index(void);
+static inline ALWAYS_INLINE
+int arch_cpu_index(void) {
+  return 0;
+}
 
 #endif
