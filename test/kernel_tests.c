@@ -21,6 +21,7 @@
 #include "common/kprintf.h"
 #include "common/kstring.h"
 #include "dev/qemu-profiler.h"
+#include "main/kernel.h"
 #include "proc/fork.h"
 #include "proc/signal/signal.h"
 #include "proc/user.h"
@@ -127,6 +128,19 @@ static const test_entry_t TESTS[] = {
   { "all", &run_all_tests, 0 },
   { 0, 0, 0},
 };
+
+static bool should_enable_profiling(void) {
+  const char** cmd_line = get_boot_info()->cmd_line;
+  if (cmd_line) {
+    for (int i = 0; cmd_line[i] != NULL; ++i) {
+      if (kstrcmp(cmd_line[i], "-profile") == 0 ||
+          kstrcmp(cmd_line[i], "--profile") == 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 static void run_all_tests(void) {
   const test_entry_t* e = &TESTS[0];
@@ -254,10 +268,17 @@ int kernel_run_ktests(const char** names, int len) {
   test_cmd_args_t args;
   args.num_entries = len;
   args.entry = tests;
-  qemu_profiler_enable();
+
+  bool profiling_enabled = should_enable_profiling();
+
+  if (profiling_enabled) {
+    qemu_profiler_enable();
+  }
   kpid_t child = proc_fork(&do_test_cmd, &args);
   KASSERT(child == proc_waitpid(child, NULL, 0));
-  qemu_profiler_disable();
+  if (profiling_enabled) {
+    qemu_profiler_disable();
+  }
   kfree(tests);
 
   if (proc_sigaction(SIGUSR1, &old_sigaction, NULL)) {
