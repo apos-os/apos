@@ -30,10 +30,10 @@ void kthread_arch_init(void);
 // architecture.
 void kthread_arch_set_current_thread(kthread_t thread);
 
-// Initialze the given thread's context.  It should be set to a state as if it
+// Initialize the given thread's context.  It should be set to a state as if it
 // had been switched out in kthread_arch_swap_context().  When switched into in
 // a subsequent kthread_arch_swap_context() call, it should,
-//  - enable interrupts
+//  - leave interrupts disabled
 //  - restore any other flag state to the state when this was called
 //  - run the given trampoline function, passing 'start' and 'arg' as arguments
 void kthread_arch_init_thread(kthread_t thread,
