@@ -45,10 +45,10 @@ typedef enum {
 
 struct kthread_data {
   kthread_id_t id;
-  kthread_state_t state;
   kthread_arch_context_t context;
   // TODO(aoates): protect more thread state with the spinlock.
   kspinlock_intsafe_t spin;
+  kthread_state_t state;
   void* retval;
   struct kthread_data* prev;
   struct kthread_data* next;
@@ -122,7 +122,7 @@ struct kthread_data {
 };
 typedef struct kthread_data kthread_data_t;
 
-_Static_assert(offsetof(kthread_data_t, context) == 8,
+_Static_assert(offsetof(kthread_data_t, context) == sizeof(void*),
                "Bad offset of arch context; mismatch with ASM");
 
 // Add and remove references to the given thread.

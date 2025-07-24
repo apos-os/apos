@@ -23,7 +23,7 @@
 
 // This asserts that the KTHREAD_T_ESP constant in kthread_asm.s matches the
 // actual offset of the context member.
-_Static_assert(offsetof(kthread_data_t, context) == 0x08,
+_Static_assert(offsetof(kthread_data_t, context) == 0x04,
                "KTHREAD_T_ESP doesn't match context offset");
 
 void kthread_arch_init(void) {

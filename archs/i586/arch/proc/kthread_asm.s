@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.set KTHREAD_T_ESP, 0x08
+.set KTHREAD_T_ESP, 0x04
 
 .global kthread_arch_swap_context
 kthread_arch_swap_context:
