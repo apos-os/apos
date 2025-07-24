@@ -39,6 +39,7 @@
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/spinlock.h"
+#include "proc/thread_annotations.h"
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_thread.h"
@@ -49,6 +50,7 @@
   (ARCH_KTHREAD_BASE_STACK_SIZE + KTHREAD_STACK_PROTECT_LEN)
 
 static DECLARE_PER_CPU(kthread_data_t*, g_current_thread) = 0;
+static DECLARE_PER_CPU(kthread_data_t*, g_last_thread) = 0;
 static int g_next_id = 0;
 static list_t g_all_threads = LIST_INIT_STATIC;
 
@@ -88,11 +90,24 @@ static void kthread_init_kthread(kthread_data_t* t) {
 #endif
 }
 
-static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
+static void kthread_trampoline(void* (*start_routine)(void*), void* arg)
+    NO_THREAD_SAFETY_ANALYSIS {
   // Assert that interrupts are disabled upon entry.
   KASSERT(!interrupts_enabled());
 
-  // Enable interrupts now that we are in the generic trampoline.
+  kthread_data_t* last_thread = PER_CPU(g_last_thread);
+  kthread_data_t* current_thread = kthread_current_thread();
+
+  // Set up metadata to match the locks.
+  KASSERT(current_thread->spinlocks_held == 0);
+  current_thread->spinlocks_held = 2;
+
+  // Unlock both the thread we switched from and the current (new) thread.
+  // Pass 0 for the state to prevent interrupt state restoration.
+  kspin_unlock_int2(&last_thread->spin, 0);
+  kspin_unlock_int2(&current_thread->spin, 0);
+
+  // Enable interrupts now that we are in the generic trampoline and locks are released.
   enable_interrupts();
 
   // Enable deferred interrupts for all new threads.
@@ -317,15 +332,39 @@ void kthread_enable(kthread_t thread) {
   atomic_store_relaxed(&thread->runnable, 1);
 }
 
+static void assert_locked(const kspinlock_intsafe_t* l, kthread_id_t holder)
+    ASSERT_CAPABILITY(l) {
+  KASSERT(l->_lock.holder == holder);
+}
+
 // NO_TSAN: this manipulates the current thread execution state, which confuses
 // TSAN for accesses that happen inside the function.
 // TODO(aoates): figure out a way to have TSAN enabled for this function, or
 // most of it.
-NO_TSAN void kthread_switch(kthread_t new_thread) {
+NO_TSAN void kthread_switch(kthread_t new_thread) NO_THREAD_SAFETY_ANALYSIS {
   PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(PER_CPU(g_current_thread)->state != KTHREAD_RUNNING);
   kthread_id_t my_id = PER_CPU(g_current_thread)->id;
   defint_state_t defint = defint_state();
+
+  kthread_data_t* old_thread = PER_CPU(g_current_thread);
+
+  if (old_thread == new_thread) {
+    POP_INTERRUPTS();
+    return;
+  }
+
+  // Lock both threads in a consistent order to prevent deadlocks.
+  kspinstate_t outer_lock_state;
+  if (old_thread->id < new_thread->id) {
+    outer_lock_state = kspin_lock_int(&old_thread->spin);
+    kspin_lock_int(&new_thread->spin);
+  } else {
+    outer_lock_state = kspin_lock_int(&new_thread->spin);
+    kspin_lock_int(&old_thread->spin);
+  }
+
+  PER_CPU(g_last_thread) = old_thread;
 
 #if ENABLE_TSAN
   // All writes should now be visible to the interrupt thread.  This is only
@@ -338,7 +377,6 @@ NO_TSAN void kthread_switch(kthread_t new_thread) {
   // SMP-safe, see if we can remove this.
 #endif
 
-  kthread_data_t* old_thread = PER_CPU(g_current_thread);
   PER_CPU(g_current_thread) = new_thread;
   kthread_arch_set_current_thread(PER_CPU(g_current_thread));
   new_thread->state = KTHREAD_RUNNING;
@@ -361,6 +399,13 @@ NO_TSAN void kthread_switch(kthread_t new_thread) {
 #if ENABLE_TSAN
   interrupt_do_legacy_full_sync(/* is_acquire */ true);
 #endif
+
+  // After context_swap RETURNS, we are running as the old thread again.
+  // Unlock both the thread we switched from and ourselves.
+  kthread_t actual_last_thread = PER_CPU(g_last_thread);
+  assert_locked(&actual_last_thread->spin, actual_last_thread->id);
+  kspin_unlock_int2(&actual_last_thread->spin, 0);
+  kspin_unlock_int2(&old_thread->spin, outer_lock_state);
 
   // Verify that we're back on the proper stack!
   KASSERT(PER_CPU(g_current_thread)->id == my_id);

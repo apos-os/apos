@@ -15,8 +15,10 @@
 #ifndef APOO_ARCHS_COMMON_ARCH_PROC_KTHREAD_H
 #define APOO_ARCHS_COMMON_ARCH_PROC_KTHREAD_H
 
-#include "proc/kthread.h"
 #include "memory/memory.h"
+#include "proc/kthread.h"
+#include "proc/kthread-internal.h"
+#include "proc/thread_annotations.h"
 
 typedef void* (*kthread_start_func_t)(void*);
 typedef void (*kthread_trampoline_func_t)(kthread_start_func_t start,

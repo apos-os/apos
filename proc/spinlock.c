@@ -108,6 +108,7 @@ NO_TSAN void kspin_unlock_int(kspinlock_intsafe_t* l)
 
 NO_TSAN void kspin_unlock2(kspinlock_t* l, kspinstate_t state)
     NO_THREAD_SAFETY_ANALYSIS {
+  KASSERT(l->_lock.holder != -1);
   kthread_t me = kthread_current_thread();
   kspin_unlock_internal(&l->_lock, me);
   sched_restore_preemption();
@@ -117,6 +118,7 @@ NO_TSAN void kspin_unlock2(kspinlock_t* l, kspinstate_t state)
 
 NO_TSAN void kspin_unlock_int2(kspinlock_intsafe_t* l, kspinstate_t state)
     NO_THREAD_SAFETY_ANALYSIS {
+  KASSERT(l->_lock.holder != -1);
   kthread_t me = kthread_current_thread();
   kspin_unlock_internal(&l->_lock, me);
   KASSERT_DBG(interrupts_enabled() == false);

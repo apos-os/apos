@@ -92,6 +92,9 @@ void kspin_unlock_int(kspinlock_intsafe_t* l) RELEASE(l);
 // passed to kspin_unlock2() IN REVERSE LOCK ORDER.  This ensures the correct
 // interrupt/defint state is restored, following lexical ordering of the locking
 // rather than of the unlocking.
+//
+// Pass 0 for |state| to avoid restoring interrupt/defint state.  This should
+// only be done when the caller manages interrupt state externally.
 void kspin_unlock2(kspinlock_t* l, kspinstate_t state) RELEASE(l);
 void kspin_unlock_int2(kspinlock_intsafe_t* l, kspinstate_t state) RELEASE(l);
 
