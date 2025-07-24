@@ -364,7 +364,6 @@ static void assert_locked(const kspinlock_intsafe_t* l, kthread_id_t holder)
 // most of it.
 NO_TSAN void kthread_switch(kthread_t new_thread) NO_THREAD_SAFETY_ANALYSIS {
   PUSH_AND_DISABLE_INTERRUPTS();
-  KASSERT(PER_CPU(g_current_thread)->state != KTHREAD_RUNNING);
   kthread_id_t my_id = PER_CPU(g_current_thread)->id;
   defint_state_t defint = defint_state();
 
@@ -397,6 +396,10 @@ NO_TSAN void kthread_switch(kthread_t new_thread) NO_THREAD_SAFETY_ANALYSIS {
   // TODO(tsan): once all code is updated to use spinlocks and the kernel is
   // SMP-safe, see if we can remove this.
 #endif
+  if (old_thread->state != KTHREAD_DONE) {
+    KASSERT_DBG(old_thread->state == KTHREAD_RUNNING);
+    old_thread->state = KTHREAD_PENDING;
+  }
 
   PER_CPU(g_current_thread) = new_thread;
   kthread_arch_set_current_thread(PER_CPU(g_current_thread));

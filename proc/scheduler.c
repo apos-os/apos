@@ -57,12 +57,8 @@ static tsan_lock_data_t g_implicit_scheduler_tsan_lock;
 #endif
 
 static void* idle_thread_body(void* arg) {
-  kthread_t me = kthread_current_thread();
   sched_disable_preemption();
   while(1) {
-    kspin_lock_int(&me->spin);
-    me->state = KTHREAD_PENDING;
-    kspin_unlock_int(&me->spin);
     scheduler_yield_no_reschedule();
   }
   return 0;
@@ -120,14 +116,24 @@ void scheduler_yield(void) {
   POP_INTERRUPTS();
 }
 
+// Silly helper to deal with thread safety annotations.
+static inline ALWAYS_INLINE kthread_state_t read_state(kthread_t thread) {
+  kspin_assert_is_held_int(&thread->spin);
+  return thread->state;
+}
+
 void scheduler_yield_no_reschedule(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   raw_spin_lock(&g_run_queue.spin);
   kthread_data_t* new_thread = scheduler_pick_next(&g_run_queue, true);
-  // TODO(aoates): handle threads that are still running and about to yield.
-  // Note: this is racey with changes in runnable --- that is OK.  If we get a
+  // Note: this is racy with changes in runnable --- that is OK.  If we get a
   // non-runnable thread here, assume that there _are_ no runnable threads.
-  if (new_thread && atomic_load_relaxed(&new_thread->runnable)) {
+  // We could also catch a thread before it has actually yielded; in that case,
+  // treat it as if it weren't runnable.  We can't handle this in
+  // scheduler_pick_next(), because usually we don't care when picking a thread
+  // from a queue.
+  if (new_thread && read_state(new_thread) == KTHREAD_PENDING &&
+      atomic_load_relaxed(&new_thread->runnable)) {
     kspin_assert_is_held_int(&new_thread->spin);
     kthread_queue_remove_locked(&g_run_queue, new_thread);
     raw_spin_unlock(&g_run_queue.spin);
@@ -290,7 +296,6 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
     KASSERT_DBG(timeout_ms == -1);
   }
 
-  current->state = KTHREAD_PENDING;
   current->interruptable = interruptable;
   current->wait_status = SWAIT_DONE;
   current->wait_timeout_ran = false;
