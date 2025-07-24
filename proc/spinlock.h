@@ -42,6 +42,9 @@
 typedef struct {
   // The thread currently holding the spinlock, or -1 if free.
   kthread_id_t holder;
+  // Defint or interrupt state from when the spinlock was locked, depending on
+  // the type.
+  int state;
 
 #if ENABLE_TSAN
   tsan_lock_data_t tsan;
@@ -51,28 +54,22 @@ typedef struct {
 // A normal spinlock.
 typedef struct CAPABILITY("spinlock") {
   kspinlock_impl_t _lock;
-
-  // Defint state when the spinlock was locked.
-  defint_state_t defint_state;
 } kspinlock_t;
 
 // An interrupt-safe spinlock.
 typedef struct CAPABILITY("spinlock") {
   kspinlock_impl_t _lock;
-
-  // Interrupt state when the spinlock was locked.
-  interrupt_state_t int_state;
 } kspinlock_intsafe_t;
 
 extern const kspinlock_t KSPINLOCK_NORMAL_INIT;
 extern const kspinlock_intsafe_t KSPINLOCK_INTERRUPT_SAFE_INIT;
 
 #if ENABLE_TSAN
-# define KSPINLOCK_NORMAL_INIT_STATIC {{ -1, TSAN_LOCK_DATA_INIT }, false }
-# define KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC {{ -1, TSAN_LOCK_DATA_INIT }, 0 }
+# define KSPINLOCK_NORMAL_INIT_STATIC {{ -1, 0, TSAN_LOCK_DATA_INIT }}
+# define KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC {{ -1, 0, TSAN_LOCK_DATA_INIT }}
 #else
-# define KSPINLOCK_NORMAL_INIT_STATIC {{ -1 }, false }
-# define KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC {{ -1 }, 0 }
+# define KSPINLOCK_NORMAL_INIT_STATIC {{ -1, 0 }}
+# define KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC {{ -1, 0 }}
 #endif
 
 typedef uint32_t kspinstate_t;

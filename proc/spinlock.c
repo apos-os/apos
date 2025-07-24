@@ -30,7 +30,7 @@ const kspinlock_intsafe_t KSPINLOCK_INTERRUPT_SAFE_INIT =
 
 // NO_TSAN: these are all underlying synchronization constructs that trigger
 // false positives when instrumented with TSAN (for example, races on
-// l->defint_state).  When (re)implemented for SMP, these should in theory be
+// l->_lock.state).  When (re)implemented for SMP, these should in theory be
 // instrumentable as they will use atomics that TSAN can understand --- it
 // still won't make sense to instrument them, though, as it would induce
 // redundant (expensive) synchronization tracking on both the lock itself and
@@ -71,7 +71,7 @@ NO_TSAN kspinstate_t kspin_lock(kspinlock_t* l) NO_THREAD_SAFETY_ANALYSIS {
   sched_disable_preemption();
   // TODO(aoates): assert that normal spinlocks are never taken from an
   // interrupt context.
-  l->defint_state = defint_state;
+  l->_lock.state = defint_state;
   kspin_lock_internal(&l->_lock);
   return defint_state;
 }
@@ -81,7 +81,7 @@ NO_TSAN kspinstate_t kspin_lock_int(kspinlock_intsafe_t* l) NO_THREAD_SAFETY_ANA
   // code _could_ change the defint state on its own (which would be
   // ill-advised), but it won't matter since interrupts are disabled.
   interrupt_state_t int_state = save_and_disable_interrupts(false);
-  l->int_state = int_state;
+  l->_lock.state = int_state;
   kspin_lock_internal(&l->_lock);
   return int_state;
 }
@@ -89,7 +89,7 @@ NO_TSAN kspinstate_t kspin_lock_int(kspinlock_intsafe_t* l) NO_THREAD_SAFETY_ANA
 NO_TSAN void kspin_unlock(kspinlock_t* l) NO_THREAD_SAFETY_ANALYSIS {
   kthread_t me = kthread_current_thread();
   KASSERT(l->_lock.holder == me->id);
-  bool defint_state = l->defint_state;
+  bool defint_state = l->_lock.state;
   kspin_unlock_internal(&l->_lock, me);
   sched_restore_preemption();
   bool defint_prev_state = defint_set_state(defint_state);
@@ -100,7 +100,7 @@ NO_TSAN void kspin_unlock_int(kspinlock_intsafe_t* l)
     NO_THREAD_SAFETY_ANALYSIS {
   kthread_t me = kthread_current_thread();
   KASSERT(l->_lock.holder == me->id);
-  interrupt_state_t int_state = l->int_state;
+  interrupt_state_t int_state = l->_lock.state;
   kspin_unlock_internal(&l->_lock, me);
   KASSERT_DBG(interrupts_enabled() == false);
   restore_interrupts(int_state, false);
@@ -130,7 +130,7 @@ NO_TSAN void kspin_lock_early(kspinlock_intsafe_t* l)
   if (kthread_current_thread()) {
     kspin_lock_int(l);
   } else {
-    l->int_state = save_and_disable_interrupts(false);
+    l->_lock.state = save_and_disable_interrupts(false);
   }
 }
 
@@ -139,7 +139,7 @@ NO_TSAN void kspin_unlock_early(kspinlock_intsafe_t* l)
   if (kthread_current_thread()) {
     kspin_unlock_int(l);
   } else {
-    restore_interrupts(l->int_state, false);
+    restore_interrupts(l->_lock.state, false);
   }
 }
 
