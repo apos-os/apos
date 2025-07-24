@@ -57,9 +57,12 @@ static tsan_lock_data_t g_implicit_scheduler_tsan_lock;
 #endif
 
 static void* idle_thread_body(void* arg) {
+  kthread_t me = kthread_current_thread();
   sched_disable_preemption();
   while(1) {
-    kthread_current_thread()->state = KTHREAD_PENDING;
+    kspin_lock_int(&me->spin);
+    me->state = KTHREAD_PENDING;
+    kspin_unlock_int(&me->spin);
     scheduler_yield_no_reschedule();
   }
   return 0;
@@ -121,6 +124,7 @@ void scheduler_yield_no_reschedule(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   raw_spin_lock(&g_run_queue.spin);
   kthread_data_t* new_thread = scheduler_pick_next(&g_run_queue, true);
+  // TODO(aoates): handle threads that are still running and about to yield.
   // Note: this is racey with changes in runnable --- that is OK.  If we get a
   // non-runnable thread here, assume that there _are_ no runnable threads.
   if (new_thread && atomic_load_relaxed(&new_thread->runnable)) {

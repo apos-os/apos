@@ -140,6 +140,7 @@ void kthread_init(void) {
   kthread_data_t* first = (kthread_data_t*)kmalloc(sizeof(kthread_data_t));
   KASSERT(first != 0x0);
   kthread_init_kthread(first);
+  kspin_int_constructor(&first->spin);
   first->state = KTHREAD_RUNNING;
   first->id = g_next_id++;
   first->stack = (addr_t*)get_global_meminfo()->thread0_stack.base;
@@ -173,6 +174,7 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
   *thread_ptr = thread;
 
   kthread_init_kthread(thread);
+  kspin_int_constructor(&thread->spin);
   thread->id = g_next_id++;
   thread->state = KTHREAD_PENDING;
   thread->retval = 0x0;
@@ -227,6 +229,7 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
 }
 
 void kthread_destroy(kthread_t thread) {
+  kspin_int_destructor(&thread->spin);
   KASSERT(thread->state == KTHREAD_DONE);
   KASSERT(refcount_get(&thread->ref) == 0);
   PUSH_AND_DISABLE_INTERRUPTS();
@@ -257,16 +260,30 @@ void kthread_detach(kthread_t thread_ptr) {
 
 void* kthread_join(kthread_t thread_ptr) {
   kthread_data_t* thread = thread_ptr;
+  PUSH_AND_DISABLE_INTERRUPTS();
+  // Note: we cast this to a kspinlock_t since the scheduler doesn't support
+  // waiting on an interrupt-safe spinlock.  This is safe because,
+  //  1) interrupt-safe spinlocks are strictly more protective than normal ones
+  //  2) we never access join_list from an interrupt context
+  //  3) interrupts are already disabled anyway
+  // Therefore, any simultaneous accesses to join_list (or other thread state)
+  // must be happening on another SMP core, and therefore protected by the
+  // actual spinning part of the spinlock.
+  kspin_lock((kspinlock_t*)&thread->spin);
   KASSERT(thread->state == KTHREAD_PENDING ||
           thread->state == KTHREAD_DONE);
 
   if (thread->state != KTHREAD_DONE) {
-    scheduler_wait_on(&thread->join_list);
+    scheduler_wait_on_splocked(&thread->join_list, -1,
+                               (kspinlock_t*)&thread->spin);
   }
+  KASSERT(thread->state == KTHREAD_DONE);
+  kspin_unlock((kspinlock_t*)&thread->spin);
+  POP_INTERRUPTS();
+
 #if ENABLE_TSAN
   tsan_thread_join(thread_ptr);
 #endif
-  KASSERT(thread->state == KTHREAD_DONE);
   void* retval = thread->retval;
   // Return our reference.  This will free the thread if we're last.
   kthread_unref(thread);
@@ -274,30 +291,34 @@ void* kthread_join(kthread_t thread_ptr) {
 }
 
 bool kthread_is_done(kthread_t thread) {
-  return thread->state == KTHREAD_DONE;
+  kspin_lock_int(&thread->spin);
+  bool result = thread->state == KTHREAD_DONE;
+  kspin_unlock_int(&thread->spin);
+  return result;
 }
 
 void kthread_exit(void* x) {
-  PUSH_AND_DISABLE_INTERRUPTS();
-  KASSERT(PER_CPU(g_current_thread)->spinlocks_held == 0);
-  KASSERT(PER_CPU(g_current_thread)->process == NULL);
+  kthread_t thread = PER_CPU(g_current_thread);
+  kspin_lock_int(&thread->spin);
+  KASSERT(thread->spinlocks_held == 1);
+  KASSERT(thread->process == NULL);
 
   // kthread_exit is basically the same as kthread_yield, but we don't put
   // ourselves back on the run queue.
-  PER_CPU(g_current_thread)->retval = x;
-  PER_CPU(g_current_thread)->state = KTHREAD_DONE;
+  thread->retval = x;
+  thread->state = KTHREAD_DONE;
 
   // Schedule all the waiting threads.
-  scheduler_wake_all(&PER_CPU(g_current_thread)->join_list);
+  scheduler_wake_all(&thread->join_list);
+  kspin_unlock_int(&thread->spin);
 
   // Transfer our reference to the reap queue.
-  kthread_queue_push(&g_reap_queue, PER_CPU(g_current_thread));
+  kthread_queue_push(&g_reap_queue, thread);
 
   scheduler_yield_no_reschedule();
 
   // Never get here!
   KASSERT(0);
-  POP_INTERRUPTS();
 }
 
 void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg) {

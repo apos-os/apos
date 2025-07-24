@@ -48,7 +48,7 @@ struct kthread_data {
   kthread_arch_context_t context;
   // TODO(aoates): protect more thread state with the spinlock.
   kspinlock_intsafe_t spin;
-  kthread_state_t state;
+  kthread_state_t state GUARDED_BY(&spin);
   void* retval;
   struct kthread_data* prev;
   struct kthread_data* next;
@@ -56,7 +56,7 @@ struct kthread_data {
   addr_t* stack;  // The block of memory allocated for the thread's stack.
   addrdiff_t stacklen;
   atomic32_t runnable;  // Crude way to disable threads for tests.
-  kthread_queue_t join_list;  // List of thread's join()'d to this one.
+  kthread_queue_t join_list GUARDED_BY(&spin);  // List of thread's join()'d to this one.
   process_t* process;  // The process owning this thread.
   analysis_lock_t process_spin_mu;  // Shadows process->spin_mu
 

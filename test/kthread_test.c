@@ -822,8 +822,15 @@ static void scheduler_interrupt_timeout_test(void) {
   }
 }
 
+static kthread_state_t thread_state(kthread_t t) {
+  kspin_lock_int(&t->spin);
+  kthread_state_t result = t->state;
+  kspin_unlock_int(&t->spin);
+  return result;
+}
+
 static void* kthread_is_done_test_helper(void* arg) {
-  KEXPECT_EQ(KTHREAD_RUNNING, kthread_current_thread()->state);
+  KEXPECT_EQ(KTHREAD_RUNNING, thread_state(kthread_current_thread()));
   KEXPECT_EQ(false, kthread_is_done(kthread_current_thread()));
   scheduler_wait_on((kthread_queue_t*)arg);
   return 0x0;
@@ -835,22 +842,22 @@ static void kthread_is_done_test(void) {
   kthread_queue_t queue;
   kthread_queue_init(&queue);
   KEXPECT_EQ(0, kthread_create(&thread, &kthread_is_done_test_helper, &queue));
-  KEXPECT_EQ(KTHREAD_PENDING, thread->state);
+  KEXPECT_EQ(KTHREAD_PENDING, thread_state(thread));
   KEXPECT_EQ(false, kthread_is_done(thread));
 
   KTEST_BEGIN("kthread_is_done(): scheduled thread");
   scheduler_make_runnable(thread);
-  KEXPECT_EQ(KTHREAD_PENDING, thread->state);
+  KEXPECT_EQ(KTHREAD_PENDING, thread_state(thread));
   KEXPECT_EQ(false, kthread_is_done(thread));
 
   KTEST_BEGIN("kthread_is_done(): blocked-on-queue thread");
   while (get_queue(thread) != &queue) scheduler_yield();
-  KEXPECT_EQ(KTHREAD_PENDING, thread->state);
+  KEXPECT_EQ(KTHREAD_PENDING, thread_state(thread));
   KEXPECT_EQ(false, kthread_is_done(thread));
 
   KTEST_BEGIN("kthread_is_done(): finished thread");
   scheduler_wake_all(&queue);
-  while (thread->state != KTHREAD_DONE) scheduler_yield();
+  while (thread_state(thread) != KTHREAD_DONE) scheduler_yield();
   KEXPECT_EQ(true, kthread_is_done(thread));
 
   KEXPECT_EQ(NULL, kthread_join(thread));
