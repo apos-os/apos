@@ -57,8 +57,13 @@ static tsan_lock_data_t g_implicit_scheduler_tsan_lock;
 #endif
 
 static void* idle_thread_body(void* arg) {
+  kthread_t me = kthread_current_thread();
   sched_disable_preemption();
   while(1) {
+    kspin_lock_int(&me->spin);
+    me->state = KTHREAD_YIELDING;
+    kspin_unlock_int(&me->spin);
+
     scheduler_yield_no_reschedule();
   }
   return 0;
@@ -153,6 +158,8 @@ void scheduler_yield_no_reschedule(void) {
     raw_spin_unlock(&g_run_queue.spin);
     if (new_thread) {
       kspin_assert_is_held_int(&new_thread->spin);
+      KASSERT_DBG(new_thread->state == KTHREAD_PENDING ||
+                  new_thread->state == KTHREAD_YIELDING);
       kspin_unlock_int(&new_thread->spin);
     }
     new_thread = g_idle_thread;
@@ -296,6 +303,7 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
     KASSERT_DBG(timeout_ms == -1);
   }
 
+  current->state = KTHREAD_YIELDING;
   current->interruptable = interruptable;
   current->wait_status = SWAIT_DONE;
   current->wait_timeout_ran = false;

@@ -397,7 +397,7 @@ NO_TSAN void kthread_switch(kthread_t new_thread) NO_THREAD_SAFETY_ANALYSIS {
   // SMP-safe, see if we can remove this.
 #endif
   if (old_thread->state != KTHREAD_DONE) {
-    KASSERT_DBG(old_thread->state == KTHREAD_RUNNING);
+    KASSERT_DBG(old_thread->state == KTHREAD_YIELDING);
     old_thread->state = KTHREAD_PENDING;
   }
 

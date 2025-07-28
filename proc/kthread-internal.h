@@ -37,10 +37,11 @@
 #endif
 
 typedef enum {
-  KTHREAD_RUNNING = 0,    // Currently running.
-  KTHREAD_PENDING = 1,    // Waiting on a run queue of some sort.
-  KTHREAD_DONE = 2,       // Finished.
-  KTHREAD_DESTROYED = 3,  // Destroyed.  Should never be seen.
+  KTHREAD_RUNNING = 0,  // Currently running.
+  KTHREAD_YIELDING,     // Yielding, about to transition to KTHREAD_PENDING.
+  KTHREAD_PENDING,      // Waiting on a run queue of some sort.
+  KTHREAD_DONE,         // Finished.
+  KTHREAD_DESTROYED,    // Destroyed.  Should never be seen.
 } kthread_state_t;
 
 struct kthread_data {
