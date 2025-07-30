@@ -59,9 +59,13 @@ static list_t g_all_threads GUARDED_BY(&g_global_thread_lock) =
 // A queue of threads that have exited and we can clean up.
 static kthread_queue_t g_reap_queue;
 
+static inline void kthread_proc_spin_mu_ctor(const kthread_data_t* thread)
+    ASSERT_CAPABILITY(thread->process_spin_mu) {}
+
 static void kthread_init_kthread(kthread_data_t* t) {
   t->spin = KSPINLOCK_INTERRUPT_SAFE_INIT;
   kspin_int_constructor(&t->spin);
+  kthread_proc_spin_mu_ctor(t);
   t->ref = REFCOUNT_INIT;
   t->state = KTHREAD_PENDING;
   t->id = 0;

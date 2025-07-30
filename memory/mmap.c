@@ -31,7 +31,8 @@
 // Unmap a portion of the given vm_area_t.  Zero, one, or two smaller vm_area_ts
 // may be created (and added to the process's list), depending on the overlap of
 // the unmap region and the vm_area_t.
-static int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
+static int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end)
+    REQUIRES(area->proc->mu) {
   KASSERT(unmap_start >= area->vm_base);
   KASSERT(unmap_end <= area->vm_base + area->vm_length);
 
@@ -301,6 +302,7 @@ static int do_munmap_locked(process_t* proc, void* addr_ptr, addr_t length) {
   list_link_t* link = proc_current()->vm_area_list.head;
   while (link && addr <= MEM_LAST_USER_MAPPABLE_ADDR) {
     vm_area_t* area = container_of(link, vm_area_t, vm_proc_list);
+    pmutex_assert_is_held(&area->proc->mu);
     list_link_t* next = link->next;
     const addr_t overlap_start = max(addr, area->vm_base);
     const addr_t overlap_end =

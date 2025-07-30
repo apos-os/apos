@@ -157,9 +157,9 @@ static void exec_thread_test(void) {
   // Now run the actual test.
   kstrcpy(args.bin, kTestBin);
   kmutex_init(&args.mu);
-  kthread_queue_init(&args.q);
 
   kmutex_lock(&args.mu);
+  kthread_queue_init(&args.q);
   args.threads_started = 0;
 
   pid = proc_fork(&exec_thread_test_proc, &args);

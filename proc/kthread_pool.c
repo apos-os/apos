@@ -85,8 +85,8 @@ void kthread_pool_destroy(kthread_pool_t* pool) {
   kspin_lock(&pool->spin);
   KASSERT(pool->running);
   pool->running = false;
-  kspin_unlock(&pool->spin);
   scheduler_wake_all(&pool->wait_queue);
+  kspin_unlock(&pool->spin);
   for (int i = 0; i < pool->size; ++i)
     kthread_join(pool->threads[i]);
   kspin_destructor(&pool->spin);

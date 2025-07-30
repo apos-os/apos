@@ -62,6 +62,5 @@ void vm_area_destroy(vm_area_t* area) {
     area->memobj->ops->unref(area->memobj);
   }
   area->memobj = 0x0;
-  KASSERT(!list_link_on_list(&area->proc->vm_area_list, &area->vm_proc_list));
   kfree(area);
 }
