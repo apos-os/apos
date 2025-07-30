@@ -278,13 +278,13 @@ void* kthread_join(kthread_t thread_ptr) {
                                (kspinlock_t*)&thread->spin);
   }
   KASSERT(thread->state == KTHREAD_DONE);
+  void* retval = thread->retval;
   kspin_unlock((kspinlock_t*)&thread->spin);
   POP_INTERRUPTS();
 
 #if ENABLE_TSAN
   tsan_thread_join(thread_ptr);
 #endif
-  void* retval = thread->retval;
   // Return our reference.  This will free the thread if we're last.
   kthread_unref(thread);
   return retval;

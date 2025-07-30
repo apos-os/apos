@@ -92,7 +92,8 @@ void scheduler_make_runnable(kthread_t thread) {
 
 void scheduler_make_runnable_locked(kthread_t thread) {
   kspin_assert_is_held_int(&thread->spin);
-  KASSERT_DBG(thread->state == KTHREAD_PENDING);
+  KASSERT_DBG(thread->state == KTHREAD_PENDING ||
+              thread->state == KTHREAD_YIELDING);
   raw_spin_lock(&g_run_queue.spin);
   kthread_queue_push_locked(&g_run_queue, thread);
   raw_spin_unlock(&g_run_queue.spin);
@@ -101,7 +102,9 @@ void scheduler_make_runnable_locked(kthread_t thread) {
 void scheduler_interrupt_thread(kthread_t thread) {
   kspin_lock_int(&thread->spin);
   if (thread->queue && thread->queue != &g_run_queue && thread->interruptable) {
-    KASSERT_DBG(thread->state == KTHREAD_PENDING);
+    // TODO(SMP): try to write a test that catches a thread in KTHREAD_YIELDING.
+    KASSERT_DBG(thread->state == KTHREAD_PENDING ||
+                thread->state == KTHREAD_YIELDING);
     KASSERT_DBG(kthread_current_thread()->queue == 0x0);
 
     kthread_queue_t* queue = thread->queue;
@@ -183,16 +186,18 @@ static void scheduler_timeout(defint_timer_t* timer, void* arg) {
     // end up with a spurious thread timeout.
     // TODO(aoates): consider a generation count, or check against the timeout
     // value, to avoid this causing a spurious timeout.
-    // TODO(SMP): add a test that exercises this race.
+    // TODO(SMP): add a test that exercises this race --- and then decide if
+    // this can be refactored or removed if redundant with the below.
     kspin_unlock_int(&thread->spin);
     kthread_unref(thread);
     return;
   }
   KASSERT_DBG(thread->wait_status != SWAIT_TIMEOUT);
   thread->wait_timeout_ran = true;
-  if (thread->wait_status == SWAIT_DONE && thread->queue != &g_run_queue) {
-    KASSERT_DBG(thread->state == KTHREAD_PENDING);
-    KASSERT_DBG(kthread_current_thread()->queue == 0x0);
+  if (thread->wait_status == SWAIT_DONE && thread->queue != NULL &&
+      thread->queue != &g_run_queue) {
+    KASSERT_DBG(thread->state == KTHREAD_PENDING ||
+                thread->state == KTHREAD_YIELDING);
 
     kthread_queue_t* queue = thread->queue;
     raw_spin_lock(&queue->spin);
@@ -272,19 +277,22 @@ kthread_t scheduler_pop(kthread_queue_t* queue, bool prefer_runnable) {
 
 int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
                    kmutex_t* mu, kspinlock_t* sp) NO_THREAD_SAFETY_ANALYSIS {
-  PUSH_AND_DISABLE_INTERRUPTS();
   kthread_t current = kthread_current_thread();
   // We should never be blocking if we're holding a spinlock (unless it's the
   // one we're unlocking atomically as part of this call).
   KASSERT_DBG(current->spinlocks_held == (sp ? 1 : 0));
 
+  // Make sure we don't try and preempt ourselves while we're yielding.
+  sched_disable_preemption();
+  kspin_lock_int(&current->spin);
   bool interruptable = !(flags & SWAIT_NO_INTERRUPT);
   if (interruptable) {
     if (!(flags & SWAIT_NO_SIGNAL_CHECK)) {
       const ksigset_t dispatchable = proc_dispatchable_signals();
       if (!ksigisemptyset(dispatchable)) {
         current->wait_status = SWAIT_INTERRUPTED;
-        POP_INTERRUPTS();
+        kspin_unlock_int(&current->spin);
+        sched_restore_preemption();
         return SWAIT_INTERRUPTED;
       }
     }
@@ -307,7 +315,12 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
   current->interruptable = interruptable;
   current->wait_status = SWAIT_DONE;
   current->wait_timeout_ran = false;
-  kthread_queue_push(queue, current);
+  raw_spin_lock(&queue->spin);
+  kthread_queue_push_locked(queue, current);
+  raw_spin_unlock(&queue->spin);
+  kspin_unlock_int(&current->spin);
+  // Note: after this point, we could be already put back on the run queue!  We
+  // won't be actually run again until we yield.
   if (sp) {
     kspin_unlock(sp);
   }
@@ -325,6 +338,7 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
     tsan_acquire(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
   }
 #endif
+  kspin_lock_int(&current->spin);
   int result = current->wait_status;
   if (timeout_ms > 0 && !current->wait_timeout_ran) {
     current->interruptable = false;
@@ -332,14 +346,15 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
       kthread_unref(current);
     }
   }
+  kspin_unlock_int(&current->spin);
   if (mu) {
     kmutex_lock(mu);
   }
   if (sp) {
     kspin_lock(sp);
   }
-  POP_INTERRUPTS();
 
+  sched_restore_preemption();
   return result;
 }
 

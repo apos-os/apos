@@ -50,9 +50,9 @@ struct kthread_data {
   // TODO(aoates): protect more thread state with the spinlock.
   kspinlock_intsafe_t spin;
   kthread_state_t state GUARDED_BY(&spin);
-  void* retval;
-  struct kthread_data* prev;
-  struct kthread_data* next;
+  void* retval GUARDED_BY(&spin);
+  struct kthread_data* prev;  // Guarded by the queue's lock.
+  struct kthread_data* next;  // Same.
   kthread_queue_t* queue GUARDED_BY(&spin);  // The queue we're waiting on, if any.
   addr_t* stack;  // The block of memory allocated for the thread's stack.
   addrdiff_t stacklen;
@@ -72,16 +72,16 @@ struct kthread_data {
 
   // Whether or not the thread can be interrupted (e.g. by a signal) if it's
   // blocked on a queue.
-  bool interruptable;
+  bool interruptable GUARDED_BY(&spin);
 
   // SWAIT_INTERRUPTED or SWAIT_TIMEOUT if the thread was woken up from an
   // interruptable wait and forced onto the run queue, by a signal or timeout,
   // respectively.
-  unsigned char wait_status;
+  unsigned char wait_status GUARDED_BY(&spin);
 
   // Whether or not the wait timeout fired, regardless of if it was interrupted
   // first.
-  bool wait_timeout_ran;
+  bool wait_timeout_ran GUARDED_BY(&spin);
 
   // Defint timer for thread timeouts.
   defint_timer_t timeout_timer;

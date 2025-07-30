@@ -629,7 +629,9 @@ static void scheduler_interrupt_test(void) {
     scheduler_interrupt_thread(thread1);
     for (int i = 0; i < 5 && !d1.ran; ++i) scheduler_yield();
     KEXPECT_EQ(1, d1.ran);
+    kspin_lock_int(&thread1->spin);
     KEXPECT_EQ(SWAIT_INTERRUPTED, thread1->wait_status);
+    kspin_unlock_int(&thread1->spin);
     KEXPECT_EQ((void*)1, kthread_join(thread1));
   }
 
@@ -650,7 +652,9 @@ static void scheduler_interrupt_test(void) {
     for (int i = 0; i < 5 && !d2.ran; ++i) scheduler_yield();
     KEXPECT_EQ(1, d2.ran);
 
+    kspin_lock_int(&thread1->spin);
     KEXPECT_EQ(SWAIT_DONE, thread1->wait_status);
+    kspin_unlock_int(&thread1->spin);
     KEXPECT_EQ((void*)0, kthread_join(thread1));
   }
 
@@ -669,21 +673,28 @@ static void scheduler_interrupt_test(void) {
     for (int i = 0; i < 5 && !d3.ran; ++i) scheduler_yield();
     KEXPECT_EQ(1, d3.ran);
 
+    kspin_lock_int(&thread1->spin);
     KEXPECT_EQ(SWAIT_DONE, thread1->wait_status);
+    kspin_unlock_int(&thread1->spin);
     KEXPECT_EQ((void*)0, kthread_join(thread1));
   }
 
   KTEST_BEGIN(
       "scheduler_interrupt_thread(): immediate return with pending signals");
+  kthread_t me = kthread_current_thread();
   {
     proc_force_signal_on_thread(proc_current(), kthread_current_thread(),
                                 SIGUSR1);
     KEXPECT_EQ(1, scheduler_wait_on_interruptable(&queue, -1));
     KEXPECT_EQ(1, scheduler_wait_on_interruptable(&queue, -1));
-    KEXPECT_EQ(SWAIT_INTERRUPTED, kthread_current_thread()->wait_status);
+    kspin_lock_int(&me->spin);
+    KEXPECT_EQ(SWAIT_INTERRUPTED, me->wait_status);
+    kspin_unlock_int(&me->spin);
 
     proc_suppress_signal(proc_current(), SIGUSR1);
-    kthread_current_thread()->wait_status = SWAIT_DONE;
+    kspin_lock_int(&me->spin);
+    me->wait_status = SWAIT_DONE;
+    kspin_unlock_int(&me->spin);
   }
 
   KTEST_BEGIN("scheduler_interrupt_thread(): current thread (running)");
@@ -691,7 +702,9 @@ static void scheduler_interrupt_test(void) {
 
   scheduler_interrupt_thread(kthread_current_thread());
   KEXPECT_EQ((void*)0x0, get_queue(kthread_current_thread()));
+  kspin_lock_int(&me->spin);
   KEXPECT_EQ(SWAIT_DONE, kthread_current_thread()->wait_status);
+  kspin_unlock_int(&me->spin);
 
   // TODO(aoates): test a thread that does an interruptable wait followed by a
   // non-interruptable wait; verify that the second wait is uninterruptable, and
@@ -717,8 +730,10 @@ static void scheduler_interrupt_timeout_test(void) {
     scheduler_interrupt_thread(thread1);
     for (int i = 0; i < 5 && !d1.ran; ++i) scheduler_yield();
     KEXPECT_EQ(1, d1.ran);
+    kspin_lock_int(&thread1->spin);
     KEXPECT_EQ(SWAIT_INTERRUPTED, thread1->wait_status);
     KEXPECT_EQ(false, thread1->wait_timeout_ran);
+    kspin_unlock_int(&thread1->spin);
     KEXPECT_EQ((void*)1, kthread_join(thread1));
   }
 
@@ -735,8 +750,10 @@ static void scheduler_interrupt_timeout_test(void) {
     KEXPECT_GE(end-start, 180);
     KEXPECT_LE(end-start, 250);
     KEXPECT_EQ(1, d1.ran);
+    kspin_lock_int(&thread1->spin);
     KEXPECT_EQ(SWAIT_TIMEOUT, thread1->wait_status);
     KEXPECT_EQ(true, thread1->wait_timeout_ran);
+    kspin_unlock_int(&thread1->spin);
     KEXPECT_EQ((void*)SWAIT_TIMEOUT, kthread_join(thread1));
   }
 
@@ -754,23 +771,30 @@ static void scheduler_interrupt_timeout_test(void) {
     for (int i = 0; i < 5 && !d1.ran; ++i) scheduler_yield();
     KEXPECT_LE(get_time_ms() - start, 30);
     KEXPECT_EQ(1, d1.ran);
+    kspin_lock_int(&thread1->spin);
     KEXPECT_EQ(SWAIT_DONE, thread1->wait_status);
     KEXPECT_EQ(false, thread1->wait_timeout_ran);
+    kspin_unlock_int(&thread1->spin);
     KEXPECT_EQ((void*)0, kthread_join(thread1));
   }
 
   KTEST_BEGIN(
       "scheduler_interrupt_thread(): immediate return with pending signals "
       "(with timeout)");
+  kthread_t me = kthread_current_thread();
   {
     proc_force_signal_on_thread(proc_current(), kthread_current_thread(),
                                 SIGUSR1);
     KEXPECT_EQ(1, scheduler_wait_on_interruptable(&queue, 5000));
     KEXPECT_EQ(1, scheduler_wait_on_interruptable(&queue, 5000));
-    KEXPECT_EQ(SWAIT_INTERRUPTED, kthread_current_thread()->wait_status);
+    kspin_lock_int(&me->spin);
+    KEXPECT_EQ(SWAIT_INTERRUPTED, me->wait_status);
+    kspin_unlock_int(&me->spin);
 
     proc_suppress_signal(proc_current(), SIGUSR1);
+    kspin_lock_int(&me->spin);
     kthread_current_thread()->wait_status = SWAIT_DONE;
+    kspin_unlock_int(&me->spin);
   }
 
   KTEST_BEGIN(
@@ -792,8 +816,10 @@ static void scheduler_interrupt_timeout_test(void) {
     // Even though the timeout fired, the interrupt happened first.
     for (int i = 0; i < 5 && !d1.ran; ++i) scheduler_yield();
     KEXPECT_EQ(1, d1.ran);
+    kspin_lock_int(&thread1->spin);
     KEXPECT_EQ(true, thread1->wait_timeout_ran);
     KEXPECT_EQ(SWAIT_INTERRUPTED, thread1->wait_status);
+    kspin_unlock_int(&thread1->spin);
     KEXPECT_EQ((void*)1, kthread_join(thread1));
   }
 
@@ -816,8 +842,10 @@ static void scheduler_interrupt_timeout_test(void) {
     // Even though the timeout fired, the wakeup happened first.
     for (int i = 0; i < 5 && !d1.ran; ++i) scheduler_yield();
     KEXPECT_EQ(1, d1.ran);
+    kspin_lock_int(&thread1->spin);
     KEXPECT_EQ(true, thread1->wait_timeout_ran);
     KEXPECT_EQ(SWAIT_DONE, thread1->wait_status);
+    kspin_unlock_int(&thread1->spin);
     KEXPECT_EQ((void*)SWAIT_DONE, kthread_join(thread1));
   }
 }
