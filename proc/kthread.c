@@ -51,8 +51,10 @@
 
 static DECLARE_PER_CPU(kthread_data_t*, g_current_thread) = 0;
 static DECLARE_PER_CPU(kthread_data_t*, g_last_thread) = 0;
-static int g_next_id = 0;
-static list_t g_all_threads = LIST_INIT_STATIC;
+kspinlock_intsafe_t g_global_thread_lock = KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC;
+static int g_next_id GUARDED_BY(&g_global_thread_lock) = 0;
+static list_t g_all_threads GUARDED_BY(&g_global_thread_lock) =
+    LIST_INIT_STATIC;
 
 // A queue of threads that have exited and we can clean up.
 static kthread_queue_t g_reap_queue;
@@ -133,6 +135,7 @@ static void kthread_trampoline(void* (*start_routine)(void*), void* arg)
 
 void kthread_init(void) {
   kthread_arch_init();
+  kspin_int_constructor(&g_global_thread_lock);
 
   PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(PER_CPU(g_current_thread) == 0);
@@ -175,10 +178,11 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
 
   kthread_init_kthread(thread);
   kspin_int_constructor(&thread->spin);
+  kspin_lock_int(&g_global_thread_lock);
   thread->id = g_next_id++;
+  kspin_unlock_int(&g_global_thread_lock);
   thread->state = KTHREAD_PENDING;
   thread->retval = 0x0;
-  list_push(&g_all_threads, &thread->all_threads_link);
 
   // Allocate a stack for the thread.
   addr_t* stack = (addr_t*)kmalloc_aligned(KTHREAD_STACK_SIZE, PAGE_SIZE);
@@ -224,6 +228,10 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
   // thread exits.
   kthread_ref(thread);
 
+  kspin_lock_int(&g_global_thread_lock);
+  list_push(&g_all_threads, &thread->all_threads_link);
+  kspin_unlock_int(&g_global_thread_lock);
+
   POP_INTERRUPTS();
   return 0;
 }
@@ -232,9 +240,9 @@ void kthread_destroy(kthread_t thread) {
   kspin_int_destructor(&thread->spin);
   KASSERT(thread->state == KTHREAD_DONE);
   KASSERT(refcount_get(&thread->ref) == 0);
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock_int(&g_global_thread_lock);
   list_remove(&g_all_threads, &thread->all_threads_link);
-  POP_INTERRUPTS();
+  kspin_unlock_int(&g_global_thread_lock);
 
 #if ENABLE_TSAN
   tsan_thread_destroy(thread);
@@ -322,14 +330,14 @@ void kthread_exit(void* x) {
 }
 
 void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock_int(&g_global_thread_lock);
   for (list_link_t* link = g_all_threads.head; link != NULL;
        link = link->next) {
     kthread_t thread =
         container_of(link, struct kthread_data, all_threads_link);
     f(thread, arg);
   }
-  POP_INTERRUPTS();
+  kspin_unlock_int(&g_global_thread_lock);
 }
 
 void kthread_reset_interrupt_level(void) {

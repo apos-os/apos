@@ -94,8 +94,7 @@ struct kthread_data {
   int spinlocks_held;
 
   // Link on the global thread list.
-  // TODO(aoates): once we support multiple threads per process, consider using
-  // a per-process thread list rather than a global one.
+  // TODO(aoates): consider using the per-process list rather than a global one.
   list_link_t all_threads_link;  // Note: does _not_ hold a reference.
 
   // Link on the per-process thread list.
