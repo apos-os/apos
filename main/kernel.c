@@ -218,6 +218,8 @@ void kmain(boot_info_t* boot, const char* cmdline) {
   g_boot_info = boot;
   set_global_meminfo(boot->meminfo);
 
+  per_cpu_init();
+
   klog_set_mode(KLOG_RAW_VIDEO);
   klog("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog(    "@                          APOO                           @\n");
@@ -238,9 +240,6 @@ void kmain(boot_info_t* boot, const char* cmdline) {
   page_frame_alloc_init(boot->meminfo);
   klog("paging_init()\n");
   paging_init();
-
-  klog("per_cpu_init()\n");
-  per_cpu_init();
 
   klog("proc_init_stage1()\n");
   proc_init_stage1();
