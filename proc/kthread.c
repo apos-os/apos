@@ -310,6 +310,10 @@ bool kthread_is_done(kthread_t thread) {
 }
 
 void kthread_exit(void* x) {
+  // Disable preemption permanently --- we don't want to be preempted after this
+  // point, we want to run until we finish exiting.
+  sched_disable_preemption();
+
   kthread_t thread = PER_CPU(g_current_thread);
   kspin_lock_int(&thread->spin);
   KASSERT(thread->spinlocks_held == 1);
