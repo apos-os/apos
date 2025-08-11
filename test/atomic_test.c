@@ -27,6 +27,13 @@ static void atomic32_test(void) {
   atomic_sub_relaxed(&x, 3);
   KEXPECT_EQ(8, atomic_load_relaxed(&x));
 
+  KTEST_BEGIN("atomic32_t: relaxed exchange test");
+  atomic_store_relaxed(&x, 100);
+  KEXPECT_EQ(100, atomic_xchg_relaxed(&x, 200));
+  KEXPECT_EQ(200, atomic_load_relaxed(&x));
+  KEXPECT_EQ(200, atomic_xchg_relaxed(&x, 1000));
+  KEXPECT_EQ(1000, atomic_load_relaxed(&x));
+
   KTEST_BEGIN("atomic32_t: basic acquire/release operations test");
   atomic_store_release(&x, 100);
   KEXPECT_EQ(100, atomic_load_acquire(&x));
@@ -43,7 +50,7 @@ static void atomic32_test(void) {
 }
 
 static void atomic_flag_test(void) {
-  KTEST_BEGIN("atomic_flag_t: basic /write test");
+  KTEST_BEGIN("atomic_flag_t: basic read/write test");
   atomic_flag_t f = ATOMIC_FLAG_INIT;
   KEXPECT_FALSE(atomic_flag_get(&f));
   atomic_flag_set(&f);

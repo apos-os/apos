@@ -43,6 +43,8 @@ typedef struct atomic32 atomic32_t;
   __atomic_add_fetch(&(x)->_val, val, ATOMIC_RELAXED)
 #define atomic_sub_relaxed(x, val) \
   __atomic_sub_fetch(&(x)->_val, val, ATOMIC_RELAXED)
+#define atomic_xchg_relaxed(x, val) \
+  __atomic_exchange_n(&(x)->_val, val, ATOMIC_RELAXED)
 
 // Acquire/release atomic operations.
 #define atomic_load_acquire(x) \
