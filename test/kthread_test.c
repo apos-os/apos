@@ -1794,6 +1794,36 @@ static void tasklet_test(void) {
   kspin_lock(&lock);
   KEXPECT_EQ(2, c1);
   kspin_unlock(&lock);
+
+
+  KTEST_BEGIN("defint_process_queued(): returns interrupts to ON correctly");
+  tasklet_t tl3;
+  c1 = 0;
+  tasklet_init(&tl3, tasklet_reent_fn, &c1);
+  KEXPECT_TRUE(tasklet_schedule(&tl3));
+  KEXPECT_TRUE(interrupts_enabled());
+  defint_process_queued(/* force= */ false);
+  KEXPECT_TRUE(interrupts_enabled());
+  kspin_lock(&lock);
+  KEXPECT_EQ(2, c1);
+  kspin_unlock(&lock);
+
+
+  KTEST_BEGIN("defint_process_queued(): returns interrupts to OFF correctly");
+  tasklet_t tl4;
+  c1 = 0;
+  tasklet_init(&tl4, tasklet_reent_fn, &c1);
+  KEXPECT_TRUE(tasklet_schedule(&tl4));
+
+  disable_interrupts();
+  KEXPECT_FALSE(interrupts_enabled());
+  defint_process_queued(/* force= */ true);
+  KEXPECT_FALSE(interrupts_enabled());
+  enable_interrupts();
+
+  kspin_lock(&lock);
+  KEXPECT_EQ(2, c1);
+  kspin_unlock(&lock);
 }
 
 static void kspin_unlock2_normal_test(void) {

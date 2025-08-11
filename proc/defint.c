@@ -14,13 +14,16 @@
 
 #include "proc/defint.h"
 
+#include "common/atomic.h"
 #include "common/attributes.h"
 #include "common/kassert.h"
 #include "common/list.h"
+#include "common/per_cpu.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 #include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
+#include "proc/spinlock.h"
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_lock.h"
@@ -33,14 +36,18 @@ typedef struct {
   void* arg;
 } defint_data_t;
 
-static defint_data_t g_defint_queue[MAX_QUEUED_DEFINTS];
-static int g_queue_start = 0;
-static int g_queue_len = 0;
-static bool g_defints_enabled = false;
-static defint_running_t g_defint_running = DEFINT_NONE;
+// Global defint state.
+static kspinlock_intsafe_t g_defint_lock = KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC;
+static defint_data_t g_defint_queue[MAX_QUEUED_DEFINTS] GUARDED_BY(g_defint_lock);
+static int g_queue_start GUARDED_BY(g_defint_lock) = 0;
+static int g_queue_len GUARDED_BY(g_defint_lock) = 0;
+
+// Per-cpu defint state.
+static DECLARE_PER_CPU(atomic32_t, g_defints_enabled) = ATOMIC32_INIT(0);
+static DECLARE_PER_CPU(defint_running_t, g_defint_running) = DEFINT_NONE;
 
 void defint_schedule(void (*f)(void*), void* arg) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+  kspin_lock_early(&g_defint_lock);
   KASSERT(g_queue_len < MAX_QUEUED_DEFINTS);
   int idx = (g_queue_start + g_queue_len) % MAX_QUEUED_DEFINTS;
   KASSERT_DBG(g_defint_queue[idx].f == NULL);
@@ -52,14 +59,11 @@ void defint_schedule(void (*f)(void*), void* arg) {
   // Release all this thread's values to the defint as an explicit sync point.
   tsan_release(NULL, TSAN_DEFINTS);
 #endif
-  POP_INTERRUPTS();
+  kspin_unlock_early(&g_defint_lock);
 }
 
 defint_state_t defint_state(void) {
-  PUSH_AND_DISABLE_INTERRUPTS();
-  defint_state_t result = g_defints_enabled;
-  POP_INTERRUPTS();
-  return result;
+  return atomic_load_relaxed(&PER_CPU(g_defints_enabled));
 }
 
 defint_state_t defint_set_state(defint_state_t s) {
@@ -68,10 +72,7 @@ defint_state_t defint_set_state(defint_state_t s) {
     tsan_release(NULL, TSAN_DEFINTS);
   }
 #endif
-  PUSH_AND_DISABLE_INTERRUPTS();
-  bool old = g_defints_enabled;
-  g_defints_enabled = s;
-  POP_INTERRUPTS();
+  bool old = atomic_xchg_relaxed(&PER_CPU(g_defints_enabled), s);
   if (s) {
     defint_process_queued(/* force= */ false);
 #if ENABLE_TSAN
@@ -90,18 +91,17 @@ NO_TSAN void defint_process_queued(bool force) {
   if (!interrupts_enabled() && !force) {
     return;
   }
-  PUSH_AND_DISABLE_INTERRUPTS();
-  if (!g_defints_enabled) {
-    POP_INTERRUPTS();
+  if (!atomic_load_relaxed(&PER_CPU(g_defints_enabled))) {
     return;
   }
-  KASSERT_DBG(g_defint_running == DEFINT_NONE);
+  KASSERT_DBG(PER_CPU(g_defint_running) == DEFINT_NONE);
 
   sched_disable_preemption();
 
   // Prevent any new defints from being processed while we're working.
-  g_defints_enabled = false;
-  g_defint_running =
+  kspinstate_t lock_state = kspin_lock_early(&g_defint_lock);
+  atomic_store_relaxed(&PER_CPU(g_defints_enabled), false);
+  PER_CPU(g_defint_running) =
       (atomic_load_relaxed(&kthread_current_thread()->interrupt_level) == 0)
           ? DEFINT_THREAD_CTX
           : DEFINT_INTERRUPT_CTX;
@@ -111,21 +111,22 @@ NO_TSAN void defint_process_queued(bool force) {
   while (g_queue_len > 0) {
     defint_data_t* data = &g_defint_queue[g_queue_start];
 
+    kspin_unlock_early(&g_defint_lock);
     enable_interrupts();
     data->f(data->arg);
-    disable_interrupts();
+    kspin_lock_early(&g_defint_lock);
 
     data->f = NULL;
     g_queue_start = (g_queue_start + 1) % MAX_QUEUED_DEFINTS;
     g_queue_len--;
   }
-  g_defint_running = DEFINT_NONE;
-  g_defints_enabled = true;
+  PER_CPU(g_defint_running) = DEFINT_NONE;
+  atomic_store_relaxed(&PER_CPU(g_defints_enabled), true);
 
   // TODO(aoates): if we would have preempted the process during the defint, do
   // so now (in the scheduler).
   sched_restore_preemption();
-  POP_INTERRUPTS();
+  kspin_unlock_early2(&g_defint_lock, lock_state);
 }
 
 void _defint_disabled_die(void) {
@@ -134,5 +135,5 @@ void _defint_disabled_die(void) {
 
 NO_SANITIZER
 defint_running_t defint_running_state(void) {
-  return g_defint_running;
+  return PER_CPU(g_defint_running);
 }

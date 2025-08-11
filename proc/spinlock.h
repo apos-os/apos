@@ -97,8 +97,9 @@ void kspin_unlock_int2(kspinlock_intsafe_t* l, kspinstate_t state) RELEASE(l);
 
 // A variant that is safe to use early in the boot process.  Before threads/proc
 // are set up, will simply disable/restore interrupts.
-void kspin_lock_early(kspinlock_intsafe_t* l) ACQUIRE(l);
+kspinstate_t kspin_lock_early(kspinlock_intsafe_t* l) ACQUIRE(l);
 void kspin_unlock_early(kspinlock_intsafe_t* l) RELEASE(l);
+void kspin_unlock_early2(kspinlock_intsafe_t* l, kspinstate_t state) RELEASE(l);
 
 // Returns true if the spinlock is held by the current thread.
 // TODO(aoates): convert these to assertions.
