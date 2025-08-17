@@ -72,14 +72,14 @@ void __tsan_atomic32_store(volatile __tsan_atomic32* a, __tsan_atomic32 val,
   tsan_spinlock_unlock(&sync->spin);
 }
 
-#define DEFINE_ATOMIC_RMW(_T, _OP)                                  \
+#define DEFINE_ATOMIC_RMW(_T, _OP, _OP_SUFFIX)                      \
   _T _T##_OP(volatile _T* a, _T val, __tsan_mo mo) {                \
     tsan_check(CALLERPC, (addr_t)a, sizeof(_T),                     \
                TSAN_ACCESS_WRITE | TSAN_ACCESS_IS_ATOMIC);          \
                                                                     \
     /* Relaxed fast-path. */                                        \
     if (mo == ATOMIC_RELAXED || !tsan_initialized()) {              \
-      return __atomic##_OP(a, val, mo);                             \
+      return __atomic##_OP##_OP_SUFFIX(a, val, mo);                 \
     }                                                               \
                                                                     \
     tsan_sync_t* sync = tsan_sync_get((addr_t)a, sizeof(_T), true); \
@@ -90,12 +90,13 @@ void __tsan_atomic32_store(volatile __tsan_atomic32* a, __tsan_atomic32 val,
     if (tsan_is_release(mo)) {                                      \
       tsan_release(&sync->lock, TSAN_LOCK);                         \
     }                                                               \
-    _T result = __atomic##_OP(a, val, mo);                          \
+    _T result = __atomic##_OP##_OP_SUFFIX(a, val, mo);              \
     tsan_spinlock_unlock(&sync->spin);                              \
                                                                     \
     return result;                                                  \
   }
 
-DEFINE_ATOMIC_RMW(__tsan_atomic32, _fetch_add)
-DEFINE_ATOMIC_RMW(__tsan_atomic32, _fetch_sub)
-DEFINE_ATOMIC_RMW(__tsan_atomic32, _fetch_or)
+DEFINE_ATOMIC_RMW(__tsan_atomic32, _fetch_add, )
+DEFINE_ATOMIC_RMW(__tsan_atomic32, _fetch_sub, )
+DEFINE_ATOMIC_RMW(__tsan_atomic32, _fetch_or, )
+DEFINE_ATOMIC_RMW(__tsan_atomic32, _exchange, _n)

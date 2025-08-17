@@ -174,6 +174,19 @@ uint32_t tsan_atomic_rmw(atomic32_t* x, uint32_t val, int memorder) {
   die("Bad memory order");
 }
 
+uint32_t tsan_atomic_xchg(atomic32_t* x, uint32_t newval, int memorder) {
+  switch (memorder) {
+    case ATOMIC_RELAXED:
+      return atomic_xchg_relaxed(x, newval);
+
+    case ATOMIC_ACQUIRE:
+    case ATOMIC_RELEASE:
+    case ATOMIC_ACQ_REL:
+      die("Unsupported memory order");
+  }
+  die("Bad memory order");
+}
+
 bool tsan_flag_get(const atomic_flag_t* f) {
   return atomic_flag_get(f);
 }

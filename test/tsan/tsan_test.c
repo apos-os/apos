@@ -3632,6 +3632,14 @@ static void atomic_tests(void) {
   atomic_weak_rmw_tests();
 }
 
+static void atomic_hooks_tests(void) {
+  KTEST_BEGIN("TSAN: atomic xchg functional tests");
+  atomic32_t x;
+  tsan_atomic_write(&x, 5, ATOMIC_RELAXED);
+  KEXPECT_EQ(5, tsan_atomic_xchg(&x, 105, ATOMIC_RELAXED));
+  KEXPECT_EQ(105, tsan_atomic_read(&x, ATOMIC_RELAXED));
+}
+
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   // For most of these tests, having the legacy full-sync behavior will break
@@ -3653,6 +3661,7 @@ void tsan_test(void) {
   multilock_tests();
   kernel_writable_data_tests();
   atomic_tests();
+  atomic_hooks_tests();
 
   interrupt_set_legacy_full_sync(old_legacy);
 
