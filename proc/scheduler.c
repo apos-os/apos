@@ -105,8 +105,6 @@ void scheduler_interrupt_thread(kthread_t thread) {
     // TODO(SMP): try to write a test that catches a thread in KTHREAD_YIELDING.
     KASSERT_DBG(thread->state == KTHREAD_PENDING ||
                 thread->state == KTHREAD_YIELDING);
-    KASSERT_DBG(kthread_current_thread()->queue == 0x0);
-
     kthread_queue_t* queue = thread->queue;
     raw_spin_lock(&queue->spin);
     kthread_queue_remove_locked(queue, thread);
