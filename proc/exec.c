@@ -82,7 +82,7 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
     // We don't want scheduler_wait() to re-check signals (which would require
     // re-taking me->process->spin_mu).
     scheduler_wait(&p->thread_change_queue, SWAIT_NO_SIGNAL_CHECK, -1, NULL,
-                   &p->spin_mu);
+                   &p->spin_mu, NULL);
   }
   KASSERT_DBG(list_size(&p->threads) == 1);
   KASSERT_DBG(p->threads.head == &thread->proc_threads_link);

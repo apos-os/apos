@@ -53,7 +53,7 @@ void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg,
       // We don't want scheduler_wait() to re-check signals (which would require
       // re-taking me->process->spin_mu).
       scheduler_wait(&me->process->stopped_queue, SWAIT_NO_SIGNAL_CHECK, -1,
-                     NULL, &me->process->spin_mu);
+                     NULL, &me->process->spin_mu, NULL);
     }
   } while (proc_current()->state == PROC_STOPPED);
   // TODO(SMP): need to close this race condition --- another thread could

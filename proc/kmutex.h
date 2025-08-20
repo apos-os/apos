@@ -23,6 +23,7 @@
 #include "dev/timer.h"
 #include "proc/kthread.h"
 #include "proc/kthread-queue.h"
+#include "proc/raw_spinlock.h"
 #include "proc/thread_annotations.h"
 
 // How many locked mutexes to track for deadlock detection.
@@ -35,8 +36,9 @@ typedef struct {
 } kmutex_prior_t;
 
 struct CAPABILITY("mutex") kmutex {
-  int locked;
-  kthread_t holder; // For debugging.
+  raw_spinlock_t spin;  // Note: we don't actually need interrupt safety.
+  bool locked GUARDED_BY(&spin);
+  kthread_t holder GUARDED_BY(&spin);  // For debugging.
   kthread_queue_t wait_queue;
 
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION

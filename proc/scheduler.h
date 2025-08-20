@@ -28,6 +28,7 @@
 #include "proc/kthread-internal.h"
 #include "proc/kthread-queue.h"
 #include "proc/pmutex.h"
+#include "proc/raw_spinlock.h"
 #include "proc/spinlock.h"
 #include "proc/thread_annotations.h"
 
@@ -52,7 +53,9 @@ void scheduler_yield(void);
 // Flags to pass to scheduler_wait().  Default flags is zero.
 typedef enum {
   SWAIT_DEFAULT = 0,
-  SWAIT_NO_INTERRUPT = 1,  // Wait can't be interrupted.
+
+  // Wait can't be interrupted.  Implies SWAIT_NO_SIGNAL_CHECK.
+  SWAIT_NO_INTERRUPT = 1,
 
   // Don't check for pending signals before waiting.  Generally
   // SWAIT_NO_INTERRUPT should be used instead, unless the thread/process itself
@@ -63,7 +66,7 @@ typedef enum {
 // Universal scheduler wait function.  Called by variants below.  At most one
 // lock type must be supplied.
 int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
-                   kmutex_t* mu, kspinlock_t* sp);
+                   kmutex_t* mu, kspinlock_t* sp, raw_spinlock_t* rsp);
 
 // Wait on the given thread queue.
 //

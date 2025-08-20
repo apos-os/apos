@@ -55,4 +55,23 @@ void raw_spin_assert_held(const raw_spinlock_t* l) ASSERT_CAPABILITY(l) {
 static inline ALWAYS_INLINE
 void raw_spin_ctor(const raw_spinlock_t* l) ASSERT_CAPABILITY(l) {}
 
+// Variants for use in the scheduler code which don't re-enable interrupts.
+static inline NO_TSAN ALWAYS_INLINE
+void raw_spin_lock_noint(raw_spinlock_t* sp, interrupt_state_t int_state)
+    ACQUIRE(sp) NO_THREAD_SAFETY_ANALYSIS {
+  KASSERT_DBG(!interrupts_enabled());
+  KASSERT(atomic_load_acquire(&sp->flag) == 0);
+  atomic_store_relaxed(&sp->flag, 1);
+  sp->int_state = int_state;
+}
+
+static inline NO_TSAN ALWAYS_INLINE
+interrupt_state_t raw_spin_unlock_noint(raw_spinlock_t* sp)
+    RELEASE(sp) NO_THREAD_SAFETY_ANALYSIS {
+  KASSERT(atomic_load_relaxed(&sp->flag) == 1);
+  interrupt_state_t int_state = sp->int_state;
+  atomic_store_release(&sp->flag, 0);
+  return int_state;
+}
+
 #endif

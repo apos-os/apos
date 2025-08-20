@@ -274,7 +274,8 @@ kthread_t scheduler_pop(kthread_queue_t* queue, bool prefer_runnable) {
 }
 
 int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
-                   kmutex_t* mu, kspinlock_t* sp) NO_THREAD_SAFETY_ANALYSIS {
+                   kmutex_t* mu, kspinlock_t* sp,
+                   raw_spinlock_t* rsp) NO_THREAD_SAFETY_ANALYSIS {
   kthread_t current = kthread_current_thread();
   // We should never be blocking if we're holding a spinlock (unless it's the
   // one we're unlocking atomically as part of this call).
@@ -319,6 +320,10 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
   kspin_unlock_int(&current->spin);
   // Note: after this point, we could be already put back on the run queue!  We
   // won't be actually run again until we yield.
+  interrupt_state_t rsp_state;
+  if (rsp) {
+    rsp_state = raw_spin_unlock_noint(rsp);
+  }
   if (sp) {
     kspin_unlock(sp);
   }
@@ -326,13 +331,13 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
     kmutex_unlock_no_yield(mu);
   }
 #if ENABLE_TSAN
-  if (!sp && !mu && atomic_load_relaxed(&current->preemption_disables) > 0) {
+  if (!rsp && !sp && !mu && atomic_load_relaxed(&current->preemption_disables) > 0) {
     tsan_release(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
   }
 #endif
   scheduler_yield_no_reschedule();
 #if ENABLE_TSAN
-  if (!sp && !mu && atomic_load_relaxed(&current->preemption_disables) > 0) {
+  if (!rsp && !sp && !mu && atomic_load_relaxed(&current->preemption_disables) > 0) {
     tsan_acquire(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
   }
 #endif
@@ -351,33 +356,36 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
   if (sp) {
     kspin_lock(sp);
   }
+  if (rsp) {
+    raw_spin_lock_noint(rsp, rsp_state);
+  }
 
   sched_restore_preemption();
   return result;
 }
 
 void scheduler_wait_on(kthread_queue_t* queue) {
-  int result = scheduler_wait(queue, SWAIT_NO_INTERRUPT, -1, NULL, NULL);
+  int result = scheduler_wait(queue, SWAIT_NO_INTERRUPT, -1, NULL, NULL, NULL);
   KASSERT_DBG(result == 0);
 }
 
 int scheduler_wait_on_interruptable(kthread_queue_t* queue, long timeout_ms) {
-  return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, NULL, NULL);
+  return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, NULL, NULL, NULL);
 }
 
 int scheduler_wait_on_locked(kthread_queue_t* queue, long timeout_ms,
                              kmutex_t* mu) {
-  return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, mu, NULL);
+  return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, mu, NULL, NULL);
 }
 
 int scheduler_wait_on_plocked(kthread_queue_t* queue, long timeout_ms,
                              pmutex_t* mu) {
-  return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, &mu->_mu, NULL);
+  return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, &mu->_mu, NULL, NULL);
 }
 
 int scheduler_wait_on_splocked(kthread_queue_t* queue, long timeout_ms,
                                kspinlock_t* sp) {
-  return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, NULL, sp);
+  return scheduler_wait(queue, SWAIT_DEFAULT, timeout_ms, NULL, sp, NULL);
 }
 
 void scheduler_wake_one(kthread_queue_t* queue) {

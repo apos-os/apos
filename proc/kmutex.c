@@ -14,7 +14,6 @@
 #include "proc/kmutex.h"
 
 #include "common/kassert.h"
-#include "dev/interrupts.h"
 #include "proc/kthread-queue.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
@@ -40,6 +39,8 @@ static void init_deadlock_data(kmutex_t* m) {
 #endif
 
 void kmutex_init(kmutex_t* m) {
+  m->spin = RAW_SPIN_INIT;
+  raw_spin_ctor(&m->spin);
   m->locked = 0;
   m->holder = 0x0;
   kthread_queue_init(&m->wait_queue);
@@ -61,27 +62,29 @@ static inline ALWAYS_INLINE
 void _kmutex_rel(kmutex_t* m) RELEASE(m) NO_THREAD_SAFETY_ANALYSIS {}
 
 void kmutex_lock(kmutex_t* m) {
-  PUSH_AND_DISABLE_INTERRUPTS();
   // We should never be blocking if we're holding a spinlock.
   KASSERT_DBG(kthread_current_thread()->spinlocks_held == 0);
   KASSERT_DBG(defint_running_state() == DEFINT_NONE);
+  raw_spin_lock(&m->spin);
   if (m->locked) {
     // Mutexes are non-reentrant, so this would deadlock.
     KASSERT_MSG(m->holder != kthread_current_thread(),
-                "Mutexs are non-reentrant: cannot lock mutex already held by "
+                "Mutexes are non-reentrant: cannot lock mutex already held by "
                 "the current thread!");
-    scheduler_wait_on(&m->wait_queue);
+    int result = scheduler_wait(&m->wait_queue, SWAIT_NO_INTERRUPT, -1, NULL,
+                                NULL, &m->spin);
+    KASSERT(result == SWAIT_DONE);
     KASSERT(m->holder == kthread_current_thread());
   } else {
     m->locked = 1;
     m->holder = kthread_current_thread();
   }
   KASSERT(m->locked == 1);
+  raw_spin_unlock(&m->spin);
 
 #if ENABLE_TSAN
   tsan_acquire(&m->tsan, TSAN_LOCK);
 #endif
-  POP_INTERRUPTS();
 
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   if (m->id == 0) {
@@ -134,11 +137,11 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) RELEASE(m) {
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   list_remove(&kthread_current_thread()->mutexes_held, &m->link);
 #endif
-  PUSH_AND_DISABLE_INTERRUPTS();
 #if ENABLE_TSAN
   tsan_release(&m->tsan, TSAN_LOCK);
 #endif
 
+  raw_spin_lock(&m->spin);
   KASSERT(m->locked == 1);
   KASSERT(m->holder == kthread_current_thread());
 
@@ -152,14 +155,15 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) RELEASE(m) {
     raw_spin_unlock(&m->wait_queue.spin);
     scheduler_make_runnable_locked(next_holder);
     kspin_unlock_int(&next_holder->spin);
-    if (yield) scheduler_yield();
   } else {
     // No next holder, so we can unlock the mutex.
+    raw_spin_unlock(&m->wait_queue.spin);
     m->locked = 0;
     m->holder = 0x0;
-    raw_spin_unlock(&m->wait_queue.spin);
+    yield = false;
   }
-  POP_INTERRUPTS();
+  raw_spin_unlock(&m->spin);
+  if (yield) scheduler_yield();
   _kmutex_rel(m);
 }
 
@@ -171,22 +175,25 @@ void kmutex_unlock_no_yield(kmutex_t* m) {
   kmutex_unlock_internal(m, false);
 }
 
-bool kmutex_is_locked(const kmutex_t* m) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+bool kmutex_is_locked(const kmutex_t* mc) {
+  kmutex_t* m = (kmutex_t*)mc;
+  raw_spin_lock(&m->spin);
   int is_locked = m->locked;
-  POP_INTERRUPTS();
+  raw_spin_unlock(&m->spin);
   return is_locked;
 }
 
-void kmutex_assert_is_held(const kmutex_t* m) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+void kmutex_assert_is_held(const kmutex_t* mc) {
+  kmutex_t* m = (kmutex_t*)mc;
+  raw_spin_lock(&m->spin);
   KASSERT(m->locked == 1);
   KASSERT(m->holder == kthread_current_thread());
-  POP_INTERRUPTS();
+  raw_spin_unlock(&m->spin);
 }
 
-void kmutex_assert_is_not_held(const kmutex_t* m) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+void kmutex_assert_is_not_held(const kmutex_t* mc) {
+  kmutex_t* m = (kmutex_t*)mc;
+  raw_spin_lock(&m->spin);
   KASSERT(m->holder != kthread_current_thread());
-  POP_INTERRUPTS();
+  raw_spin_unlock(&m->spin);
 }

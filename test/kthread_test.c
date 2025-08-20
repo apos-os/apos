@@ -988,6 +988,60 @@ static void* sleep_func(void* arg) {
   return 0x0;
 }
 
+typedef struct {
+  kmutex_t* mutex;
+  notification_t started;
+  notification_t finished;
+} kmutex_no_interrupt_test_args_t;
+
+static void* kmutex_no_interrupt_test_thread(void* arg) {
+  kmutex_no_interrupt_test_args_t* args = (kmutex_no_interrupt_test_args_t*)arg;
+
+  ntfn_notify(&args->started);
+
+  // This will block because the main thread holds the mutex, even if signalled.
+  kmutex_lock(args->mutex);
+  kmutex_unlock(args->mutex);
+
+  ntfn_notify(&args->finished);
+  return NULL;
+}
+
+static void kmutex_no_interrupt_test(void) {
+  KTEST_BEGIN("kmutex_lock() (not) interrupted with signal test");
+
+  kmutex_t test_mutex;
+  kmutex_init(&test_mutex);
+
+  kmutex_no_interrupt_test_args_t args;
+  args.mutex = &test_mutex;
+  ntfn_init(&args.started);
+  ntfn_init(&args.finished);
+
+  kmutex_lock(&test_mutex);
+
+  // Create a thread that will try to lock the same mutex.
+  kthread_t test_thread;
+  KEXPECT_EQ(0, proc_thread_create(&test_thread, &kmutex_no_interrupt_test_thread, &args));
+
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.started, 5000));
+  // Verify the thread hasn't finished yet (should be blocked).
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.finished, 10));
+
+  // Send a signal to the blocked thread - it should NOT wake up.
+  KEXPECT_EQ(0, proc_kill_thread(test_thread, SIGUSR1));
+
+  // Verify the thread is STILL blocked (signal didn't wake it)
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.finished, 10));
+
+  // Now unlock the mutex to let the thread proceed normally
+  kmutex_unlock(&test_mutex);
+
+  // The thread should now complete successfully
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.finished, 1000));
+  KEXPECT_EQ(NULL, kthread_join(test_thread));
+}
+
 static void ksleep_test(void) {
   const int kNumThreads = 300;
 
@@ -1903,6 +1957,7 @@ void kthread_test(void) {
   }
   kmutex_test();
   kmutex_zero_init_test();
+  kmutex_no_interrupt_test();
   preemption_test();
   wait_on_locked_test();
   wait_on_spin_locked_test();
