@@ -282,6 +282,9 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
   KASSERT_DBG(current->spinlocks_held == (sp ? 1 : 0));
 
   // Make sure we don't try and preempt ourselves while we're yielding.
+#if ENABLE_TSAN
+  bool preemptible = (atomic_load_relaxed(&current->preemption_disables) == 0);
+#endif
   sched_disable_preemption();
   kspin_lock_int(&current->spin);
   bool interruptable = !(flags & SWAIT_NO_INTERRUPT);
@@ -331,13 +334,13 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
     kmutex_unlock_no_yield(mu);
   }
 #if ENABLE_TSAN
-  if (!rsp && !sp && !mu && atomic_load_relaxed(&current->preemption_disables) > 0) {
+  if (!rsp && !sp && !mu && !preemptible) {
     tsan_release(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
   }
 #endif
   scheduler_yield_no_reschedule();
 #if ENABLE_TSAN
-  if (!rsp && !sp && !mu && atomic_load_relaxed(&current->preemption_disables) > 0) {
+  if (!rsp && !sp && !mu && !preemptible) {
     tsan_acquire(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
   }
 #endif
