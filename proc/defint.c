@@ -42,11 +42,19 @@ static defint_data_t g_defint_queue[MAX_QUEUED_DEFINTS] GUARDED_BY(g_defint_lock
 static int g_queue_start GUARDED_BY(g_defint_lock) = 0;
 static int g_queue_len GUARDED_BY(g_defint_lock) = 0;
 
+// Lazy way to avoid false sharing between spinlocks that check the defint queue
+// when there is no defints to process.
+// TODO(aoates): remove this and make defint processing TSAN-disabled
+// altogether, including locking/unlocking the global defint lock, to fully fix
+// the current issues with interrupt/defint races that this doesn't address.
+static atomic32_t g_defint_has_entries = ATOMIC32_INIT(0);
+
 // Per-cpu defint state.
 static DECLARE_PER_CPU(atomic32_t, g_defints_enabled) = ATOMIC32_INIT(0);
 static DECLARE_PER_CPU(defint_running_t, g_defint_running) = DEFINT_NONE;
 
 void defint_schedule(void (*f)(void*), void* arg) {
+  atomic_store_relaxed(&g_defint_has_entries, 1);
   kspin_lock_early(&g_defint_lock);
   KASSERT(g_queue_len < MAX_QUEUED_DEFINTS);
   int idx = (g_queue_start + g_queue_len) % MAX_QUEUED_DEFINTS;
@@ -94,6 +102,9 @@ NO_TSAN void defint_process_queued(bool force) {
   if (!atomic_load_relaxed(&PER_CPU(g_defints_enabled))) {
     return;
   }
+  if (!atomic_load_relaxed(&g_defint_has_entries)) {
+    return;
+  }
   KASSERT_DBG(PER_CPU(g_defint_running) == DEFINT_NONE);
 
   sched_disable_preemption();
@@ -121,6 +132,7 @@ NO_TSAN void defint_process_queued(bool force) {
     g_queue_len--;
   }
   PER_CPU(g_defint_running) = DEFINT_NONE;
+  atomic_store_relaxed(&g_defint_has_entries, (g_queue_len > 0));
   atomic_store_relaxed(&PER_CPU(g_defints_enabled), true);
 
   // TODO(aoates): if we would have preempted the process during the defint, do

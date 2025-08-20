@@ -2278,6 +2278,12 @@ static void* rw_value_thread_kmutex2(void* arg) {
   ksleep(10);
   mutex_test_args_t* args = (mutex_test_args_t*)arg;
 
+  // First an empty critical section to trigger possible false-sharing
+  // synchronization that could happen in kspin_unlock().  False sharing here
+  // may prevent the race from triggering below.
+  kmutex_lock(args->mu);
+  kmutex_unlock(args->mu);
+
   kmutex_lock(args->mu);
   tsan_rw_u64(args->val);
   kmutex_unlock(args->mu);
@@ -2294,6 +2300,12 @@ static void* rw_value_thread_kspinlock2(void* arg) {
   ksleep(10);
   mutex_test_args_t* args = (mutex_test_args_t*)arg;
 
+  // First an empty critical section to trigger possible false-sharing
+  // synchronization that could happen in kspin_unlock().  False sharing here
+  // may prevent the race from triggering below.
+  kspin_lock(args->spin);
+  kspin_unlock(args->spin);
+
   kspin_lock(args->spin);
   tsan_rw_u64(args->val);
   kspin_unlock(args->spin);
@@ -2309,6 +2321,12 @@ static void* rw_value_thread_kspinlock_int2(void* arg) {
   sched_enable_preemption_for_test();
   ksleep(10);
   mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  // First an empty critical section to trigger possible false-sharing
+  // synchronization that could happen in kspin_unlock().  False sharing here
+  // may prevent the race from triggering below.
+  kspin_lock_int(args->spin_int);
+  kspin_unlock_int(args->spin_int);
 
   kspin_lock_int(args->spin_int);
   tsan_rw_u64(args->val);
