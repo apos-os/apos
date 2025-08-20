@@ -40,6 +40,7 @@
 #include "proc/signal/signal.h"
 #include "proc/spinlock.h"
 #include "proc/thread_annotations.h"
+#include "sanitizers/tsan/tsan_lock.h"
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_thread.h"
@@ -103,6 +104,14 @@ static void kthread_trampoline(void* (*start_routine)(void*), void* arg)
 
   kthread_data_t* last_thread = PER_CPU(g_last_thread);
   kthread_data_t* current_thread = kthread_current_thread();
+
+#if ENABLE_TSAN
+  // Acquire the thread's lock to ensure we get any writes that happened before
+  // we started running (for example, in fork()).  Arguably this should happen
+  // on all thread switches, but that would introduce a lot of false negatives
+  // due to over-synchronization.
+  tsan_acquire(&current_thread->spin._lock.tsan, TSAN_LOCK);
+#endif
 
   // Set up metadata to match the locks.
   KASSERT(current_thread->spinlocks_held == 0);
