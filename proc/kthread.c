@@ -57,9 +57,6 @@ static int g_next_id GUARDED_BY(&g_global_thread_lock) = 0;
 static list_t g_all_threads GUARDED_BY(&g_global_thread_lock) =
     LIST_INIT_STATIC;
 
-// A queue of threads that have exited and we can clean up.
-static kthread_queue_t g_reap_queue;
-
 static inline void kthread_proc_spin_mu_ctor(const kthread_data_t* thread)
     ASSERT_CAPABILITY(thread->process_spin_mu) {}
 
@@ -119,6 +116,7 @@ static void kthread_trampoline(void* (*start_routine)(void*), void* arg)
 
   // Unlock both the thread we switched from and the current (new) thread.
   // Pass 0 for the state to prevent interrupt state restoration.
+  bool reap = (last_thread->state == KTHREAD_DONE);
   kspin_unlock_int2(&last_thread->spin, 0);
   kspin_unlock_int2(&current_thread->spin, 0);
 
@@ -139,6 +137,11 @@ static void kthread_trampoline(void* (*start_routine)(void*), void* arg)
   // locking correctly).
   scheduler_tsan_acquire();
 #endif
+
+  // Clean up any thread stacks waiting to be reaped.
+  if (reap) {
+    kthread_unref(last_thread);
+  }
 
   void* retval = start_routine(arg);
   kthread_exit(retval);
@@ -167,8 +170,6 @@ void kthread_init(void) {
 #endif
 
   KASSERT_DBG((addr_t)(&first) < (addr_t)first->stack + first->stacklen);
-
-  kthread_queue_init(&g_reap_queue);
 
   PER_CPU(g_current_thread) = first;
   kthread_arch_set_current_thread(first);
@@ -337,8 +338,8 @@ void kthread_exit(void* x) {
   scheduler_wake_all(&thread->join_list);
   kspin_unlock_int(&thread->spin);
 
-  // Transfer our reference to the reap queue.
-  kthread_queue_push(&g_reap_queue, thread);
+  // Our reference to ourself stays alive for now --- it will be transferred to
+  // the thread we switch to, who will clean us up.
 
   scheduler_yield_no_reschedule();
 
@@ -453,6 +454,8 @@ NO_TSAN void kthread_switch(kthread_t new_thread) NO_THREAD_SAFETY_ANALYSIS {
   // Unlock both the thread we switched from and ourselves.
   kthread_t actual_last_thread = PER_CPU(g_last_thread);
   assert_locked(&actual_last_thread->spin, actual_last_thread->id);
+
+  bool reap = (actual_last_thread->state == KTHREAD_DONE);
   kspin_unlock_int2(&actual_last_thread->spin, 0);
   kspin_unlock_int2(&old_thread->spin, outer_lock_state);
 
@@ -462,15 +465,8 @@ NO_TSAN void kthread_switch(kthread_t new_thread) NO_THREAD_SAFETY_ANALYSIS {
   defint_set_state(defint);
 
   // Clean up any thread stacks waiting to be reaped.
-  raw_spin_lock(&g_reap_queue.spin);
-  kthread_t reap_list = g_reap_queue.head;
-  g_reap_queue.head = g_reap_queue.tail = NULL;
-  raw_spin_unlock(&g_reap_queue.spin);
-
-  while (reap_list) {
-    kthread_t next = reap_list->next;
-    kthread_unref(reap_list);
-    reap_list = next;
+  if (reap) {
+    kthread_unref(actual_last_thread);
   }
 
   POP_INTERRUPTS();
