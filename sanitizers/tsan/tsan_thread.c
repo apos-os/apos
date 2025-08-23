@@ -146,6 +146,7 @@ void tsan_thread_create(kthread_t thread) {
   thread->tsan.sid = sid;
   thread->tsan.tid = thread->id;
   thread->tsan.clock.ts[sid] = g_tsan_slots[sid].epoch;
+  thread->tsan.disables = 0;
   g_tsan_slots[sid].thread_id = thread->id;
   g_tsan_slots[sid].type = TSAN_TSLOT_THREAD;
   tsan_event_init(&g_tsan_slots[sid].log);
@@ -230,6 +231,8 @@ void tsan_acquire(tsan_lock_data_t* lock, tsan_lock_type_t type) {
 
   KASSERT(type == TSAN_LOCK || type == TSAN_INTERRUPTS || type == TSAN_DEFINTS);
   kthread_t thread = tsan_current_thread();
+  if (thread->tsan.disables > 0) return;
+
   switch (type) {
     case TSAN_LOCK:
       tsan_vc_acquire(&thread->tsan.clock, &lock->clock);
@@ -254,6 +257,8 @@ void tsan_release(tsan_lock_data_t* lock, tsan_lock_type_t type) {
 
   KASSERT(type == TSAN_LOCK || type == TSAN_INTERRUPTS || type == TSAN_DEFINTS);
   kthread_t thread = tsan_current_thread();
+  if (thread->tsan.disables > 0) return;
+
   // Publish all our values (and transitive ones) to the lock.
   switch (type) {
     case TSAN_LOCK:

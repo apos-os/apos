@@ -25,6 +25,7 @@ typedef struct {
                     // with all other active threads).
   tsan_tid_t tid;   // The unique thread ID.  TODO(tsan): is this needed?
   tsan_sid_t sid;   // The thread's slot.
+  int disables;     // How many times TSAN has been disabled in this thread.
 } tsan_thread_data_t;
 
 // Call when a thread is created.  Allocates a TSAN slot ID and initializes the

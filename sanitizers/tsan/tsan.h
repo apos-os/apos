@@ -34,4 +34,10 @@ typedef void (*tsan_report_fn_t)(const tsan_report_t*);
 // interrupt context.
 void tsan_set_report_func(tsan_report_fn_t fn);
 
+// Disable or restore TSAN in the current thread.  Disables and restores nest,
+// such that TSAN will be re-enabled when tsan_restore() has been called as many
+// times as tsan_disable() was.
+void tsan_disable(void);
+void tsan_restore(void);
+
 #endif

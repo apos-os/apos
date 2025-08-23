@@ -162,3 +162,15 @@ void tsan_init(void) {
 
   __atomic_store_n(&g_tsan_init, 1, ATOMIC_RELEASE);
 }
+
+void tsan_disable(void) {
+  kthread_t me = tsan_current_thread();
+  KASSERT_DBG(me->tsan.disables >= 0);
+  me->tsan.disables++;
+}
+
+void tsan_restore(void) {
+  kthread_t me = tsan_current_thread();
+  me->tsan.disables--;
+  KASSERT_DBG(me->tsan.disables >= 0);
+}
