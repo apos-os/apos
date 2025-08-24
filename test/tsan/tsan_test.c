@@ -211,6 +211,13 @@ static bool wait_for_race(void) {
   return result;
 }
 
+static int read_int(int* x) {
+  PUSH_AND_DISABLE_INTERRUPTS_NO_SYNC();
+  int result = *x;
+  POP_INTERRUPTS_NO_SYNC();
+  return result;
+}
+
 /************************** Tests ************************************/
 typedef struct {
   kmutex_t* mu;
@@ -1174,9 +1181,15 @@ static void interrupt_fn(void* arg) {
   tsan_rw_value(x);
 }
 
-static void busy_loop(void) { for (volatile int i = 0; i < 10000000; ++i); }
+#if ENABLE_TSAN_FULL
+#define BUSY_ITERS 100000
+#else
+#define BUSY_ITERS 10000000
+#endif
+
+static void busy_loop(void) { for (volatile int i = 0; i < BUSY_ITERS; ++i); }
 static void* busy_loop_thread(void* arg) {
-  for (volatile int i = 0; i < 10000000; ++i);
+  for (volatile int i = 0; i < BUSY_ITERS; ++i);
   return NULL;
 }
 
@@ -1328,7 +1341,7 @@ static void interrupt_test3(void) {
   busy_loop();
   EXPECT_REPORT(x, 4, "?", x, 4, "w");
   intercept_reports_done();
-  KEXPECT_EQ(2, *x);
+  KEXPECT_EQ(2, read_int(x));
 
   tsan_test_cleanup();
 }
@@ -1350,11 +1363,10 @@ static void interrupt_test4(void) {
   busy_loop();
   EXPECT_REPORT(x, 4, "?", x, 4, "w");
   intercept_reports_done();
-  KEXPECT_EQ(2, *x);
+  KEXPECT_EQ(2, read_int(x));
 
   tsan_test_cleanup();
 }
-
 
 static void interrupt_tests(void) {
   interrupt_test1();
@@ -1386,7 +1398,7 @@ static void defint_test1(void) {
     defint_schedule(&defint_fn, x);
     tsan_rw_value(x);
     DEFINT_POP();
-    KEXPECT_EQ(3, *x);
+    KEXPECT_EQ(3, read_int(x));
   }
   tsan_test_cleanup();
 }
@@ -1403,7 +1415,7 @@ static void defint_test2(void) {
     defint_schedule(&defint_fn, x);
     tsan_rw_value(x);
     kspin_unlock(&mu);
-    KEXPECT_EQ(3, *x);
+    KEXPECT_EQ(3, read_int(x));
   }
   tsan_test_cleanup();
 }
@@ -1489,7 +1501,7 @@ static void defint_test5(void) {
   defint_schedule(&defint_fn, x);
   busy_loop();  // Make sure the defint runs.
 
-  KEXPECT_EQ(2, *x);
+  KEXPECT_EQ(2, read_int(x));
   tsan_test_cleanup();
 }
 
@@ -1573,7 +1585,7 @@ static void defint_int_race_test1(void) {
   busy_loop();
   EXPECT_REPORT(x, 4, "?", x, 4, "w");
   intercept_reports_done();
-  KEXPECT_EQ(2, *x);
+  KEXPECT_EQ(2, read_int(x));
   tsan_test_cleanup();
 }
 
@@ -1599,7 +1611,7 @@ static void defint_int_race_test2(void) {
   defint_process_queued(false);  // Should run defint synchronously.
   EXPECT_REPORT(x, 4, "?", x, 4, "w");
   intercept_reports_done();
-  KEXPECT_EQ(3, *x);
+  KEXPECT_EQ(3, read_int(x));
   tsan_test_cleanup();
 }
 
@@ -1658,7 +1670,7 @@ static void defint_int_race_test4(void) {
   busy_loop();
   EXPECT_REPORT(x, 4, "?", x, 4, "w");
   intercept_reports_done();
-  KEXPECT_EQ(3, *x);
+  KEXPECT_EQ(3, read_int(x));
   tsan_test_cleanup();
 }
 
@@ -1674,7 +1686,7 @@ static void defint_int_race_test5(void) {
 
   busy_loop();  // Make sure interrupt fires.
   busy_loop();
-  KEXPECT_EQ(3, *x);
+  KEXPECT_EQ(3, read_int(x));
   tsan_test_cleanup();
 }
 
