@@ -3670,6 +3670,251 @@ static void atomic_hooks_tests(void) {
   KEXPECT_EQ(105, tsan_atomic_read(&x, ATOMIC_RELAXED));
 }
 
+typedef struct {
+  atomic32_t flag;
+  uint16_t* val;
+} wait_then_access_args_t;
+
+static void* wait_then_access_thread(void* arg) {
+  wait_then_access_args_t* args = (wait_then_access_args_t*)arg;
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  while (!atomic_load_relaxed(&args->flag))  //
+    ;
+  tsan_write16(args->val, 0x1234);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void tsan_clear_history_basic_test(void) {
+  KTEST_BEGIN("TSAN: tsan_clear_history() basic test");
+  uint8_t* vals = tsan_test_alloc(8);
+  kmemset(vals, 0, 8);
+
+  // Spawn a thread to access 4 bytes in the range.
+  kthread_t thread1, thread2, thread3;
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u32, vals));
+  wait_then_access_args_t args1 = {ATOMIC32_INIT(0), (uint16_t*)vals};
+  wait_then_access_args_t args2 = {ATOMIC32_INIT(0), (uint16_t*)vals + 1};
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &wait_then_access_thread, &args1));
+  KEXPECT_EQ(0, proc_thread_create(&thread3, &wait_then_access_thread, &args2));
+  ksleep(20); // Let the racer thread run.
+
+  // Clear the history in the range of 2 of the bytes.
+  tsan_clear_history((addr_t)vals, 2);
+
+  // In another thread, do an overlapping access in the cleared range.
+  // It should not trigger a race.
+  intercept_reports();
+  atomic_store_relaxed(&args1.flag, 1);
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  KEXPECT_FALSE(g_found_report);
+  intercept_reports_done();
+
+  // Do an access in the non-cleared range, which should trigger also not
+  // trigger a race, since the whole access was removed.
+  intercept_reports();
+  atomic_store_relaxed(&args2.flag, 1);
+  KEXPECT_EQ(NULL, kthread_join(thread3));
+  KEXPECT_FALSE(g_found_report);
+  intercept_reports_done();
+
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  tsan_test_cleanup();
+}
+
+static void tsan_clear_history_basic_test2(void) {
+  KTEST_BEGIN("TSAN: tsan_clear_history() basic test (with race)");
+  uint8_t* vals = tsan_test_alloc(8);
+  kmemset(vals, 0, 8);
+  tsan_clear_history((addr_t)vals, 8);
+  tsan_read64((uint64_t*)vals);
+
+  kthread_t thread1, thread1b, thread2, thread3;
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u16, vals));
+  KEXPECT_EQ(0, proc_thread_create(&thread1b, &access_u8, vals + 2));
+  wait_then_access_args_t args1 = {ATOMIC32_INIT(0), (uint16_t*)vals};
+  wait_then_access_args_t args2 = {ATOMIC32_INIT(0), (uint16_t*)vals + 1};
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &wait_then_access_thread, &args1));
+  KEXPECT_EQ(0, proc_thread_create(&thread3, &wait_then_access_thread, &args2));
+  ksleep(20); // Let the racer threads run.
+
+  // Clear the history in the range of 2 of the bytes.
+  tsan_clear_history((addr_t)vals, 2);
+
+  // In another thread, do an overlapping access in the cleared range.
+  // It should not trigger a race.
+  intercept_reports();
+  atomic_store_relaxed(&args1.flag, 1);
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  KEXPECT_FALSE(g_found_report);
+  intercept_reports_done();
+
+  // Do an access in the non-cleared range, which SHOULD trigger a race, since
+  // the second access shouldn't have been cleared.
+  intercept_reports();
+  atomic_store_relaxed(&args2.flag, 1);
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread3->id, &vals[2], 2, "w",
+                        thread1b->id, &vals[2], 1, "w");
+  intercept_reports_done();
+  KEXPECT_EQ(NULL, kthread_join(thread3));
+
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread1b));
+  tsan_test_cleanup();
+}
+
+static void tsan_clear_history_unaligned_left_test(void) {
+  KTEST_BEGIN("TSAN: tsan_clear_history() unaligned left edge chunk");
+  uint8_t* buffer = tsan_test_alloc(32);
+  kmemset(buffer, 0, 32);
+
+  // Start at offset 3 (unaligned) and clear only a few bytes (< 8).
+  // This should only trigger the left edge chunk processing.
+  uint8_t* unaligned_addr = buffer + 2;
+  size_t clear_size = 4; // Small enough to only hit left edge chunk
+
+  // Create both threads simultaneously to avoid implicit synchronization.
+  kthread_t thread1, thread2;
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u8, unaligned_addr));
+  wait_then_access_args_t args = {ATOMIC32_INIT(0), (uint16_t*)unaligned_addr};
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &wait_then_access_thread, &args));
+  ksleep(20); // Let the history-establishing thread run.
+
+  // Clear the history for the unaligned left edge region.
+  tsan_clear_history((addr_t)unaligned_addr, clear_size);
+
+  // Signal the waiting thread to proceed - should not trigger race.
+  intercept_reports();
+  atomic_store_relaxed(&args.flag, 1);
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  KEXPECT_FALSE(g_found_report);
+  intercept_reports_done();
+
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  tsan_test_cleanup();
+}
+
+static void* access_multiple_u64(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  uint64_t* buffer = (uint64_t*)arg;
+  // Access 5 consecutive 8-byte chunks.
+  for (int i = 0; i < 5; i++) {
+    tsan_write64(&buffer[i], 0x1234567890abcdef + i);
+  }
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void tsan_clear_history_multiple_middle_test(void) {
+  KTEST_BEGIN("TSAN: tsan_clear_history() multiple 8-byte middle chunks");
+  uint16_t* buffer = tsan_test_alloc(sizeof(uint64_t) * 8);
+  kmemset(buffer, 0, sizeof(uint64_t) * 8);
+
+  // Clear multiple 8-byte chunks (no unaligned edges).
+  addr_t aligned_addr = (addr_t)buffer;
+  size_t clear_size = sizeof(uint64_t) * 5; // 40 bytes = 5 chunks of 8 bytes
+
+  // Create both threads simultaneously to avoid implicit synchronization.
+  kthread_t thread1, thread2;
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_multiple_u64, buffer));
+  wait_then_access_args_t args = {ATOMIC32_INIT(0), buffer};
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &wait_then_access_thread, &args));
+  ksleep(20); // Let the history-establishing thread run.
+
+  // Clear the history for all 5 chunks (should hit middle chunk processing).
+  tsan_clear_history(aligned_addr, clear_size);
+
+  // Signal the waiting thread to proceed - should not trigger race.
+  intercept_reports();
+  atomic_store_relaxed(&args.flag, 1);
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  KEXPECT_FALSE(g_found_report);
+  intercept_reports_done();
+
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  tsan_test_cleanup();
+}
+
+static void* access_large_range(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  uint8_t* start_addr = (uint8_t*)arg;
+  size_t range_size = 50; // Must match clear_size in test
+  // Access entire range to establish history across all chunk types.
+  for (size_t i = 0; i < range_size; i++) {
+    tsan_write8(start_addr + i, (uint8_t)(0x10 + i));
+  }
+  sched_disable_preemption();
+  return NULL;
+}
+
+// Args for wait_then_access_large_range_thread
+typedef struct {
+  atomic32_t flag;
+  uint8_t* start_addr;
+} wait_then_access_large_range_args_t;
+
+// Helper thread function that waits then accesses large range
+static void* wait_then_access_large_range_thread(void* arg) {
+  wait_then_access_large_range_args_t* args = (wait_then_access_large_range_args_t*)arg;
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  while (!atomic_load_relaxed(&args->flag))  //
+    ;
+  // Access the same pattern as access_large_range.
+  size_t range_size = 50;
+  for (size_t i = 0; i < range_size; i++) {
+    tsan_write8(args->start_addr + i, (uint8_t)(0x20 + i));
+  }
+  sched_disable_preemption();
+  return NULL;
+}
+
+// Test tsan_clear_history with all three chunk types
+static void tsan_clear_history_all_chunks_test(void) {
+  KTEST_BEGIN("TSAN: tsan_clear_history() all chunk types");
+
+  // Allocate a large buffer.
+  uint8_t* buffer = tsan_test_alloc(128);
+  kmemset(buffer, 0, 128);
+
+  // Start at unaligned address (offset 3) and clear a large range.
+  // This will hit: left unaligned chunk + multiple middle chunks + right partial chunk.
+  uint8_t* start_addr = buffer + 3;
+  size_t clear_size = 50; // Large enough to span multiple chunks
+
+  // Create both threads simultaneously to avoid implicit synchronization.
+  kthread_t thread1, thread2;
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_large_range, start_addr));
+  wait_then_access_large_range_args_t args = {ATOMIC32_INIT(0), start_addr};
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &wait_then_access_large_range_thread, &args));
+  ksleep(20); // Let the history-establishing thread run.
+
+  // Clear the history for the entire range (hits all three chunk processing paths)
+  tsan_clear_history((addr_t)start_addr, clear_size);
+
+  // Signal the waiting thread to proceed - should not trigger race.
+  intercept_reports();
+  atomic_store_relaxed(&args.flag, 1);
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  KEXPECT_FALSE(g_found_report);
+  intercept_reports_done();
+
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  tsan_test_cleanup();
+}
+
+static void tsan_clear_history_tests(void) {
+  tsan_clear_history_basic_test();
+  tsan_clear_history_basic_test2();
+  tsan_clear_history_unaligned_left_test();
+  tsan_clear_history_multiple_middle_test();
+  tsan_clear_history_all_chunks_test();
+}
+
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   // For most of these tests, having the legacy full-sync behavior will break
@@ -3692,6 +3937,7 @@ void tsan_test(void) {
   kernel_writable_data_tests();
   atomic_tests();
   atomic_hooks_tests();
+  tsan_clear_history_tests();
 
   interrupt_set_legacy_full_sync(old_legacy);
 

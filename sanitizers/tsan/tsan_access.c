@@ -387,6 +387,57 @@ bool tsan_check_range(addr_t pc, addr_t addr, size_t len,
   return false;
 }
 
+static void tsan_clear_history_one(addr_t addr, size_t size) {
+  KASSERT_DBG(tsan_is_mapped_addr(addr));
+
+  // The access should fit within a single shadow cell.
+  KASSERT((addr & ~0x7) == ((addr + size - 1) & ~0x7));
+
+  PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
+  tsan_shadow_t* shadow_mem = get_shadow_cells(addr);
+  uint8_t mask = make_mask(addr % 8, size);
+
+  for (int i = 0; i < TSAN_SHADOW_CELLS; ++i) {
+    tsan_shadow_t old = shadow_mem[i];
+    if (!(old.mask & mask)) {
+      // These accesses don't overlap; ignore.
+      continue;
+    }
+    // Clear the access.
+    kmemset(&shadow_mem[i], 0, sizeof(tsan_shadow_t));
+  }
+
+  POP_INTERRUPTS_NO_TSAN();
+}
+
+void tsan_clear_history(addr_t addr, size_t len) {
+  KASSERT_DBG(tsan_initialized());
+  KASSERT_DBG(len > 0);
+
+  // 1) access the unaligned left portion.
+  addr_t offset = addr & 0x7;
+  if (offset != 0) {
+    addr_t a1_end = min(offset + len, 8);
+    addr_t a1_size = a1_end - offset;
+    tsan_clear_history_one(addr, a1_size);
+    addr += a1_size;
+    len -= a1_size;
+  }
+
+  // 2) access as many 8-byte chunks as we can.
+  while (len > 8) {
+    tsan_clear_history_one(addr, 8);
+    addr += 8;
+    len -= 8;
+  }
+
+  // 3) access the unaligned right portion.  The start is aligned to an 8-byte
+  // boundary, but the length can be 0-7.
+  if (len > 0) {
+    tsan_clear_history_one(addr, len);
+  }
+}
+
 void tsan_set_report_func(tsan_report_fn_t fn) {
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
   g_tsan_report_fn = fn;

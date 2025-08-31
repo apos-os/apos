@@ -19,6 +19,7 @@
 
 #include "common/attributes.h"
 #include "common/types.h"
+#include "proc/kthread.h"
 
 typedef enum {
   TSAN_ACCESS_READ = 1,
@@ -53,6 +54,10 @@ bool tsan_check_unaligned(addr_t pc, addr_t addr, uint8_t size,
 // Access a range of memory.
 bool tsan_check_range(addr_t pc, addr_t addr, size_t len,
                       tsan_access_type_t type);
+
+// Clear history of TSAN accesses for all addresses in the given range from the
+// given thread.
+void tsan_clear_history(addr_t addr, size_t len);
 
 // Mark the given region as stack or non-stack.  The region must be page-aligned
 // and contain an integer number of pages.
