@@ -35,7 +35,7 @@ tsan_env.Append(CFLAGS = Split('-fno-omit-frame-pointer'))
 # TODO(aoates): reduce function stack size to eliminate this change.
 env.Append(CFLAGS = Split('-Wframe-larger-than=2500'))
 
-if env['TSAN_FULL']:
+if env['TSAN_CORE'] or env['TSAN_FULL']:
   env.Append(CFLAGS = Split('-fsanitize=thread'))
   env.Append(CFLAGS = Split('-O1 -fno-omit-frame-pointer'))
 

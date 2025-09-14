@@ -23,6 +23,9 @@ arch_pre_sconscript = FindFile('SConscript.pre', env.subst('archs/$ARCH'))
 if arch_pre_sconscript:
   SConscript(arch_pre_sconscript)
 
+# Set a universal TSAN feature flag if any TSAN variants are enabled.
+env['TSAN'] = (env['TSAN_LIB'] or env['TSAN_CORE'] or env['TSAN_FULL'])
+
 srcs = []
 
 SUBDIRS = [

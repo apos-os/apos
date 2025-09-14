@@ -58,6 +58,7 @@ FEATURES_DEFAULT_DISABLED = [
   'PROFILE_IDLE',
   'TSAN_FULL',
   'TSAN_LIB',  # TSAN only for the TSAN tests themselves
+  'TSAN_CORE',  # TSAN only for the scheduler and core thread code.
 ]
 
 ALL_FEATURES = FEATURES_DEFAULT_ENABLED + FEATURES_DEFAULT_DISABLED

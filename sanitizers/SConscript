@@ -17,7 +17,7 @@ Import('env AposAddSources')
 srcs = []
 subdirs = []
 
-if env['TSAN_LIB'] or env['TSAN_FULL']:
+if env['TSAN']:
   subdirs.append('tsan')
 
 objects = AposAddSources(env, srcs, subdirs)
