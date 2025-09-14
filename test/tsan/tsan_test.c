@@ -11,6 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include <stdalign.h>
+
 #include "common/atomic.h"
 #include "common/endian.h"
 #include "common/hash.h"
@@ -53,7 +55,9 @@ static tsan_test_allocs_t g_tsan_test_allocs;
 
 static void* tsan_test_alloc(size_t n) {
   void* result = kmalloc(n);
+  tsan_clear_history((addr_t)result, n);
   PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN();
+  KASSERT(g_tsan_test_allocs.next < TSAN_TEST_MAX_ALLOCS);
   g_tsan_test_allocs.allocs[g_tsan_test_allocs.next++] = result;
   POP_INTERRUPTS_NO_TSAN();
   return result;
@@ -1643,6 +1647,7 @@ static void defint_int_race_test3(void) {
 
   busy_loop();  // Make sure interrupt fires.
   busy_loop();
+  busy_loop();
   EXPECT_REPORT(x, 4, "?", x, 4, "w");
   intercept_reports_done();
   // Don't check the value of x --- the rw might be interrupted in a racy way
@@ -2839,9 +2844,9 @@ static void atomic_relaxed_race_test4(void) {
 
 typedef struct {
   atomic32_t flag;
-  uint32_t val;
-  uint32_t read_unsafe;
-  uint32_t val_unsafe;
+  alignas(8) uint32_t val;
+  alignas(8) uint32_t read_unsafe;
+  alignas(8) uint32_t val_unsafe;
 } sync_test_args_t;
 
 static sync_test_args_t* alloc_sync_test_args(void) {
@@ -3220,7 +3225,7 @@ static void atomic_acqrel_syncs_relaxed_test2(void) {
   KEXPECT_EQ(0, proc_thread_create(&threads[0], &sync_test_reader, args));
   KEXPECT_EQ(0, proc_thread_create(&threads[1], &sync_test_writer_release, args));
 
-  wait_for_race();
+  KEXPECT_TRUE(wait_for_race());
   for (int i = 0; i < 2; ++i) {
     kthread_join(threads[i]);
   }
@@ -3466,7 +3471,7 @@ static void atomic_seqcst_syncs_relaxed_test2(void) {
   KEXPECT_EQ(0, proc_thread_create(&threads[0], &sync_test_reader, args));
   KEXPECT_EQ(0, proc_thread_create(&threads[1], &sync_test_writer_seqcst, args));
 
-  wait_for_race();
+  KEXPECT_TRUE(wait_for_race());
   for (int i = 0; i < 2; ++i) {
     kthread_join(threads[i]);
   }
