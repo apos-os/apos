@@ -120,4 +120,14 @@ void kspin_int_constructor(const kspinlock_intsafe_t* l) ASSERT_CAPABILITY(l) {}
 static inline ALWAYS_INLINE
 void kspin_int_destructor(const kspinlock_intsafe_t* l) ASSERT_CAPABILITY(l) {}
 
+// Variants that don't do the TSAN logic (acquiring and releasing).
+#if ENABLE_TSAN
+kspinstate_t kspin_lock_int_no_tsan(kspinlock_intsafe_t* l) ACQUIRE(l);
+void kspin_unlock_int_no_tsan(kspinlock_intsafe_t* l) RELEASE(l);
+void kspin_unlock_int2_no_tsan(kspinlock_intsafe_t* l, kspinstate_t state) RELEASE(l);
+kspinstate_t kspin_lock_early_no_tsan(kspinlock_intsafe_t* l) ACQUIRE(l);
+void kspin_unlock_early_no_tsan(kspinlock_intsafe_t* l) RELEASE(l);
+void kspin_unlock_early2_no_tsan(kspinlock_intsafe_t* l, kspinstate_t state) RELEASE(l);
+#endif
+
 #endif
