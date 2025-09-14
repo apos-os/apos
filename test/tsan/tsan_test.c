@@ -1313,7 +1313,8 @@ static void interrupt_test2(void) {
   register_event_timer(get_time_ms() + 10, &interrupt_fn, x, NULL);
   busy_loop();
   tsan_rw_value(x);
-  EXPECT_REPORT(x, 4, "r", x, 4, "w");
+  // It could be a read or a write depending on optimization level.
+  EXPECT_REPORT(x, 4, "?", x, 4, "w");
   intercept_reports_done();
   KEXPECT_EQ(3, *x);
 
@@ -1345,7 +1346,7 @@ static void interrupt_test3(void) {
 // Combo test where thread 1 races with thread 2 by sleeping in an
 // interrupt-disabled critical section (which, FWIW, is incorrect).
 static void interrupt_test4(void) {
-  KTEST_BEGIN("TSAN: interrupt-safety (conflict #2)");
+  KTEST_BEGIN("TSAN: interrupt-safety (conflict #3)");
   int* x = TS_MALLOC(int);
   *x = 0;
 
