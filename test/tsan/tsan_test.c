@@ -1181,14 +1181,10 @@ static void interrupt_fn(void* arg) {
   tsan_rw_value(x);
 }
 
-#if ENABLE_TSAN_FULL
-#define BUSY_ITERS 100000
-#else
 #define BUSY_ITERS 10000000
-#endif
 
-static void busy_loop(void) { for (volatile int i = 0; i < BUSY_ITERS; ++i); }
-static void* busy_loop_thread(void* arg) {
+NO_TSAN static void busy_loop(void) { for (volatile int i = 0; i < BUSY_ITERS; ++i); }
+NO_TSAN static void* busy_loop_thread(void* arg) {
   for (volatile int i = 0; i < BUSY_ITERS; ++i);
   return NULL;
 }
