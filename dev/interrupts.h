@@ -23,41 +23,17 @@
 #include "common/debug.h"
 #include "proc/thread_annotations.h"
 
-#if ENABLE_KERNEL_SAFETY_NETS
-// If safety nets are enabled, verify that interrupts are popped properly after
-// every PUSH_AND_DISABLE_INTERRUPTS.  This catches things like early returns
-// that don't call POP_INTERRUPTS() when they should.
-void _interrupts_unpopped_die(void);
-static inline void _interrupts_cleanup_verify(interrupt_state_t* saved) {
-  if (*saved != get_interrupts_state()) {
-    _interrupts_unpopped_die();
-  }
-}
-#endif  // ENABLE_KERNEL_SAFETY_NETS
-
 // Macros to use the functions above (and ensure they're called in pairs).
-#if ENABLE_KERNEL_SAFETY_NETS
-
 #define PUSH_AND_DISABLE_INTERRUPTS() \
-    interrupt_state_t _SAVED_INTERRUPTS \
-      __attribute__((cleanup(_interrupts_cleanup_verify))) = \
-      save_and_disable_interrupts(true)
+  interrupt_state_t _SAVED_INTERRUPTS = save_and_disable_interrupts(true)
 
-#define PUSH_AND_DISABLE_INTERRUPTS_NO_SYNC() \
-    interrupt_state_t _SAVED_INTERRUPTS_NO_SYNC \
-      __attribute__((cleanup(_interrupts_cleanup_verify))) = \
+#define PUSH_AND_DISABLE_INTERRUPTS_NO_SYNC()   \
+  interrupt_state_t _SAVED_INTERRUPTS_NO_SYNC = \
       save_and_disable_interrupts(false)
 
 #define PUSH_AND_DISABLE_INTERRUPTS_NO_TSAN()   \
   interrupt_state_t _SAVED_INTERRUPTS_NO_TSAN = \
       save_and_disable_interrupts_raw()
-
-#else  // ENABLE_KERNEL_SAFETY_NETS
-
-#define PUSH_AND_DISABLE_INTERRUPTS() \
-    interrupt_state_t _SAVED_INTERRUPTS = save_and_disable_interrupts(true)
-
-#endif  // ENABLE_KERNEL_SAFETY_NETS
 
 #define POP_INTERRUPTS() \
     restore_interrupts(_SAVED_INTERRUPTS, true);
