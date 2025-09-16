@@ -40,9 +40,11 @@
 #include "proc/signal/signal.h"
 #include "proc/spinlock.h"
 #include "proc/thread_annotations.h"
-#include "sanitizers/tsan/tsan_lock.h"
+#include "sanitizers/tsan/spinlock_core.h"
 
 #if ENABLE_TSAN
+#include "sanitizers/tsan/tsan.h"
+#include "sanitizers/tsan/tsan_lock.h"
 #include "sanitizers/tsan/tsan_thread.h"
 #endif
 
@@ -140,7 +142,13 @@ static void kthread_trampoline(void* (*start_routine)(void*), void* arg)
 
   // Clean up any thread stacks waiting to be reaped.
   if (reap) {
+#if ENABLE_TSAN_NON_CORE
+    tsan_disable();
+#endif
     kthread_unref(last_thread);
+#if ENABLE_TSAN_NON_CORE
+    tsan_restore();
+#endif
   }
 
   void* retval = start_routine(arg);
@@ -320,12 +328,19 @@ bool kthread_is_done(kthread_t thread) {
 }
 
 void kthread_exit(void* x) {
+#if ENABLE_TSAN_NON_CORE
+  // If we're not instrumenting core thread logic, just disable TSAN from here
+  // on out.  Otherwise we get lots of false positives with memory freeing and
+  // allocation after the thread is freed.
+  tsan_disable();
+#endif
+
   // Disable preemption permanently --- we don't want to be preempted after this
   // point, we want to run until we finish exiting.
   sched_disable_preemption();
 
   kthread_t thread = PER_CPU(g_current_thread);
-  kspin_lock_int(&thread->spin);
+  tsc_kspin_lock_int(&thread->spin);
   KASSERT(thread->spinlocks_held == 1);
   KASSERT(thread->process == NULL);
 
@@ -336,7 +351,7 @@ void kthread_exit(void* x) {
 
   // Schedule all the waiting threads.
   scheduler_wake_all(&thread->join_list);
-  kspin_unlock_int(&thread->spin);
+  tsc_kspin_unlock_int(&thread->spin);
 
   // Our reference to ourself stays alive for now --- it will be transferred to
   // the thread we switch to, who will clean us up.
@@ -379,6 +394,7 @@ void kthread_enable(kthread_t thread) {
   atomic_store_relaxed(&thread->runnable, 1);
 }
 
+NO_TSAN
 static void assert_locked(const kspinlock_intsafe_t* l, kthread_id_t holder)
     ASSERT_CAPABILITY(l) {
   KASSERT(l->_lock.holder == holder);
@@ -403,11 +419,11 @@ NO_TSAN void kthread_switch(kthread_t new_thread) NO_THREAD_SAFETY_ANALYSIS {
   // Lock both threads in a consistent order to prevent deadlocks.
   kspinstate_t outer_lock_state;
   if (old_thread->id < new_thread->id) {
-    outer_lock_state = kspin_lock_int(&old_thread->spin);
-    kspin_lock_int(&new_thread->spin);
+    outer_lock_state = tsc_kspin_lock_int(&old_thread->spin);
+    tsc_kspin_lock_int(&new_thread->spin);
   } else {
-    outer_lock_state = kspin_lock_int(&new_thread->spin);
-    kspin_lock_int(&old_thread->spin);
+    outer_lock_state = tsc_kspin_lock_int(&new_thread->spin);
+    tsc_kspin_lock_int(&old_thread->spin);
   }
 
   PER_CPU(g_last_thread) = old_thread;
@@ -456,8 +472,8 @@ NO_TSAN void kthread_switch(kthread_t new_thread) NO_THREAD_SAFETY_ANALYSIS {
   assert_locked(&actual_last_thread->spin, actual_last_thread->id);
 
   bool reap = (actual_last_thread->state == KTHREAD_DONE);
-  kspin_unlock_int2(&actual_last_thread->spin, 0);
-  kspin_unlock_int2(&old_thread->spin, outer_lock_state);
+  tsc_kspin_unlock_int2(&actual_last_thread->spin, 0);
+  tsc_kspin_unlock_int2(&old_thread->spin, outer_lock_state);
 
   // Verify that we're back on the proper stack!
   KASSERT(PER_CPU(g_current_thread)->id == my_id);
@@ -466,7 +482,16 @@ NO_TSAN void kthread_switch(kthread_t new_thread) NO_THREAD_SAFETY_ANALYSIS {
 
   // Clean up any thread stacks waiting to be reaped.
   if (reap) {
+    // We don't want to synchronize accesses from the other thread to our clock
+    // unless TSAN_CORE is enabled --- that causes significant
+    // oversynchronization and many false negatives.
+#if ENABLE_TSAN_NON_CORE
+    tsan_disable();
+#endif
     kthread_unref(actual_last_thread);
+#if ENABLE_TSAN_NON_CORE
+    tsan_restore();
+#endif
   }
 
   POP_INTERRUPTS();

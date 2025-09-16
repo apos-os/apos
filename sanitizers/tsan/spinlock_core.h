@@ -29,7 +29,7 @@
 #include "common/config.h"
 
 // Helpers for declarations below.
-#if ENABLE_TSAN_CORE
+#if !ENABLE_TSAN || ENABLE_TSAN_CORE
 # define TSAN_CORE_FN
 # define _TSAN_CORE_SUFFIX
 #else
