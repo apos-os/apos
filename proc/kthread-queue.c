@@ -17,6 +17,7 @@
 #include "proc/kthread-internal.h"
 #include "proc/raw_spinlock.h"
 #include "proc/spinlock.h"
+#include "sanitizers/tsan/spinlock_core.h"
 
 void kthread_queue_init(kthread_queue_t* lst) {
   raw_spin_ctor(&lst->spin);
@@ -42,6 +43,9 @@ void kthread_queue_push(kthread_queue_t* lst, kthread_data_t* thread) {
   kspin_unlock_int(&thread->spin);
 }
 
+// This is TSAN_CORE_FN because it's called from scheduler_yield_no_reschedule()
+// with a TSAN-core-only instrumented lock.
+TSAN_CORE_FN
 void kthread_queue_push_locked(kthread_queue_t* lst, kthread_data_t* thread) {
   kspin_assert_is_held_int(&thread->spin);
   raw_spin_assert_held(&lst->spin);
@@ -72,6 +76,8 @@ void kthread_queue_remove(kthread_t thread) {
   kspin_unlock_int(&thread->spin);
 }
 
+// TSAN_CORE_FN for the same reason as above.
+TSAN_CORE_FN
 void kthread_queue_remove_locked(kthread_queue_t* q, kthread_t thread) {
   kspin_assert_is_held_int(&thread->spin);
   KASSERT_DBG(thread->queue == q);

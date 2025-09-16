@@ -17,6 +17,7 @@
 #include "arch/dev/timer.h"
 #include "arch/proc/stack_trace.h"
 #include "common/atomic.h"
+#include "common/config.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -32,6 +33,8 @@
 #include "proc/scheduler.h"
 #include "proc/spinlock.h"
 #include "proc/thread_annotations.h"
+#include "sanitizers/tsan/spinlock_core.h"
+#include "sanitizers/tsan/tsan.h"
 #include "sanitizers/tsan/tsan_lock.h"
 
 _Static_assert(!(ENABLE_PROFILING && ENABLE_PROFILE_IDLE),
@@ -128,6 +131,7 @@ static inline ALWAYS_INLINE kthread_state_t read_state(kthread_t thread) {
   return thread->state;
 }
 
+TSAN_CORE_FN
 void scheduler_yield_no_reschedule(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   raw_spin_lock(&g_run_queue.spin);
@@ -144,7 +148,7 @@ void scheduler_yield_no_reschedule(void) {
     kthread_queue_remove_locked(&g_run_queue, new_thread);
     raw_spin_unlock(&g_run_queue.spin);
     // TODO(aoates): keep this locked into kthread_switch().
-    kspin_unlock_int(&new_thread->spin);
+    tsc_kspin_unlock_int(&new_thread->spin);
     if (ENABLE_PROFILE_IDLE && g_idling) {
       g_idling = false;
       uint64_t idle_len = arch_real_timer() - g_idling_start;
@@ -161,7 +165,7 @@ void scheduler_yield_no_reschedule(void) {
       kspin_assert_is_held_int(&new_thread->spin);
       KASSERT_DBG(new_thread->state == KTHREAD_PENDING ||
                   new_thread->state == KTHREAD_YIELDING);
-      kspin_unlock_int(&new_thread->spin);
+      tsc_kspin_unlock_int(&new_thread->spin);
     }
     new_thread = g_idle_thread;
     if (ENABLE_PROFILE_IDLE && !g_idling) {
@@ -175,7 +179,7 @@ void scheduler_yield_no_reschedule(void) {
 
 static void scheduler_timeout(defint_timer_t* timer, void* arg) {
   kthread_data_t* thread = arg;
-  kspin_lock_int(&thread->spin);
+  tsc_kspin_lock_int(&thread->spin);
   if (!thread->interruptable) {
     // This means the thread was already woken up by something else and we raced
     // to cancel the timeout.  Note: this is techincally racy, as (in theory)
@@ -186,7 +190,7 @@ static void scheduler_timeout(defint_timer_t* timer, void* arg) {
     // value, to avoid this causing a spurious timeout.
     // TODO(SMP): add a test that exercises this race --- and then decide if
     // this can be refactored or removed if redundant with the below.
-    kspin_unlock_int(&thread->spin);
+    tsc_kspin_unlock_int(&thread->spin);
     kthread_unref(thread);
     return;
   }
@@ -204,10 +208,11 @@ static void scheduler_timeout(defint_timer_t* timer, void* arg) {
     thread->wait_status = SWAIT_TIMEOUT;
     scheduler_make_runnable_locked(thread);
   }
-  kspin_unlock_int(&thread->spin);
+  tsc_kspin_unlock_int(&thread->spin);
   kthread_unref(thread);
 }
 
+TSAN_CORE_FN
 kthread_t scheduler_pick_next(kthread_queue_t* queue, bool prefer_runnable)
     NO_THREAD_SAFETY_ANALYSIS {
   while (true) {
@@ -240,7 +245,7 @@ kthread_t scheduler_pick_next(kthread_queue_t* queue, bool prefer_runnable)
     raw_spin_unlock(&queue->spin);
 
     // Lock the thread and check if it's still on the correct queue.
-    kspin_lock_int(&candidate->spin);
+    tsc_kspin_lock_int(&candidate->spin);
     if (candidate->queue == queue) {
       // Success!  Unref the thread (the queue's reference is still valid),
       // re-lock the queue (in order after the thread's lock), and return it.
@@ -250,7 +255,7 @@ kthread_t scheduler_pick_next(kthread_queue_t* queue, bool prefer_runnable)
     }
 
     // Race: thread was removed from the queue by another. Unlock and retry.
-    kspin_unlock_int(&candidate->spin);
+    tsc_kspin_unlock_int(&candidate->spin);
     kthread_unref(candidate);
     raw_spin_lock(&queue->spin);
   }
@@ -268,7 +273,7 @@ kthread_t scheduler_pop(kthread_queue_t* queue, bool prefer_runnable) {
   // Thread is locked from scheduler_pick_next. Remove it from the queue.
   kthread_queue_remove_locked(queue, thread);
   raw_spin_unlock(&queue->spin);
-  kspin_unlock_int(&thread->spin);
+  tsc_kspin_unlock_int(&thread->spin);
 
   return thread;
 }
@@ -285,16 +290,22 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
 #if ENABLE_TSAN
   bool preemptible = (atomic_load_relaxed(&current->preemption_disables) == 0);
 #endif
+#if ENABLE_TSAN_NON_CORE
+  tsan_disable();
+#endif
   sched_disable_preemption();
-  kspin_lock_int(&current->spin);
+  tsc_kspin_lock_int(&current->spin);
   bool interruptable = !(flags & SWAIT_NO_INTERRUPT);
   if (interruptable) {
     if (!(flags & SWAIT_NO_SIGNAL_CHECK)) {
       const ksigset_t dispatchable = proc_dispatchable_signals();
       if (!ksigisemptyset(dispatchable)) {
         current->wait_status = SWAIT_INTERRUPTED;
-        kspin_unlock_int(&current->spin);
+        tsc_kspin_unlock_int(&current->spin);
         sched_restore_preemption();
+#if ENABLE_TSAN_NON_CORE
+        tsan_restore();
+#endif
         return SWAIT_INTERRUPTED;
       }
     }
@@ -320,7 +331,10 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
   raw_spin_lock(&queue->spin);
   kthread_queue_push_locked(queue, current);
   raw_spin_unlock(&queue->spin);
-  kspin_unlock_int(&current->spin);
+  tsc_kspin_unlock_int(&current->spin);
+#if ENABLE_TSAN_NON_CORE
+  tsan_restore();
+#endif
   // Note: after this point, we could be already put back on the run queue!  We
   // won't be actually run again until we yield.
   interrupt_state_t rsp_state;
@@ -344,7 +358,7 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
     tsan_acquire(&g_implicit_scheduler_tsan_lock, TSAN_LOCK);
   }
 #endif
-  kspin_lock_int(&current->spin);
+  tsc_kspin_lock_int(&current->spin);
   int result = current->wait_status;
   if (timeout_ms > 0 && !current->wait_timeout_ran) {
     current->interruptable = false;
@@ -352,7 +366,7 @@ int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
       kthread_unref(current);
     }
   }
-  kspin_unlock_int(&current->spin);
+  tsc_kspin_unlock_int(&current->spin);
   if (mu) {
     kmutex_lock(mu);
   }
