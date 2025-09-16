@@ -34,6 +34,7 @@
 #include "proc/wait.h"
 #include "sanitizers/tsan/tsan.h"
 #include "sanitizers/tsan/internal.h"
+#include "sanitizers/tsan/spinlock_core.h"
 #include "sanitizers/tsan/tsan_access.h"
 #include "sanitizers/tsan/tsan_params.h"
 #include "test/kernel_tests.h"
@@ -166,10 +167,10 @@ static bool expect_report(int thread1, void* addr1, int size1,
 
   v &= KEXPECT_EQ((addr_t)addr1, g_report.race.cur.addr);
   v &= KEXPECT_EQ(size1, g_report.race.cur.size);
-  v &= type_matches(type1, g_report.race.cur.type);
+  v &= KEXPECT_TRUE(type_matches(type1, g_report.race.cur.type));
   v &= KEXPECT_EQ((addr_t)addr2, g_report.race.prev.addr);
   v &= KEXPECT_EQ(size2, g_report.race.prev.size);
-  v &= type_matches(type2, g_report.race.prev.type);
+  v &= KEXPECT_TRUE(type_matches(type2, g_report.race.prev.type));
 
   // Crude stack trace checking.
   if (has_stack1 || thread1 >= 0 || thread1 == TID_ANY) {
@@ -2630,6 +2631,255 @@ static void multilock_tests(void) {
   multilock_legacy_interrupt_spinlock_test();
 }
 
+static void* tsc_kspin_lock_int_race_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  tsc_kspin_lock_int(args->spin_int);
+  tsan_rw_u64(args->val);
+  kspin_unlock_int(args->spin_int);
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* tsc_kspin_unlock_int_race_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  kspin_lock_int(args->spin_int);
+  tsan_rw_u64(args->val);
+  tsc_kspin_unlock_int(args->spin_int);
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* tsc_kspin_unlock_int2_race_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  kspinstate_t state = kspin_lock_int(args->spin_int);
+  tsan_rw_u64(args->val);
+  tsc_kspin_unlock_int2(args->spin_int, state);
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* tsc_kspin_lock_early_race_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  tsc_kspin_lock_early(args->spin_int);
+  tsan_rw_u64(args->val);
+  kspin_unlock_int(args->spin_int);
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* tsc_kspin_unlock_early_race_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  kspin_lock_int(args->spin_int);
+  tsan_rw_u64(args->val);
+  tsc_kspin_unlock_early(args->spin_int);
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* tsc_kspin_unlock_early2_race_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  kspinstate_t state = kspin_lock_int(args->spin_int);
+  tsan_rw_u64(args->val);
+  tsc_kspin_unlock_early2(args->spin_int, state);
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void tsc_kspin_lock_int_test(void) {
+  KTEST_BEGIN("TSAN: tsc_kspin_lock_int lacks instrumentation and races");
+
+  mutex_test_args_t args;
+  kspinlock_intsafe_t spin_int = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  args.spin_int = &spin_int;
+  args.val = tsan_test_alloc(sizeof(uint64_t));
+  *args.val = 0;
+  tsan_rw_u64(args.val);
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread1, &tsc_kspin_lock_int_race_thread, &args));
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread2, &tsc_kspin_lock_int_race_thread, &args));
+
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread1->id, args.val, 8, "?", thread2->id, args.val, 8,
+                        "w");
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void tsc_kspin_unlock_int_test(void) {
+  KTEST_BEGIN("TSAN: tsc_kspin_unlock_int lacks instrumentation and races");
+
+  mutex_test_args_t args;
+  kspinlock_intsafe_t spin_int = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  args.spin_int = &spin_int;
+  args.val = tsan_test_alloc(sizeof(uint64_t));
+  *args.val = 0;
+  tsan_rw_u64(args.val);
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread1, &tsc_kspin_unlock_int_race_thread, &args));
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread2, &tsc_kspin_unlock_int_race_thread, &args));
+
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread1->id, args.val, 8, "?", thread2->id, args.val, 8,
+                        "w");
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void tsc_kspin_unlock_int2_test(void) {
+  KTEST_BEGIN("TSAN: tsc_kspin_unlock_int2 lacks instrumentation and races");
+
+  mutex_test_args_t args;
+  kspinlock_intsafe_t spin_int = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  args.spin_int = &spin_int;
+  args.val = tsan_test_alloc(sizeof(uint64_t));
+  *args.val = 0;
+  tsan_rw_u64(args.val);
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread1, &tsc_kspin_unlock_int2_race_thread, &args));
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread2, &tsc_kspin_unlock_int2_race_thread, &args));
+
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread1->id, args.val, 8, "?", thread2->id, args.val, 8,
+                        "w");
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void tsc_kspin_lock_early_test(void) {
+  KTEST_BEGIN("TSAN: tsc_kspin_lock_early lacks instrumentation and races");
+
+  mutex_test_args_t args;
+  kspinlock_intsafe_t spin_int = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  args.spin_int = &spin_int;
+  args.val = tsan_test_alloc(sizeof(uint64_t));
+  *args.val = 0;
+  tsan_rw_u64(args.val);
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread1, &tsc_kspin_lock_early_race_thread, &args));
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread2, &tsc_kspin_lock_early_race_thread, &args));
+
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread1->id, args.val, 8, "?", thread2->id, args.val, 8,
+                        "w");
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void tsc_kspin_unlock_early_test(void) {
+  KTEST_BEGIN("TSAN: tsc_kspin_unlock_early lacks instrumentation and races");
+
+  mutex_test_args_t args;
+  kspinlock_intsafe_t spin_int = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  args.spin_int = &spin_int;
+  args.val = tsan_test_alloc(sizeof(uint64_t));
+  *args.val = 0;
+  tsan_rw_u64(args.val);
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread1, &tsc_kspin_unlock_early_race_thread, &args));
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread2, &tsc_kspin_unlock_early_race_thread, &args));
+
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread1->id, args.val, 8, "?", thread2->id, args.val, 8,
+                        "w");
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void tsc_kspin_unlock_early2_test(void) {
+  KTEST_BEGIN("TSAN: tsc_kspin_unlock_early2 lacks instrumentation and races");
+
+  mutex_test_args_t args;
+  kspinlock_intsafe_t spin_int = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  args.spin_int = &spin_int;
+  args.val = tsan_test_alloc(sizeof(uint64_t));
+  *args.val = 0;
+  tsan_rw_u64(args.val);
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread1, &tsc_kspin_unlock_early2_race_thread, &args));
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread2, &tsc_kspin_unlock_early2_race_thread, &args));
+
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread1->id, args.val, 8, "?", thread2->id, args.val, 8,
+                        "w");
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void tsc_spinlock_tests(void) {
+  tsc_kspin_lock_int_test();
+  tsc_kspin_unlock_int_test();
+  tsc_kspin_unlock_int2_test();
+  tsc_kspin_lock_early_test();
+  tsc_kspin_unlock_early_test();
+  tsc_kspin_unlock_early2_test();
+}
+
 static void do_basic_race_test(uint64_t* x) {
   tsan_rw_u64(x);
 
@@ -3936,6 +4186,9 @@ void tsan_test(void) {
   special_functions_tests();
   evict_test();
   multilock_tests();
+  if (!ENABLE_TSAN_CORE) {
+    tsc_spinlock_tests();
+  }
   kernel_writable_data_tests();
   atomic_tests();
   atomic_hooks_tests();

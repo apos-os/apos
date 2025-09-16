@@ -42,9 +42,8 @@
 #define _TSAN_CORE_NAME(func) _TSAN_CORE_CONCAT(func, _TSAN_CORE_SUFFIX)
 
 // Declarations for all tsc_* functions.
-// TODO(tsan): write tsan tests for each of these that verify that they don't
-// synchronize.  Also, ideally, write some tsan tests that fail if these aren't
-// used correctly in the scheduler code.
+// TODO(tsan): Write some tsan tests that fail if these aren't used correctly in
+// the scheduler code.
 #define tsc_kspin_lock_int _TSAN_CORE_NAME(kspin_lock_int)
 #define tsc_kspin_unlock_int _TSAN_CORE_NAME(kspin_unlock_int)
 #define tsc_kspin_unlock_int2 _TSAN_CORE_NAME(kspin_unlock_int2)
