@@ -2332,6 +2332,22 @@ static void* rw_value_thread_kspinlock2(void* arg) {
   return NULL;
 }
 
+static void do_nothing_defint(void* arg) {}
+
+static void* rw_value_thread_kspinlock2_with_defint(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  kspin_lock(args->spin);
+  defint_schedule(&do_nothing_defint, NULL);
+  tsan_rw_u64(args->val);
+  kspin_unlock(args->spin);
+
+  sched_disable_preemption();
+  return NULL;
+}
+
 static void* rw_value_thread_kspinlock_int2(void* arg) {
   sched_enable_preemption_for_test();
   ksleep(10);
@@ -2446,6 +2462,35 @@ static void multilock_kspinlock_test(void) {
   intercept_reports();
   KEXPECT_EQ(0, proc_thread_create(&thread1, &rw_value_thread_kspinlock2, &args1));
   KEXPECT_EQ(0, proc_thread_create(&thread2, &rw_value_thread_kspinlock2, &args2));
+
+  // The two threads should race.
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread1->id, args1.val, 8, "?", thread2->id, args1.val,
+                        8, "w");
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void multilock_kspinlock_with_defint_test(void) {
+  KTEST_BEGIN("TSAN: locking different spinlocks doesn't synchronize (with defint firing)");
+  mutex_test_args_t args1, args2;
+  kspinlock_t spin1, spin2;
+  spin1 = KSPINLOCK_NORMAL_INIT;
+  spin2 = KSPINLOCK_NORMAL_INIT;
+  args1.spin = &spin1;
+  args1.val = tsan_test_alloc(sizeof(uint64_t));
+  *args1.val = 0;
+  tsan_rw_u64(args1.val);
+  args2.spin = &spin2;
+  args2.val = args1.val;
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &rw_value_thread_kspinlock2_with_defint, &args1));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &rw_value_thread_kspinlock2_with_defint, &args2));
 
   // The two threads should race.
   KEXPECT_TRUE(wait_for_race());
@@ -2616,6 +2661,7 @@ static void multilock_legacy_interrupt_spinlock_test(void) {
 static void multilock_tests(void) {
   multilock_kmutex_test();
   multilock_kspinlock_test();
+  multilock_kspinlock_with_defint_test();
   multilock_kspinlock_intsafe_test();
 
   // For these ones, we want to explicitly test the behavior with legacy

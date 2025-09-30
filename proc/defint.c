@@ -24,6 +24,7 @@
 #include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
 #include "proc/spinlock.h"
+#include "sanitizers/tsan/spinlock_core.h"
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_lock.h"
@@ -53,9 +54,9 @@ static atomic32_t g_defint_has_entries = ATOMIC32_INIT(0);
 static DECLARE_PER_CPU(atomic32_t, g_defints_enabled) = ATOMIC32_INIT(0);
 static DECLARE_PER_CPU(defint_running_t, g_defint_running) = DEFINT_NONE;
 
-void defint_schedule(void (*f)(void*), void* arg) {
+TSAN_CORE_FN void defint_schedule(void (*f)(void*), void* arg) {
   atomic_store_relaxed(&g_defint_has_entries, 1);
-  kspin_lock_early(&g_defint_lock);
+  tsc_kspin_lock_early(&g_defint_lock);
   KASSERT(g_queue_len < MAX_QUEUED_DEFINTS);
   int idx = (g_queue_start + g_queue_len) % MAX_QUEUED_DEFINTS;
   KASSERT_DBG(g_defint_queue[idx].f == NULL);
@@ -67,7 +68,7 @@ void defint_schedule(void (*f)(void*), void* arg) {
   // Release all this thread's values to the defint as an explicit sync point.
   tsan_release(NULL, TSAN_DEFINTS);
 #endif
-  kspin_unlock_early(&g_defint_lock);
+  tsc_kspin_unlock_early(&g_defint_lock);
 }
 
 defint_state_t defint_state(void) {
@@ -110,7 +111,7 @@ NO_TSAN void defint_process_queued(bool force) {
   sched_disable_preemption();
 
   // Prevent any new defints from being processed while we're working.
-  kspinstate_t lock_state = kspin_lock_early(&g_defint_lock);
+  kspinstate_t lock_state = tsc_kspin_lock_early(&g_defint_lock);
   atomic_store_relaxed(&PER_CPU(g_defints_enabled), false);
   PER_CPU(g_defint_running) =
       (atomic_load_relaxed(&kthread_current_thread()->interrupt_level) == 0)
@@ -122,10 +123,10 @@ NO_TSAN void defint_process_queued(bool force) {
   while (g_queue_len > 0) {
     defint_data_t* data = &g_defint_queue[g_queue_start];
 
-    kspin_unlock_early(&g_defint_lock);
+    tsc_kspin_unlock_early(&g_defint_lock);
     enable_interrupts();
     data->f(data->arg);
-    kspin_lock_early(&g_defint_lock);
+    tsc_kspin_lock_early(&g_defint_lock);
 
     data->f = NULL;
     g_queue_start = (g_queue_start + 1) % MAX_QUEUED_DEFINTS;
@@ -138,7 +139,7 @@ NO_TSAN void defint_process_queued(bool force) {
   // TODO(aoates): if we would have preempted the process during the defint, do
   // so now (in the scheduler).
   sched_restore_preemption();
-  kspin_unlock_early2(&g_defint_lock, lock_state);
+  tsc_kspin_unlock_early2(&g_defint_lock, lock_state);
 }
 
 void _defint_disabled_die(void) {
