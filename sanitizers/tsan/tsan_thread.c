@@ -179,6 +179,15 @@ void tsan_thread_destroy(kthread_t thread) {
   kmemset_no_tsan(&thread->tsan, 0, sizeof(thread->tsan));
 
   tsan_mark_stack((addr_t)thread->stack, thread->stacklen, false);
+
+  // Clear the access history of the thread object itself --- since accesses to
+  // the thread object are not instrumented or synchronized (unless TSAN_CORE is
+  // enabled), when the memory is reused as another object, TSAN will detect a
+  // (false) race with a previous access from when the memory was touched in a
+  // core thread-management function.
+  if (!ENABLE_TSAN_CORE) {
+    tsan_clear_history((addr_t)thread, sizeof(struct kthread_data));
+  }
 }
 
 // TODO(tsan): protect all of these from interrupts, defints, and other
