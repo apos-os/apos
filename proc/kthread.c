@@ -41,6 +41,7 @@
 #include "proc/spinlock.h"
 #include "proc/thread_annotations.h"
 #include "sanitizers/tsan/spinlock_core.h"
+#include "sanitizers/tsan/vector_clock.h"
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan.h"
@@ -110,6 +111,10 @@ static void kthread_trampoline(void* (*start_routine)(void*), void* arg)
   // on all thread switches, but that would introduce a lot of false negatives
   // due to over-synchronization.
   tsan_acquire(&current_thread->spin._lock.tsan, TSAN_LOCK);
+#endif
+
+#if ENABLE_TSAN_CORE
+  tsan_vc_acquire(&current_thread->tsan.clock, &last_thread->tsan.clock);
 #endif
 
   // Set up metadata to match the locks.
