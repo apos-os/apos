@@ -200,12 +200,14 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
   // 'is_read' bools can get subtle bugs easily otherwise.
   KASSERT_DBG(tsan_is_read(type) ^ tsan_is_write(type));
   if (addr == g_tsan_trace) {
+    tsan_disable();
     klogf("TSAN access traced: %d-byte %s by thread %d on address 0x%" PRIxADDR
           " at \n",
           size, type2str(type), tsan_current_thread()->id, addr);
     addr_t stack_trace[16];
     int len = get_stack_trace(stack_trace, 16);
     print_stack_trace(stack_trace, len);
+    tsan_restore();
   }
 
   if (!tsan_is_mapped_addr(addr)) {
@@ -227,6 +229,7 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
 
   tsan_shadow_t* shadow_mem = get_shadow_cells(addr);
   if (g_tsan_log || addr == g_tsan_trace) {
+    tsan_disable();
     char pretty_shadow[4][SHADOW_PRETTY_LEN];
     klogf("#%d: Access: %d@%d %p/%zd typ=0x%x {%s, %s, %s, %s}\n", thread->id,
           thread->tsan.sid, thread->tsan.clock.ts[thread->tsan.sid],
@@ -235,6 +238,7 @@ static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
           print_shadow(pretty_shadow[1], shadow_mem[1]),
           print_shadow(pretty_shadow[2], shadow_mem[2]),
           print_shadow(pretty_shadow[3], shadow_mem[3]));
+    tsan_restore();
   }
 
   // First check if the exact same access is already stored.
