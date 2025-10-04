@@ -1779,39 +1779,42 @@ static void stack_tests(void) {
   defint_stack_test();
 }
 
-static void* sleep_then_access_u32(void* arg) {
-  sched_enable_preemption_for_test();
-  ksleep(30);
-  tsan_unaligned_write32((uint32_t*)arg, 0x12345678);
-  sched_disable_preemption();
-  return NULL;
-}
+typedef struct {
+  atomic32_t flag;
+  uint64_t value;
+} flag_and_value_t;
 
 // TODO(aoates): could replace this timing-dependant value with a
 // non-synchronizing atomic flag.
-static void* sleep_long_then_access_u32(void* arg) {
+static void* wait_then_access_u64(void* arg) {
+  flag_and_value_t* fav = (flag_and_value_t*)arg;
   sched_enable_preemption_for_test();
-  ksleep(300);
-  tsan_unaligned_write32((uint32_t*)arg, 0x12345678);
+  ksleep(10);
+  while (!atomic_load_relaxed(&fav->flag)) {
+    // Spin.  Don't sleep, that will synchronize on the run queue lock.
+  }
+  tsan_unaligned_write64(&fav->value, 0x12345678);
   sched_disable_preemption();
   return NULL;
 }
 
 static void old_thread_test(void) {
   KTEST_BEGIN("TSAN: race with dead thread (recent)");
-  uint64_t* x = TS_MALLOC(uint64_t);
-  *x = 0;
+  flag_and_value_t* fav = TS_MALLOC(flag_and_value_t);
+  atomic_store_relaxed(&fav->flag, 0);
+  fav->value = 0;
 
   intercept_reports();
-  tsan_rw_u64(x);
+  tsan_rw_u64(&fav->value);
   kthread_t thread1, thread2;
-  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u64, x));
-  KEXPECT_EQ(0, proc_thread_create(&thread2, &sleep_then_access_u32, x));
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u64, &fav->value));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &wait_then_access_u64, fav));
 
   KEXPECT_EQ(NULL, kthread_join(thread1));
+  atomic_store_relaxed(&fav->flag, 1);
   KEXPECT_TRUE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(thread2));
-  EXPECT_REPORT(x, 4, "w", x, 8, "w");
+  EXPECT_REPORT(&fav->value, 8, "w", &fav->value, 8, "w");
   intercept_reports_done();
 
   tsan_test_cleanup();
@@ -1825,14 +1828,15 @@ static void* just_wait(void* arg) {
 
 static void old_thread_reused_test(void) {
   KTEST_BEGIN("TSAN: race with dead thread (slot reused by live thread)");
-  uint64_t* x = TS_MALLOC(uint64_t);
-  *x = 0;
+  flag_and_value_t* fav = TS_MALLOC(flag_and_value_t);
+  atomic_store_relaxed(&fav->flag, 0);
+  fav->value = 0;
 
-  tsan_rw_u64(x);
+  tsan_rw_u64(&fav->value);
   kthread_t thread1, thread2;
   kthread_t reuse_threads[TSAN_THREAD_SLOTS];
-  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u64, x));
-  KEXPECT_EQ(0, proc_thread_create(&thread2, &sleep_long_then_access_u32, x));
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u64, &fav->value));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &wait_then_access_u64, fav));
 
   int tid2 = thread2->id;
 
@@ -1851,10 +1855,11 @@ static void old_thread_reused_test(void) {
   }
 
   intercept_reports();
+  atomic_store_relaxed(&fav->flag, 1);
   KEXPECT_TRUE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(thread2));
-  EXPECT_REPORT_THREADS(tid2, x, 4, "w",
-                        /* thread1 reaped */ TID_UNKNOWN, x, 8, "w");
+  EXPECT_REPORT_THREADS(tid2, &fav->value, 8, "w",
+                        /* thread1 reaped */ TID_UNKNOWN, &fav->value, 8, "w");
   intercept_reports_done();
 
   ntfn_notify(&done);
@@ -1870,14 +1875,15 @@ static void old_thread_reused_test(void) {
 
 static void old_thread_reused_dead_test(void) {
   KTEST_BEGIN("TSAN: race with dead thread (slot reused by dead thread)");
-  uint64_t* x = TS_MALLOC(uint64_t);
-  *x = 0;
+  flag_and_value_t* fav = TS_MALLOC(flag_and_value_t);
+  atomic_store_relaxed(&fav->flag, 0);
+  fav->value = 0;
 
-  tsan_rw_u64(x);
+  tsan_rw_u64(&fav->value);
   kthread_t thread1, thread2;
   kthread_t reuse_threads[TSAN_THREAD_SLOTS];
-  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u64, x));
-  KEXPECT_EQ(0, proc_thread_create(&thread2, &sleep_long_then_access_u32, x));
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u64, &fav->value));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &wait_then_access_u64, fav));
 
   int tid2 = thread2->id;
 
@@ -1904,10 +1910,11 @@ static void old_thread_reused_dead_test(void) {
   }
 
   intercept_reports();
+  atomic_store_relaxed(&fav->flag, 1);
   KEXPECT_TRUE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(thread2));
-  EXPECT_REPORT_THREADS(tid2, x, 4, "w",
-                        /* thread1 reaped */ TID_UNKNOWN, x, 8, "w");
+  EXPECT_REPORT_THREADS(tid2, &fav->value, 8, "w",
+                        /* thread1 reaped */ TID_UNKNOWN, &fav->value, 8, "w");
   intercept_reports_done();
 
   tsan_test_cleanup();
@@ -1915,14 +1922,15 @@ static void old_thread_reused_dead_test(void) {
 
 static void old_thread_reused_lru_test(void) {
   KTEST_BEGIN("TSAN: race with dead thread (slot not reused until needed)");
-  uint64_t* x = TS_MALLOC(uint64_t);
-  *x = 0;
+  flag_and_value_t* fav = TS_MALLOC(flag_and_value_t);
+  atomic_store_relaxed(&fav->flag, 0);
+  fav->value = 0;
 
-  tsan_rw_u64(x);
+  tsan_rw_u64(&fav->value);
   kthread_t thread1, thread2;
   kthread_t reuse_threads[TSAN_THREAD_SLOTS];
-  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u64, x));
-  KEXPECT_EQ(0, proc_thread_create(&thread2, &sleep_long_then_access_u32, x));
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &access_u64, &fav->value));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &wait_then_access_u64, fav));
 
   int tid1 = thread1->id;
   int tid2 = thread2->id;
@@ -1942,9 +1950,10 @@ static void old_thread_reused_lru_test(void) {
   }
 
   intercept_reports();
+  atomic_store_relaxed(&fav->flag, 1);
   KEXPECT_TRUE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(thread2));
-  EXPECT_REPORT_THREADS(tid2, x, 4, "w", tid1, x, 8, "w");
+  EXPECT_REPORT_THREADS(tid2, &fav->value, 8, "w", tid1, &fav->value, 8, "w");
   intercept_reports_done();
 
   ntfn_notify(&done);
