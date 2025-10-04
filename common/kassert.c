@@ -22,6 +22,7 @@
 #include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "proc/kthread-internal.h"
+#include "sanitizers/tsan/tsan.h"
 
 static bool g_dying = false;
 const int kMaxStackFrames = 32;
@@ -39,6 +40,9 @@ static void do_print_stack(kthread_t thread, void* arg) {
 
 void die(const char* msg) {
   disable_interrupts();
+#if ENABLE_TSAN
+  tsan_disable();
+#endif
 
   if (g_dying) {
     klog_set_mode(KLOG_RAW_VIDEO);
