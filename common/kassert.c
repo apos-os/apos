@@ -48,7 +48,7 @@ void die(const char* msg) {
     klog_set_mode(KLOG_RAW_VIDEO);
   }
   g_dying = true;
-  klog("PANIC: ");
+  klog("Kernel panic: ");
   if (msg) {
     klog(msg);
     klog("\n");
