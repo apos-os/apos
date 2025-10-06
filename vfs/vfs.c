@@ -367,7 +367,6 @@ void vfs_put(vnode_t* vnode) {
   kmutex_lock(&vnode->state_mu);
 
   kspin_lock(&g_vnode_cache_lock);
-  KASSERT_DBG(vnode->memobj.refcount >= 1);
   if (atomic_load_relaxed(&vnode->refcount) > 1) {
     // We're definitely not the last.  Nothing else matters --- this vnode is
     // someone else's problem.
