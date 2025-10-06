@@ -129,7 +129,8 @@ static user_context_t copy_ctx(void* ctx_ptr) {
 void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
                          uint64_t is_kernel) {
   kthread_t thread = kthread_current_thread();
-  if (thread) {
+  bool is_interrupt = (scause & RSV_INTERRUPT);
+  if (thread && is_interrupt) {
     int val = atomic_add_relaxed(&thread->interrupt_level, 1);
     KASSERT_DBG(val == 1 || val == 2);
 #if ENABLE_TSAN
@@ -144,8 +145,7 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
          scause, stval, ctx->address, (int)is_kernel);
 
   syscall_context_t* syscall_ctx = NULL;
-  bool is_interrupt = true;
-  if (scause & RSV_INTERRUPT) {
+  if (is_interrupt) {
     const int interrupt = scause & ~RSV_INTERRUPT;
     switch (interrupt) {
       case RSV_INT_STIMER:
@@ -191,9 +191,6 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
         break;
 
       case RSV_TRAP_ENVCALL_USR:
-        KASSERT_DBG(atomic_load_relaxed(&thread->interrupt_level) == 1);
-        atomic_store_relaxed(&thread->interrupt_level, 0);
-        is_interrupt = false;
         enable_interrupts();
         ctx->a0 = syscall_dispatch(ctx->a0, ctx->a1, ctx->a2, ctx->a3, ctx->a4,
                                    ctx->a5, ctx->a6);
