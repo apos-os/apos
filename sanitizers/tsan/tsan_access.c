@@ -146,7 +146,7 @@ static void log_access(const tsan_access_t* access) {
 }
 
 static void default_report_func(const tsan_report_t* report) {
-  klogfm(KL_GENERAL, FATAL, "TSAN detected data race");
+  klogfm(KL_GENERAL, FATAL, "TSAN detected data race\n");
 }
 
 static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
