@@ -102,8 +102,9 @@ void scheduler_make_runnable_locked(kthread_t thread) {
   raw_spin_unlock(&g_run_queue.spin);
 }
 
+TSAN_CORE_FN
 void scheduler_interrupt_thread(kthread_t thread) {
-  kspin_lock_int(&thread->spin);
+  tsc_kspin_lock_int(&thread->spin);
   if (thread->queue && thread->queue != &g_run_queue && thread->interruptable) {
     // TODO(SMP): try to write a test that catches a thread in KTHREAD_YIELDING.
     KASSERT_DBG(thread->state == KTHREAD_PENDING ||
@@ -116,7 +117,7 @@ void scheduler_interrupt_thread(kthread_t thread) {
     thread->wait_status = SWAIT_INTERRUPTED;
     scheduler_make_runnable_locked(thread);
   }
-  kspin_unlock_int(&thread->spin);
+  tsc_kspin_unlock_int(&thread->spin);
 }
 
 void scheduler_yield(void) {
@@ -278,6 +279,7 @@ kthread_t scheduler_pop(kthread_queue_t* queue, bool prefer_runnable) {
   return thread;
 }
 
+TSAN_CORE_FN
 int scheduler_wait(kthread_queue_t* queue, swait_flags_t flags, long timeout_ms,
                    kmutex_t* mu, kspinlock_t* sp,
                    raw_spinlock_t* rsp) NO_THREAD_SAFETY_ANALYSIS {

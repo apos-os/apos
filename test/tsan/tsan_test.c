@@ -24,6 +24,7 @@
 #include "memory/kmalloc.h"
 #include "proc/defint.h"
 #include "proc/fork.h"
+#include "proc/kthread-queue.h"
 #include "proc/kthread.h"
 #include "proc/notification.h"
 #include "proc/process.h"
@@ -1152,6 +1153,45 @@ static void kmutex_lock_loop_test(void) {
   tsan_test_cleanup();
 }
 
+typedef struct {
+  atomic32_t flag;
+  uint64_t* val;
+} scheduler_interrupt_thread_args_t;
+
+static void* scheduler_interrupt_thread_thread(void* arg) {
+  scheduler_interrupt_thread_args_t* args = (scheduler_interrupt_thread_args_t*)arg;
+  kspinlock_t lock = KSPINLOCK_NORMAL_INIT;
+  kthread_queue_t queue;
+  kthread_queue_init(&queue);
+  kspin_lock(&lock);
+  atomic_store_relaxed(&args->flag, 1);
+  KEXPECT_EQ(SWAIT_INTERRUPTED, scheduler_wait_on_splocked(&queue, 500, &lock));
+  tsan_rw_u64(args->val);
+  kspin_unlock(&lock);
+  return NULL;
+}
+
+static void scheduler_interrupt_thread_synchronizes_test(void) {
+  KTEST_BEGIN("TSAN: scheduler_interrupt_thread() synchronizes");
+  sched_enable_preemption_for_test();
+  scheduler_interrupt_thread_args_t args;
+  atomic_store_relaxed(&args.flag, 0);
+  args.val = TS_MALLOC(uint64_t);
+
+  kthread_t thread;
+  KEXPECT_EQ(0, proc_thread_create(&thread, &scheduler_interrupt_thread_thread,
+                                   &args));
+  while (!atomic_load_relaxed(&args.flag))
+    ; // Spin
+  ksleep(10);
+  tsan_rw_u64(args.val);
+  scheduler_interrupt_thread(thread);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+
+  sched_disable_preemption();
+  tsan_test_cleanup();
+}
+
 static void basic_tests(void) {
   tsan_basic_sanity_test();
   tsan_basic_sanity_test2();
@@ -1178,6 +1218,8 @@ static void basic_tests(void) {
   unaligned_overlap_8byte_conflict_test();
 
   kmutex_lock_loop_test();
+
+  scheduler_interrupt_thread_synchronizes_test();
 }
 
 static void interrupt_fn(void* arg) {
