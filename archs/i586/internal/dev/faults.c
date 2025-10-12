@@ -47,12 +47,12 @@ static void sigbus_handler(uint32_t interrupt, uint32_t error, bool is_user) {
 }
 
 void register_fault_handlers(void) {
-  register_interrupt_handler(0, &fpe_handler);
-  register_interrupt_handler(7, &fpe_handler);
-  register_interrupt_handler(9, &fpe_handler);
-  register_interrupt_handler(10, &segv_handler);    // #TS (Invalid TSS)
-  register_interrupt_handler(11, &sigbus_handler);  // #NP (Not Present)
-  register_interrupt_handler(13, &segv_handler);    // #GP (General Protection)
-  register_interrupt_handler(16, &fpe_handler);
-  register_interrupt_handler(19, &fpe_handler);
+  register_interrupt_handler(0, &fpe_handler, false);     // Divide by zero exception
+  register_interrupt_handler(7, &fpe_handler, false);     // Device not available exception
+  register_interrupt_handler(9, &fpe_handler, false);     // Coprocessor segment overrun
+  register_interrupt_handler(10, &segv_handler, false);   // #TS (Invalid TSS)
+  register_interrupt_handler(11, &sigbus_handler, false); // #NP (Not Present)
+  register_interrupt_handler(13, &segv_handler, false);   // #GP (General Protection)
+  register_interrupt_handler(16, &fpe_handler, false);    // x87 FPU floating-point error
+  register_interrupt_handler(19, &fpe_handler, false);    // SIMD floating-point exception
 }

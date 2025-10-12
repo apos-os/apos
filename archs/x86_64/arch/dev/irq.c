@@ -54,22 +54,22 @@ void arch_irq_init(void) {
     g_handlers[i].num = 0;
   }
 
-  register_interrupt_handler(0x20, &irq_handler);
-  register_interrupt_handler(0x21, &irq_handler);
-  register_interrupt_handler(0x22, &irq_handler);
-  register_interrupt_handler(0x23, &irq_handler);
-  register_interrupt_handler(0x24, &irq_handler);
-  register_interrupt_handler(0x25, &irq_handler);
-  register_interrupt_handler(0x26, &irq_handler);
-  register_interrupt_handler(0x27, &irq_handler);
-  register_interrupt_handler(0x28, &irq_handler);
-  register_interrupt_handler(0x29, &irq_handler);
-  register_interrupt_handler(0x2A, &irq_handler);
-  register_interrupt_handler(0x2B, &irq_handler);
-  register_interrupt_handler(0x2C, &irq_handler);
-  register_interrupt_handler(0x2D, &irq_handler);
-  register_interrupt_handler(0x2E, &irq_handler);
-  register_interrupt_handler(0x2F, &irq_handler);
+  register_interrupt_handler(0x20, &irq_handler, true);
+  register_interrupt_handler(0x21, &irq_handler, true);
+  register_interrupt_handler(0x22, &irq_handler, true);
+  register_interrupt_handler(0x23, &irq_handler, true);
+  register_interrupt_handler(0x24, &irq_handler, true);
+  register_interrupt_handler(0x25, &irq_handler, true);
+  register_interrupt_handler(0x26, &irq_handler, true);
+  register_interrupt_handler(0x27, &irq_handler, true);
+  register_interrupt_handler(0x28, &irq_handler, true);
+  register_interrupt_handler(0x29, &irq_handler, true);
+  register_interrupt_handler(0x2A, &irq_handler, true);
+  register_interrupt_handler(0x2B, &irq_handler, true);
+  register_interrupt_handler(0x2C, &irq_handler, true);
+  register_interrupt_handler(0x2D, &irq_handler, true);
+  register_interrupt_handler(0x2E, &irq_handler, true);
+  register_interrupt_handler(0x2F, &irq_handler, true);
 
   outb(PIC_MASTER_CMD, 0x11);
   outb(PIC_SLAVE_CMD, 0x11);

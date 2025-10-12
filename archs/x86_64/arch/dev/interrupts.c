@@ -68,16 +68,22 @@ extern void int45(void);
 extern void int46(void);
 extern void int47(void);
 
-// User-defined handlers established by register_interrupt_handler().
-static int_handler_t g_handlers[MAX_INTERRUPT + 1];
+typedef struct {
+    int_handler_t handler;
+    bool is_interrupt;  // true for interrupts, false for faults/traps/exceptions
+} int_handler_entry_t;
+
+static int_handler_entry_t g_handlers[MAX_INTERRUPT + 1];
 
 static void dblfault_handler(uint32_t interrupt, uint32_t error, bool is_user) {
   die("Kernel double fault");
 }
 
-void register_interrupt_handler(uint8_t interrupt, int_handler_t handler) {
+void register_interrupt_handler(uint8_t interrupt, int_handler_t handler,
+                                bool is_interrupt) {
   KASSERT(interrupt <= MAX_INTERRUPT);
-  g_handlers[interrupt] = handler;
+  g_handlers[interrupt].handler = handler;
+  g_handlers[interrupt].is_interrupt = is_interrupt;
 }
 
 // Register a RAW handler to be called when a particular interrupt fires.  The
@@ -191,8 +197,9 @@ void interrupts_init(void) {
   idt_entries = idt_ptr.limit / sizeof(idt_entry_t);
   idt = (idt_entry_t*)idt_ptr.base;
 
-  for (int i = 0; i < MAX_INTERRUPT; ++i) {
-    g_handlers[i] = 0x0;
+  for (int i = 0; i <= MAX_INTERRUPT; ++i) {
+    g_handlers[i].handler = NULL;
+    g_handlers[i].is_interrupt = false;
   }
 
   // TODO(aoates): Generate a handler for all interrupt vectors so that this
@@ -242,7 +249,7 @@ void interrupts_init(void) {
 
   // We bounce this through int8 so the stack is set up in the same way as other
   // interrupts.
-  register_interrupt_handler(8, &dblfault_handler);
+  register_interrupt_handler(8, &dblfault_handler, false);  // Double fault exception
 
   // Register common fault handlers.
   register_fault_handlers();
@@ -256,8 +263,8 @@ void int_handler(uint32_t interrupt, uint32_t error, addr_t rbp) {
   }
   const int is_user = is_user_interrupt(rbp);
 
-  if (g_handlers[interrupt]) {
-    g_handlers[interrupt](interrupt, error, is_user);
+  if (g_handlers[interrupt].handler) {
+    g_handlers[interrupt].handler(interrupt, error, is_user);
   } else {
     klogf("unhandled interrupt: 0x%x  error: 0x%x\n", interrupt, error);
   }

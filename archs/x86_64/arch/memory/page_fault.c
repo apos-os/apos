@@ -33,7 +33,7 @@
 #define PAGE_FAULT_ERR_RSVD    0x08
 
 void paging_init(void) {
-  register_interrupt_handler(PAGE_FAULT_INTERRUPT, &page_fault_handler);
+  register_interrupt_handler(PAGE_FAULT_INTERRUPT, &page_fault_handler, false);  // Page fault exception
 }
 
 void page_fault_handler(uint32_t interrupt, uint32_t error, bool is_user) {

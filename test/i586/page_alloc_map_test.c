@@ -87,7 +87,7 @@ void test_page_fault_handler(uint32_t interrupt, uint32_t error, bool is_user) {
 void page_alloc_map_test(void) {
   KTEST_SUITE_BEGIN("page_alloc map/unmap test");
   // Set up test handler.
-  register_interrupt_handler(0x0E, &test_page_fault_handler);
+  register_interrupt_handler(0x0E, &test_page_fault_handler, false);  // Page fault exception
 
   // Chosen to be in the middle of a page table for maximal testyness.
   uint8_t* addr = (uint8_t*)0x80047014;
@@ -214,7 +214,7 @@ recover_F:
   // Restore original handler.
   // TODO(aoates): get the actual original handler to restore instead of
   // hardcoding this.
-  register_interrupt_handler(0x0E, &page_fault_handler);
+  register_interrupt_handler(0x0E, &page_fault_handler, false);  // Page fault exception
 }
 
 // TODO(aoates): test protections, access flags, etc.

@@ -32,7 +32,8 @@
 // returns.
 typedef void (*int_handler_t)(
     uint32_t /* interrupt no. */, uint32_t /* error or 0 */, bool /* is_user */);
-void register_interrupt_handler(uint8_t interrupt, int_handler_t handler);
+
+void register_interrupt_handler(uint8_t interrupt, int_handler_t handler, bool is_interrupt);
 
 // Structs for the IDT and its entries.
 typedef struct {
