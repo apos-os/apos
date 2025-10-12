@@ -169,6 +169,7 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
             interrupt, scause, stval, ctx->address, (int)is_kernel);
     }
   } else {
+    enable_interrupts();
     switch (scause) {
       case RSV_TRAP_PAGEFAULT_INSTR:
       case RSV_TRAP_PAGEFAULT_LOAD:
@@ -191,12 +192,10 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
         break;
 
       case RSV_TRAP_ENVCALL_USR:
-        enable_interrupts();
         ctx->a0 = syscall_dispatch(ctx->a0, ctx->a1, ctx->a2, ctx->a3, ctx->a4,
                                    ctx->a5, ctx->a6);
         ctx->address += RSV_ECALL_INSTR_LEN;
         syscall_ctx = &kthread_current_thread()->syscall_ctx;
-        disable_interrupts();
         break;
 
       case RSV_TRAP_BREAKPOINT:
@@ -206,6 +205,7 @@ void NO_TSAN int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
                "Unhandled trap %d (stval: 0x%lx  sepc: 0x%lx  is_kernel: %d)\n",
                (int)scause, stval, ctx->address, (int)is_kernel);
     }
+    disable_interrupts();
   }
 
   defint_process_queued(/* force */ true);

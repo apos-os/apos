@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "arch/memory/page_fault.h"
+#include "arch/dev/interrupts.h"
 #include "archs/x86_64/internal/dev/interrupts-x86.h"
 #include "archs/x86_64/internal/memory/page_fault-x86.h"
 #include "common/kassert.h"
@@ -55,5 +56,7 @@ void page_fault_handler(uint32_t interrupt, uint32_t error, bool is_user) {
 
   // Ignore return value --- if it failed, a signal was generated and will be
   // dispatched as needed.
+  enable_interrupts();
   vm_handle_page_fault(address, type, op, mode);
+  disable_interrupts();
 }

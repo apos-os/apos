@@ -237,7 +237,8 @@ void interrupts_init(void) {
 
 void int_handler(uint32_t interrupt, uint32_t error, addr_t ebp) {
   kthread_t thread = kthread_current_thread();
-  if (thread) {
+  const bool is_interrupt = g_handlers[interrupt].is_interrupt;
+  if (thread && is_interrupt) {
     int val = atomic_add_relaxed(&thread->interrupt_level, 1);
     KASSERT_DBG(val == 1 || val == 2);
   }
@@ -267,7 +268,7 @@ void int_handler(uint32_t interrupt, uint32_t error, addr_t ebp) {
     proc_prep_user_return(&extract_interrupt_context, &ebp, NULL);
   }
 
-  if (thread) {
+  if (thread && is_interrupt) {
     KASSERT_DBG(atomic_load_relaxed(&thread->interrupt_level) >= 1);
     atomic_sub_relaxed(&thread->interrupt_level, 1);
   }

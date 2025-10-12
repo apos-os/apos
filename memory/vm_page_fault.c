@@ -18,6 +18,7 @@
 #include "common/klog.h"
 #include "common/list.h"
 #include "common/types.h"
+#include "dev/interrupts.h"
 #include "memory/flags.h"
 #include "memory/memory.h"
 #include "memory/page_alloc.h"
@@ -99,6 +100,7 @@ static int fault_allowed(vm_area_t* area, vm_fault_type_t type,
 
 int vm_handle_page_fault(addr_t address, vm_fault_type_t type, vm_fault_op_t op,
                          vm_fault_mode_t mode) {
+  KASSERT_DBG(interrupts_enabled());
   process_t* proc = proc_current();
   pmutex_lock(&proc->mu);
   int result = vm_handle_page_fault_locked(address, type, op, mode);
