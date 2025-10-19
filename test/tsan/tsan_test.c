@@ -145,7 +145,8 @@ static bool expect_report(int thread1, void* addr1, int size1,
   // Try it swapped as well.
   if (try_swap && ((addr_t)addr1 != g_report.race.cur.addr ||
                    size1 != g_report.race.cur.size ||
-                   !type_matches(type1, g_report.race.cur.type))) {
+                   !type_matches(type1, g_report.race.cur.type) ||
+                   thread2 == g_report.race.cur.thread_id)) {
     return expect_report(thread2, addr2, size2, type2, has_stack2, thread1,
                          addr1, size1, type1, has_stack1, false);
   }
@@ -202,6 +203,12 @@ static bool expect_report(int thread1, void* addr1, int size1,
                               size2, type2)                                 \
   KEXPECT_TRUE(expect_report(thread1, addr1, size1, type1, false, thread2,   \
                              addr2, size2, type2, false, /* try_swap */ false))
+
+// As above, but allows the race to be reported in either order.
+#define EXPECT_REPORT_UNORDERED(thread1, addr1, size1, type1, thread2, addr2, \
+                                size2, type2)                                 \
+  KEXPECT_TRUE(expect_report(thread1, addr1, size1, type1, false, thread2,   \
+                             addr2, size2, type2, false, /* try_swap */ true))
 
 // Helper to wait until races occur, ensuring that tests don't reap threads
 // before the races occur (which causes spurious test failures due to missing
@@ -2329,7 +2336,7 @@ static void evict_test(void) {
   for (int i = 0; i < kThreads; ++i) {
     kthread_join(threads[i]);
   }
-  EXPECT_REPORT_THREADS(TID_ANY, x, 1, "r", writer_id, x, 2, "w");
+  EXPECT_REPORT_UNORDERED(TID_ANY, x, 1, "r", writer_id, x, 2, "w");
   intercept_reports_done();
 
   tsan_test_cleanup();
@@ -2516,8 +2523,8 @@ static void multilock_kspinlock_test(void) {
 
   // The two threads should race.
   KEXPECT_TRUE(wait_for_race());
-  EXPECT_REPORT_THREADS(thread1->id, args1.val, 8, "?", thread2->id, args1.val,
-                        8, "w");
+  EXPECT_REPORT_UNORDERED(thread1->id, args1.val, 8, "?",
+                          thread2->id, args1.val, 8, "w");
   KEXPECT_EQ(NULL, kthread_join(thread1));
   KEXPECT_EQ(NULL, kthread_join(thread2));
   intercept_reports_done();
@@ -2545,8 +2552,8 @@ static void multilock_kspinlock_with_defint_test(void) {
 
   // The two threads should race.
   KEXPECT_TRUE(wait_for_race());
-  EXPECT_REPORT_THREADS(thread1->id, args1.val, 8, "?", thread2->id, args1.val,
-                        8, "w");
+  EXPECT_REPORT_UNORDERED(thread1->id, args1.val, 8, "?",
+                          thread2->id, args1.val, 8, "w");
   KEXPECT_EQ(NULL, kthread_join(thread1));
   KEXPECT_EQ(NULL, kthread_join(thread2));
   intercept_reports_done();
@@ -2574,8 +2581,8 @@ static void multilock_kspinlock_intsafe_test(void) {
 
   // The two threads should race.
   KEXPECT_TRUE(wait_for_race());
-  EXPECT_REPORT_THREADS(thread1->id, args1.val, 8, "?", thread2->id, args1.val,
-                        8, "w");
+  EXPECT_REPORT_UNORDERED(thread1->id, args1.val, 8, "?",
+                          thread2->id, args1.val, 8, "w");
   KEXPECT_EQ(NULL, kthread_join(thread1));
   KEXPECT_EQ(NULL, kthread_join(thread2));
   intercept_reports_done();
@@ -2824,8 +2831,8 @@ static void tsc_kspin_lock_int_test(void) {
              proc_thread_create(&thread2, &tsc_kspin_lock_int_race_thread, &args));
 
   KEXPECT_TRUE(wait_for_race());
-  EXPECT_REPORT_THREADS(thread1->id, args.val, 8, "?", thread2->id, args.val, 8,
-                        "w");
+  EXPECT_REPORT_UNORDERED(thread1->id, args.val, 8, "?",
+                          thread2->id, args.val, 8, "w");
   KEXPECT_EQ(NULL, kthread_join(thread1));
   KEXPECT_EQ(NULL, kthread_join(thread2));
   intercept_reports_done();
@@ -2851,8 +2858,8 @@ static void tsc_kspin_unlock_int_test(void) {
              proc_thread_create(&thread2, &tsc_kspin_unlock_int_race_thread, &args));
 
   KEXPECT_TRUE(wait_for_race());
-  EXPECT_REPORT_THREADS(thread1->id, args.val, 8, "?", thread2->id, args.val, 8,
-                        "w");
+  EXPECT_REPORT_UNORDERED(thread1->id, args.val, 8, "?",
+                          thread2->id, args.val, 8, "w");
   KEXPECT_EQ(NULL, kthread_join(thread1));
   KEXPECT_EQ(NULL, kthread_join(thread2));
   intercept_reports_done();
@@ -2878,8 +2885,8 @@ static void tsc_kspin_unlock_int2_test(void) {
              proc_thread_create(&thread2, &tsc_kspin_unlock_int2_race_thread, &args));
 
   KEXPECT_TRUE(wait_for_race());
-  EXPECT_REPORT_THREADS(thread1->id, args.val, 8, "?", thread2->id, args.val, 8,
-                        "w");
+  EXPECT_REPORT_UNORDERED(thread1->id, args.val, 8, "?",
+                          thread2->id, args.val, 8, "w");
   KEXPECT_EQ(NULL, kthread_join(thread1));
   KEXPECT_EQ(NULL, kthread_join(thread2));
   intercept_reports_done();
@@ -2905,8 +2912,8 @@ static void tsc_kspin_lock_early_test(void) {
              proc_thread_create(&thread2, &tsc_kspin_lock_early_race_thread, &args));
 
   KEXPECT_TRUE(wait_for_race());
-  EXPECT_REPORT_THREADS(thread1->id, args.val, 8, "?", thread2->id, args.val, 8,
-                        "w");
+  EXPECT_REPORT_UNORDERED(thread1->id, args.val, 8, "?",
+                          thread2->id, args.val, 8, "w");
   KEXPECT_EQ(NULL, kthread_join(thread1));
   KEXPECT_EQ(NULL, kthread_join(thread2));
   intercept_reports_done();
@@ -2932,8 +2939,8 @@ static void tsc_kspin_unlock_early_test(void) {
              proc_thread_create(&thread2, &tsc_kspin_unlock_early_race_thread, &args));
 
   KEXPECT_TRUE(wait_for_race());
-  EXPECT_REPORT_THREADS(thread1->id, args.val, 8, "?", thread2->id, args.val, 8,
-                        "w");
+  EXPECT_REPORT_UNORDERED(thread1->id, args.val, 8, "?",
+                          thread2->id, args.val, 8, "w");
   KEXPECT_EQ(NULL, kthread_join(thread1));
   KEXPECT_EQ(NULL, kthread_join(thread2));
   intercept_reports_done();
@@ -2959,8 +2966,8 @@ static void tsc_kspin_unlock_early2_test(void) {
              proc_thread_create(&thread2, &tsc_kspin_unlock_early2_race_thread, &args));
 
   KEXPECT_TRUE(wait_for_race());
-  EXPECT_REPORT_THREADS(thread1->id, args.val, 8, "?", thread2->id, args.val, 8,
-                        "w");
+  EXPECT_REPORT_UNORDERED(thread1->id, args.val, 8, "?",
+                          thread2->id, args.val, 8, "w");
   KEXPECT_EQ(NULL, kthread_join(thread1));
   KEXPECT_EQ(NULL, kthread_join(thread2));
   intercept_reports_done();
