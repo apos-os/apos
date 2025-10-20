@@ -23,6 +23,7 @@
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "proc/defint.h"
+#include "proc/defint_timer.h"
 #include "proc/fork.h"
 #include "proc/kthread-queue.h"
 #include "proc/kthread.h"
@@ -1742,6 +1743,78 @@ static void defint_int_race_test5(void) {
   tsan_test_cleanup();
 }
 
+static void do_nothing_defint_timer(defint_timer_t* timer, void* arg) {}
+
+typedef struct {
+  uint64_t* val;
+  atomic32_t flag;
+} defint_timer_test_args_t;
+
+// First thread does racy access, then creates and cancels a defint timer.
+static void* defint_timer_test_thread1(void* arg) {
+  defint_timer_test_args_t* args = (defint_timer_test_args_t*)arg;
+  sched_enable_preemption_for_test();
+  ksleep(10);
+
+  tsan_rw_u64(args->val);  // ...lay the trap.
+  defint_timer_t handle;
+  defint_timer_create(get_time_ms() + 1000, &do_nothing_defint_timer, NULL,
+                      &handle);
+  ksleep(10);
+  KEXPECT_TRUE(defint_timer_cancel(&handle));
+  atomic_store_relaxed(&args->flag, 1);
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+// Second thread creates and cancels defint timer, THEN does racy access.
+static void* defint_timer_test_thread2(void* arg) {
+  defint_timer_test_args_t* args = (defint_timer_test_args_t*)arg;
+  sched_enable_preemption_for_test();
+  ksleep(10);
+
+  // Wait for thread1 to go.
+  while (!atomic_load_relaxed(&args->flag))
+    ; // Spin
+  defint_timer_t handle;
+  defint_timer_create(get_time_ms() + 1000, &do_nothing_defint_timer, NULL,
+                      &handle);
+  ksleep(10);
+  KEXPECT_TRUE(defint_timer_cancel(&handle));
+  tsan_rw_u64(args->val);  // Race!
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void defint_timer_race_test1(void) {
+  KTEST_BEGIN("TSAN: defint timer creation/cancel doesn't synchronize");
+  defint_timer_test_args_t args = {
+      .val = tsan_test_alloc(sizeof(uint64_t)),
+      .flag = ATOMIC32_INIT(0),
+  };
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &defint_timer_test_thread1, &args));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &defint_timer_test_thread2, &args));
+
+  // The two threads should race.
+  // TODO(aoates): fix this behavior when we don't synch on the run queue.
+#if 0
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread2->id, args.val, 8, "?",
+                        thread1->id, args.val, 8, "w");
+#endif
+  KEXPECT_FALSE(wait_for_race());
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
 static void defint_tests(void) {
   defint_test1();
   defint_test2();
@@ -1760,6 +1833,8 @@ static void defint_tests(void) {
   defint_int_race_test3();
   defint_int_race_test4();
   defint_int_race_test5();
+
+  defint_timer_race_test1();
 }
 
 static void interrupt_stack_writer(void* arg) {

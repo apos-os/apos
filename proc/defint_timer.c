@@ -19,6 +19,7 @@
 #include "dev/timer.h"
 #include "proc/defint.h"
 #include "proc/spinlock.h"
+#include "sanitizers/tsan/tsan.h"
 
 // Structure to hold timer data temporarily while the lock is released.
 typedef struct {
@@ -113,6 +114,7 @@ void defint_timer_create(apos_ms_t deadline_ms, defint_timer_cb_t cb, void* arg,
                          defint_timer_t* handle) {
   init_handle(handle, deadline_ms, cb, arg);
 
+  if (ENABLE_TSAN_NON_CORE) tsan_disable();
   kspin_lock(&g_defint_timer_lock);
   list_link_t* prev = NULL;
   list_link_t* curr = g_defint_timers.head;
@@ -131,17 +133,21 @@ void defint_timer_create(apos_ms_t deadline_ms, defint_timer_cb_t cb, void* arg,
     atomic_store_relaxed(&g_defint_timer_next, (uint32_t)deadline_ms);
   }
   kspin_unlock(&g_defint_timer_lock);
+  if (ENABLE_TSAN_NON_CORE) tsan_restore();
 }
 
 bool defint_timer_cancel(defint_timer_t* handle) {
+  if (ENABLE_TSAN_NON_CORE) tsan_disable();
   kspin_lock(&g_defint_timer_lock);
   if (handle->started_run) {
     kspin_unlock(&g_defint_timer_lock);
+    if (ENABLE_TSAN_NON_CORE) tsan_restore();
     return false;
   }
   list_remove(&g_defint_timers, &handle->link);
   // Don't bother updating the next timer value --- if this is the first time,
   // we'll just have a spurious (but harmless) defint run.
   kspin_unlock(&g_defint_timer_lock);
+  if (ENABLE_TSAN_NON_CORE) tsan_restore();
   return true;
 }
