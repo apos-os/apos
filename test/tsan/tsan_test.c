@@ -1370,7 +1370,7 @@ static void interrupt_test2(void) {
   // It could be a read or a write depending on optimization level.
   EXPECT_REPORT(x, 4, "?", x, 4, "w");
   intercept_reports_done();
-  KEXPECT_EQ(3, *x);
+  KEXPECT_EQ(3, read_int(x));
 
   tsan_test_cleanup();
 }
