@@ -2494,8 +2494,8 @@ static void multilock_kmutex_test(void) {
 
   // The two threads should race.
   KEXPECT_TRUE(wait_for_race());
-  EXPECT_REPORT_THREADS(thread1->id, args1.val, 8, "?", thread2->id, args1.val,
-                        8, "w");
+  EXPECT_REPORT_UNORDERED(thread1->id, args1.val, 8, "?",
+                          thread2->id, args1.val, 8, "w");
   KEXPECT_EQ(NULL, kthread_join(thread1));
   KEXPECT_EQ(NULL, kthread_join(thread2));
   intercept_reports_done();
