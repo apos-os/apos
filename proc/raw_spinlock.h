@@ -31,7 +31,12 @@ typedef struct CAPABILITY("spinlock") {
 // If TSAN is enabled in non-core mode, we want the atomic accesses in
 // raw_spinlock_t to NOT synchronize.  This requires making them non-inline and
 // fully disabling sanitizers in them.
-#if ENABLE_TSAN_NON_CORE
+#ifndef RAWSP_DISABLE_TSAN
+// Disable TSAN only in non-core TSAN mode.
+#define RAWSP_DISABLE_TSAN ENABLE_TSAN_NON_CORE
+#endif
+
+#if RAWSP_DISABLE_TSAN
 #define _RAWSP_FN_ATTRS NO_INLINE NO_SANITIZER __attribute__((unused))
 #else
 #define _RAWSP_FN_ATTRS inline ALWAYS_INLINE

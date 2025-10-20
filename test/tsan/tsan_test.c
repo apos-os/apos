@@ -526,22 +526,72 @@ static void tsan_basic_sanity_test3_raw_spinlock(void) {
 
   sched_disable_preemption();
 
-  // TODO(aoates): write a separate test that is able to verify that
-  // raw_spinlock_t works correctly even when TSAN_ENABLE_CORE is not on.
-  if (ENABLE_TSAN_CORE) {
-    // With TSAN_CORE, raw spinlocks synchronize and no race is expected.
-    KEXPECT_FALSE(g_found_report);
-    KEXPECT_EQ(6, args.val[0]);
-    KEXPECT_EQ(2, args.val[1]);
-    KEXPECT_EQ(2, args.val[2]);
-    KEXPECT_EQ(2, args.val[3]);
-  } else {
-    // Without TSAN_CORE, raw spinlocks don't synchronize and a race is expected.
-    KEXPECT_TRUE(wait_for_race());
-    EXPECT_REPORT_UNORDERED(kthread_current_thread()->id, args.val, 8, "?",
-                            thread_id, args.val, 8, "?");
-  }
+  // Without TSAN_CORE, raw spinlocks don't synchronize and a race is expected.
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_UNORDERED(kthread_current_thread()->id, args.val, 8, "?",
+                          thread_id, args.val, 8, "?");
   intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void* rw_value_thread_raw_spinlock_with_tsan(void* arg) {
+  KASSERT(sched_preemption_enabled());
+
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  // Non-racing accesses.  Should be OK.
+  tsan_rw_u64(&args->val[1]);
+  tsan_rw_u64(&args->val[3]);
+
+  tsan_raw_lock_with_tsan(args->raw_spin);
+  tsan_rw_u64(args->val);
+  tsan_raw_unlock_with_tsan(args->raw_spin);
+
+  tsan_raw_lock_with_tsan(args->raw_spin);
+  tsan_rw_u64(args->val);
+  tsan_raw_unlock_with_tsan(args->raw_spin);
+  return NULL;
+}
+
+static void tsan_basic_sanity_test3b_raw_spinlock(void) {
+  KTEST_BEGIN("TSAN: basic R/W heap value (two threads, raw-spin-locked --- test raw spinlock impl)");
+  mutex_test_args_t args;
+  raw_spinlock_t spin = RAW_SPIN_INIT;
+  args.raw_spin = &spin;
+  args.val = tsan_test_alloc(sizeof(uint64_t) * 4);
+  for (int i = 0; i < 4; ++i) {
+    args.val[i] = 0;
+    tsan_rw_u64(args.val + i);
+  }
+  kthread_t thread;
+  sched_enable_preemption_for_test();
+
+  KEXPECT_EQ(0, proc_thread_create(&thread, &rw_value_thread_raw_spinlock_with_tsan, &args));
+  ksleep(10);  // Let thread start to avoid create/join synchronization.
+  // Non-racing access.
+  tsan_rw_u64(&args.val[2]);
+
+  tsan_raw_lock_with_tsan(args.raw_spin);
+  tsan_rw_u64(args.val);
+  tsan_raw_unlock_with_tsan(args.raw_spin);
+
+  tsan_raw_lock_with_tsan(args.raw_spin);
+  tsan_rw_u64(args.val);
+  tsan_raw_unlock_with_tsan(args.raw_spin);
+
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  // A join should act as a synchronization point between the threads.
+  tsan_rw_u64(args.val);
+
+  sched_disable_preemption();
+
+  // Instrumented raw spinlocks synchronize and no race is expected.
+  KEXPECT_FALSE(g_found_report);
+  KEXPECT_EQ(6, args.val[0]);
+  KEXPECT_EQ(2, args.val[1]);
+  KEXPECT_EQ(2, args.val[2]);
+  KEXPECT_EQ(2, args.val[3]);
 
   tsan_test_cleanup();
 }
@@ -1429,6 +1479,7 @@ static void basic_tests(void) {
   tsan_basic_sanity_test3_spinlock();
   tsan_basic_sanity_test3_spinlock_intsafe();
   tsan_basic_sanity_test3_raw_spinlock();
+  tsan_basic_sanity_test3b_raw_spinlock();
   tsan_basic_sanity_test4();
   size1_safe_test();
   size1_memset_safe_test();

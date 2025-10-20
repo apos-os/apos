@@ -19,7 +19,8 @@ srcs = [
 ]
 
 tsan_srcs = [
-  'instrumented.c'
+  'instrumented.c',
+  'instrumented_raw_spinlock.c',
 ]
 
 subdirs = []

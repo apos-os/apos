@@ -76,4 +76,9 @@ void tsan_flag_clear(atomic_flag_t* f);
 void tsan_raw_lock(raw_spinlock_t* rsp) ACQUIRE(rsp);
 void tsan_raw_unlock(raw_spinlock_t* rsp) RELEASE(rsp);
 
+// As above, but with raw spinlock implementations that are TSAN-instrumented
+// regardless of the current mode.  Used to test raw_spinlock_t itself.
+void tsan_raw_lock_with_tsan(raw_spinlock_t* rsp) ACQUIRE(rsp);
+void tsan_raw_unlock_with_tsan(raw_spinlock_t* rsp) RELEASE(rsp);
+
 #endif
