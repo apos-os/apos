@@ -118,13 +118,16 @@ void* __tsan_memset(void* dest, int ch, uptr count) {
 
 void __tsan_func_entry(void* call_pc) {
   if (tsan_initialized()) {
-    tsan_log_func_entry(tsan_log(tsan_current_thread()),
-                        (addr_t)call_pc - SIZE_OF_JUMP_INSTR);
+    kthread_t thread = tsan_current_thread();
+    if (thread->tsan.disables > 0) return;
+    tsan_log_func_entry(tsan_log(thread), (addr_t)call_pc - SIZE_OF_JUMP_INSTR);
   }
 }
 
 void __tsan_func_exit(void) {
   if (tsan_initialized()) {
-    tsan_log_func_exit(tsan_log(tsan_current_thread()));
+    kthread_t thread = tsan_current_thread();
+    if (thread->tsan.disables > 0) return;
+    tsan_log_func_exit(tsan_log(thread));
   }
 }

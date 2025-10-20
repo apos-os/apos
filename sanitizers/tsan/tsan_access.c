@@ -151,6 +151,7 @@ static void default_report_func(const tsan_report_t* report) {
 
 static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
                              tsan_shadow_t old, tsan_shadow_t new) {
+  tsan_disable();
   char pretty_shadow[2][SHADOW_PRETTY_LEN];
   uint64_t old_u64 = *(uint64_t*)&old;
   uint64_t new_u64 = *(uint64_t*)&new;
@@ -192,6 +193,7 @@ static void tsan_report_race(kthread_t thread, addr_t pc, addr_t addr,
   klogfm(KL_GENERAL, INFO, "Previous access was: ");
   log_access(&report.race.prev);
   fn(&report);
+  tsan_restore();
 }
 
 static bool tsan_check_internal(addr_t pc, addr_t addr, uint8_t size,
