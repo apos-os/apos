@@ -25,6 +25,7 @@
 #include "proc/defint.h"
 #include "proc/defint_timer.h"
 #include "proc/fork.h"
+#include "proc/kmutex.h"
 #include "proc/kthread-queue.h"
 #include "proc/kthread.h"
 #include "proc/notification.h"
@@ -239,6 +240,7 @@ typedef struct {
   kspinlock_intsafe_t* spin_int;
   raw_spinlock_t* raw_spin;
   uint64_t* val;
+  kthread_queue_t queue;
 } mutex_test_args_t;
 
 static void tsan_basic_sanity_test(void) {
@@ -4566,6 +4568,52 @@ static void tsan_clear_history_tests(void) {
   tsan_clear_history_all_chunks_test();
 }
 
+static void* many_threads_test_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  mutex_test_args_t* args = (mutex_test_args_t*)arg;
+
+  int count = 0;
+  for (int i = 0; i < 100; ++i) {
+    if (kthread_queue_empty(&args->queue)) {
+      count++;
+    }
+    kmutex_lock(args->mu);
+    if (i % 3  == 0) {
+      scheduler_wait_on_locked(&args->queue, 10, args->mu);
+    }
+    tsan_rw_u64(args->val);
+    if (i % 2 == 0) {
+      scheduler_wake_one(&args->queue);
+    } else if (i % 5 == 0) {
+      scheduler_wake_all(&args->queue);
+    }
+    kmutex_unlock(args->mu);
+  }
+  return (void*)(intptr_t)count;
+}
+
+static void many_thread_test(void) {
+  KTEST_BEGIN("TSAN: many threads with mutex test");
+  const int kNumThreads = 10;
+  kthread_t threads[kNumThreads];
+  mutex_test_args_t args;
+  kmutex_t mu;
+  kmutex_init(&mu);
+  args.mu = &mu;
+  args.val = tsan_test_alloc(sizeof(uint64_t));
+  kthread_queue_init(&args.queue);
+
+  for (int i = 0; i < kNumThreads; ++i) {
+    KEXPECT_EQ(0, proc_thread_create(&threads[i], many_threads_test_thread,
+                                     &args));
+  }
+  for (int i = 0; i < kNumThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+  tsan_test_cleanup();
+}
+
 void tsan_test(void) {
   KTEST_SUITE_BEGIN("TSAN");
   // For most of these tests, having the legacy full-sync behavior will break
@@ -4593,6 +4641,7 @@ void tsan_test(void) {
   atomic_tests();
   atomic_hooks_tests();
   tsan_clear_history_tests();
+  many_thread_test();
 
   interrupt_set_legacy_full_sync(old_legacy);
 

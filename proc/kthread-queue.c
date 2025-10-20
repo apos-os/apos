@@ -26,6 +26,7 @@ void kthread_queue_init(kthread_queue_t* lst) {
 }
 
 // Inserts the node B into the linked list right after A.
+TSAN_CORE_FN
 static void kthread_queue_insert(kthread_data_t* A, kthread_data_t* B) {
   B->next = A->next;
   B->prev = A;
@@ -101,6 +102,7 @@ int kthread_queue_empty(kthread_queue_t* lst) {
   return result;
 }
 
+TSAN_CORE_FN
 int kthread_queue_empty_locked(kthread_queue_t* lst) {
   return lst->head == 0x0;
 }
