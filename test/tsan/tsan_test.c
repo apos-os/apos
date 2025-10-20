@@ -502,7 +502,10 @@ static void tsan_basic_sanity_test3_raw_spinlock(void) {
   }
   kthread_t thread;
   sched_enable_preemption_for_test();
+
+  intercept_reports();
   KEXPECT_EQ(0, proc_thread_create(&thread, &rw_value_thread_raw_spinlock, &args));
+  ksleep(10);  // Let thread start to avoid create/join synchronization.
   // Non-racing access.
   tsan_rw_u64(&args.val[2]);
 
@@ -514,16 +517,30 @@ static void tsan_basic_sanity_test3_raw_spinlock(void) {
   tsan_rw_u64(args.val);
   tsan_raw_unlock(args.raw_spin);
 
+  const kthread_id_t thread_id = thread->id;
   KEXPECT_EQ(NULL, kthread_join(thread));
   // A join should act as a synchronization point between the threads.
   tsan_rw_u64(args.val);
 
   sched_disable_preemption();
 
-  KEXPECT_EQ(6, args.val[0]);
-  KEXPECT_EQ(2, args.val[1]);
-  KEXPECT_EQ(2, args.val[2]);
-  KEXPECT_EQ(2, args.val[3]);
+  // TODO(aoates): write a separate test that is able to verify that
+  // raw_spinlock_t works correctly even when TSAN_ENABLE_CORE is not on.
+  if (ENABLE_TSAN_CORE) {
+    // With TSAN_CORE, raw spinlocks synchronize and no race is expected.
+    KEXPECT_FALSE(g_found_report);
+    KEXPECT_EQ(6, args.val[0]);
+    KEXPECT_EQ(2, args.val[1]);
+    KEXPECT_EQ(2, args.val[2]);
+    KEXPECT_EQ(2, args.val[3]);
+  } else {
+    // Without TSAN_CORE, raw spinlocks don't synchronize and a race is expected.
+    KEXPECT_TRUE(wait_for_race());
+    EXPECT_REPORT_UNORDERED(kthread_current_thread()->id, args.val, 8, "?",
+                            thread_id, args.val, 8, "?");
+  }
+  intercept_reports_done();
+
   tsan_test_cleanup();
 }
 
@@ -1180,7 +1197,7 @@ static void* scheduler_interrupt_thread_thread(void* arg) {
 }
 
 static void scheduler_interrupt_thread_synchronizes_test(void) {
-  KTEST_BEGIN("TSAN: scheduler_interrupt_thread() synchronizes");
+  KTEST_BEGIN("TSAN: scheduler_interrupt_thread() doesn't synchronize");
   sched_enable_preemption_for_test();
   scheduler_interrupt_thread_args_t args;
   atomic_store_relaxed(&args.flag, 0);
@@ -1193,8 +1210,211 @@ static void scheduler_interrupt_thread_synchronizes_test(void) {
     ; // Spin
   ksleep(10);
   tsan_rw_u64(args.val);
+
+  intercept_reports();
   scheduler_interrupt_thread(thread);
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread->id, args.val, 8, "?",
+                        TID_ANY, args.val, 8, "w");
+  intercept_reports_done();
   KEXPECT_EQ(NULL, kthread_join(thread));
+
+  sched_disable_preemption();
+  tsan_test_cleanup();
+}
+
+typedef struct {
+  uint64_t* shared_val;
+  atomic32_t flag;
+} scheduler_wait_on_separate_queues_args_t;
+
+// Thread 1 that locks a mutex, modifies a value, then waits on a queue.
+static void* scheduler_wait_thread1(void* arg) {
+  scheduler_wait_on_separate_queues_args_t* args =
+      (scheduler_wait_on_separate_queues_args_t*)arg;
+  KASSERT(sched_preemption_enabled());
+  ksleep(10);
+
+  // Create local mutex and queue.
+  kmutex_t mu;
+  kmutex_init(&mu);
+  kthread_queue_t queue;
+  kthread_queue_init(&queue);
+
+  // Lock mutex, modify value, then wait.
+  kmutex_lock(&mu);
+  tsan_rw_u64(args->shared_val);
+  atomic_store_relaxed(&args->flag, 1);
+  // Wait on the queue.
+  KEXPECT_EQ(SWAIT_INTERRUPTED, scheduler_wait_on_interruptable(&queue, 1000));
+  kmutex_unlock(&mu);
+
+  return NULL;
+}
+
+// Thread 2 that locks a mutex, waits on a queue, then modifies a value.
+static void* scheduler_wait_thread2(void* arg) {
+  scheduler_wait_on_separate_queues_args_t* args =
+      (scheduler_wait_on_separate_queues_args_t*)arg;
+  KASSERT(sched_preemption_enabled());
+  ksleep(10);
+
+  // Wait for thread 1 to start.
+  while (!atomic_load_relaxed(&args->flag))
+    ; // Spin
+
+  // Create local mutex and queue.
+  kmutex_t mu;
+  kmutex_init(&mu);
+  kthread_queue_t queue;
+  kthread_queue_init(&queue);
+
+  // Lock mutex, wait, then modify value.
+  kmutex_lock(&mu);
+  // Wait on the queue.
+  KEXPECT_EQ(SWAIT_INTERRUPTED, scheduler_wait_on_interruptable(&queue, 1000));
+  tsan_rw_u64(args->shared_val);
+  kmutex_unlock(&mu);
+
+  return NULL;
+}
+
+static void scheduler_wait_on_separate_queues_test(void) {
+  KTEST_BEGIN("TSAN: scheduler_wait_on() on different queues doesn't synchronize");
+  sched_enable_preemption_for_test();
+
+  scheduler_wait_on_separate_queues_args_t args;
+  args.shared_val = TS_MALLOC(uint64_t);
+  *args.shared_val = 0;
+  tsan_rw_u64(args.shared_val);
+  atomic_store_relaxed(&args.flag, 0);
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &scheduler_wait_thread1, &args));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &scheduler_wait_thread2, &args));
+
+  // Wait for the threads to be sleeping.
+  while (!atomic_load_relaxed(&args.flag)) {
+    ksleep(10);
+  }
+  ksleep(20);  // Make sure they get into the scheduler_wait() call.
+  scheduler_interrupt_thread(thread2);
+
+  // The two threads should race on the shared value
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_THREADS(thread2->id, args.shared_val, 8, "?",
+                        thread1->id, args.shared_val, 8, "w");
+
+  scheduler_interrupt_thread(thread1);
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  sched_disable_preemption();
+  tsan_test_cleanup();
+}
+
+typedef struct {
+  uint64_t* shared_val;
+  atomic32_t flag1;
+  atomic32_t flag2;
+  atomic32_t flag3;
+  kthread_t sleeper1;
+  kthread_t sleeper2;
+} scheduler_interrupt_different_threads_args_t;
+
+// Sleeper thread that waits to be interrupted.
+static void* sleeper_thread(void* arg) {
+  atomic32_t* flag = (atomic32_t*)arg;
+  kspinlock_t lock = KSPINLOCK_NORMAL_INIT;
+  kthread_queue_t queue;
+  kthread_queue_init(&queue);
+  kspin_lock(&lock);
+  atomic_store_relaxed(flag, 1);
+  // Will be interrupted.
+  scheduler_wait_on_splocked(&queue, 500, &lock);
+  kspin_unlock(&lock);
+  return NULL;
+}
+
+// Interrupter thread 1 that modifies the shared value before interrupting sleeper1.
+static void* interrupter_thread1(void* arg) {
+  scheduler_interrupt_different_threads_args_t* args =
+      (scheduler_interrupt_different_threads_args_t*)arg;
+
+  // Wait for sleeper1 to be ready.
+  while (!atomic_load_relaxed(&args->flag1))
+    ; // Spin
+  ksleep(10);
+
+  // Modify shared value before interrupting.
+  tsan_rw_u64(args->shared_val);
+
+  // Interrupt sleeper1.
+  scheduler_interrupt_thread(args->sleeper1);
+
+  // Let interrupter2 run.
+  atomic_store_relaxed(&args->flag3, 1);
+
+  return NULL;
+}
+
+// Interrupter thread 2 that interrupts sleeper2 before modifying the shared value.
+static void* interrupter_thread2(void* arg) {
+  scheduler_interrupt_different_threads_args_t* args =
+      (scheduler_interrupt_different_threads_args_t*)arg;
+
+  // Wait for sleeper2 to be ready and interrupter1 to run.
+  while (!atomic_load_relaxed(&args->flag2) ||
+         !atomic_load_relaxed(&args->flag3))
+    ; // Spin
+  ksleep(10);
+
+  // Interrupt sleeper2 before modifying.
+  scheduler_interrupt_thread(args->sleeper2);
+
+  // Modify shared value.
+  tsan_rw_u64(args->shared_val);
+
+  return NULL;
+}
+
+static void scheduler_interrupt_different_threads_test(void) {
+  KTEST_BEGIN("TSAN: interrupting different threads doesn't synchronize");
+  sched_enable_preemption_for_test();
+
+  scheduler_interrupt_different_threads_args_t args;
+  args.shared_val = TS_MALLOC(uint64_t);
+  *args.shared_val = 0;
+  tsan_rw_u64(args.shared_val);
+  atomic_store_relaxed(&args.flag1, 0);
+  atomic_store_relaxed(&args.flag2, 0);
+  atomic_store_relaxed(&args.flag3, 0);
+
+  // Create sleeper threads
+  KEXPECT_EQ(0, proc_thread_create(&args.sleeper1, &sleeper_thread, &args.flag1));
+  KEXPECT_EQ(0, proc_thread_create(&args.sleeper2, &sleeper_thread, &args.flag2));
+
+  // Create interrupter threads
+  kthread_t interrupter1, interrupter2;
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&interrupter1, &interrupter_thread1, &args));
+  KEXPECT_EQ(0, proc_thread_create(&interrupter2, &interrupter_thread2, &args));
+
+  kthread_id_t int1_id = interrupter1->id;
+  kthread_id_t int2_id = interrupter2->id;
+
+  // Join all threads
+  KEXPECT_EQ(NULL, kthread_join(interrupter1));
+  KEXPECT_EQ(NULL, kthread_join(interrupter2));
+  KEXPECT_EQ(NULL, kthread_join(args.sleeper1));
+  KEXPECT_EQ(NULL, kthread_join(args.sleeper2));
+
+  // The two interrupter threads should race.
+  EXPECT_REPORT_THREADS(int2_id, args.shared_val, 8, "?",
+                        int1_id, args.shared_val, 8, "w");
+  intercept_reports_done();
 
   sched_disable_preemption();
   tsan_test_cleanup();
@@ -1226,8 +1446,12 @@ static void basic_tests(void) {
   unaligned_overlap_8byte_conflict_test();
 
   kmutex_lock_loop_test();
+}
 
+static void scheduler_tests(void) {
   scheduler_interrupt_thread_synchronizes_test();
+  scheduler_interrupt_different_threads_test();
+  scheduler_wait_on_separate_queues_test();
 }
 
 static void interrupt_fn(void* arg) {
@@ -1801,13 +2025,9 @@ static void defint_timer_race_test1(void) {
   KEXPECT_EQ(0, proc_thread_create(&thread2, &defint_timer_test_thread2, &args));
 
   // The two threads should race.
-  // TODO(aoates): fix this behavior when we don't synch on the run queue.
-#if 0
   KEXPECT_TRUE(wait_for_race());
   EXPECT_REPORT_THREADS(thread2->id, args.val, 8, "?",
                         thread1->id, args.val, 8, "w");
-#endif
-  KEXPECT_FALSE(wait_for_race());
   KEXPECT_EQ(NULL, kthread_join(thread1));
   KEXPECT_EQ(NULL, kthread_join(thread2));
   intercept_reports_done();
@@ -4354,6 +4574,7 @@ void tsan_test(void) {
   // seeing races.
   bool old_legacy = interrupt_set_legacy_full_sync(false);
   basic_tests();
+  scheduler_tests();
   interrupt_tests();
   defint_tests();
   stack_tests();

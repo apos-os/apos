@@ -20,6 +20,7 @@
 #include "proc/raw_spinlock.h"
 #include "proc/scheduler.h"
 #include "proc/spinlock.h"
+#include "sanitizers/tsan/spinlock_core.h"
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_lock.h"
@@ -61,6 +62,7 @@ void _kmutex_acq(kmutex_t* m) ACQUIRE(m) NO_THREAD_SAFETY_ANALYSIS {}
 static inline ALWAYS_INLINE
 void _kmutex_rel(kmutex_t* m) RELEASE(m) NO_THREAD_SAFETY_ANALYSIS {}
 
+TSAN_CORE_FN
 void kmutex_lock(kmutex_t* m) {
   // We should never be blocking if we're holding a spinlock.
   KASSERT_DBG(kthread_current_thread()->spinlocks_held == 0);
@@ -133,6 +135,7 @@ void kmutex_lock(kmutex_t* m) {
   _kmutex_acq(m);
 }
 
+TSAN_CORE_FN
 static void kmutex_unlock_internal(kmutex_t* m, bool yield) RELEASE(m) {
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   list_remove(&kthread_current_thread()->mutexes_held, &m->link);

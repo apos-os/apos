@@ -162,6 +162,13 @@ void tsan_thread_create(kthread_t thread) {
     KASSERT_DBG(thread->stacklen % PAGE_SIZE == 0);
     tsan_mark_stack((addr_t)thread->stack, thread->stacklen, true);
   }
+
+  // Clear the access history of the thread object itself --- this prevents
+  // instrumented atomic accesses in scheduler code from racing with previous
+  // uses of this memory.
+  if (!ENABLE_TSAN_CORE && tsan_initialized()) {
+    tsan_clear_history((addr_t)thread, sizeof(struct kthread_data));
+  }
 }
 
 void tsan_thread_destroy(kthread_t thread) {

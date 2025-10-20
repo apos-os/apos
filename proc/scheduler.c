@@ -242,6 +242,9 @@ kthread_t scheduler_pick_next(kthread_queue_t* queue, bool prefer_runnable)
     }
 
     // Found a candidate, ref it before unlocking queue.
+    if (ENABLE_TSAN_NON_CORE) {
+      tsan_disable();  // Don't want to synchronize on the candidate refcount.
+    }
     kthread_ref(candidate);
     raw_spin_unlock(&queue->spin);
 
@@ -252,6 +255,9 @@ kthread_t scheduler_pick_next(kthread_queue_t* queue, bool prefer_runnable)
       // re-lock the queue (in order after the thread's lock), and return it.
       kthread_unref(candidate);
       raw_spin_lock(&queue->spin);
+      if (ENABLE_TSAN_NON_CORE) {
+        tsan_restore();
+      }
       return candidate;
     }
 
@@ -259,6 +265,9 @@ kthread_t scheduler_pick_next(kthread_queue_t* queue, bool prefer_runnable)
     tsc_kspin_unlock_int(&candidate->spin);
     kthread_unref(candidate);
     raw_spin_lock(&queue->spin);
+    if (ENABLE_TSAN_NON_CORE) {
+      tsan_restore();
+    }
   }
 }
 
