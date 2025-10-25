@@ -60,6 +60,9 @@ static tsan_lock_data_t g_implicit_scheduler_tsan_lock;
 #endif
 
 static void* idle_thread_body(void* arg) {
+#if ENABLE_TSAN_NON_CORE
+  tsan_disable();
+#endif
   kthread_t me = kthread_current_thread();
   sched_disable_preemption();
   while(1) {
@@ -69,6 +72,9 @@ static void* idle_thread_body(void* arg) {
 
     scheduler_yield_no_reschedule();
   }
+#if ENABLE_TSAN_NON_CORE
+  tsan_restore();
+#endif
   return 0;
 }
 
