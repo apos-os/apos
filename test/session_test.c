@@ -887,7 +887,7 @@ static void write_from_bg_test_inner(void* arg) {
   ksigaddset(&ttou_mask, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));
 
-  char buf;
+  char buf = 'x';
   int tty_fd = open_tty(test_tty, VFS_O_WRONLY);
 
   kpid_t child = proc_fork(&do_nothing, NULL);

@@ -539,6 +539,7 @@ static void sendto_test(void) {
 
   KTEST_BEGIN("net_sendto(UDP): address on connected socket");
   struct sockaddr_in dst_addr;
+  kmemset(&dst_addr, 0, sizeof(dst_addr));
   KEXPECT_EQ(-EISCONN,
              net_sendto(sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
                         sizeof(dst_addr)));

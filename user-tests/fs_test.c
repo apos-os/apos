@@ -134,7 +134,7 @@ static void mount_test(void) {
                  mount("", "_mount_test", "testfs", 0, (void*)INVALID_ADDR, 1));
   KEXPECT_ERRNO(EINVAL,
                 mount("", "_mount_test", "testfs", 0, (void*)INVALID_ADDR, -1));
-  int scratch;
+  int scratch = 0;
   KEXPECT_SIGNAL(SIGSEGV,
                  mount("", "_mount_test", "testfs", 0, &scratch, 1000000));
   KEXPECT_ERRNO(EINVAL, mount("", "_mount_test", "testfs", 0, &scratch, -1));

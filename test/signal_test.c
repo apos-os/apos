@@ -115,6 +115,7 @@ static void ksigismember_test(void) {
   KTEST_BEGIN("ksigismember() invalid signum test");
 
   ksigset_t set;
+  ksigemptyset(&set);
   KEXPECT_EQ(-EINVAL, ksigismember(&set, APOS_SIGNULL));
   KEXPECT_EQ(-EINVAL, ksigismember(&set, -1));
   KEXPECT_EQ(-EINVAL, ksigismember(&set, APOS_SIGMAX + 1));
