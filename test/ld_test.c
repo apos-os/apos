@@ -481,11 +481,11 @@ static void three_thread_test2(void) {
   KEXPECT_EQ(2, data[1].out_len);
   KEXPECT_EQ(0, kstrncmp(data[1].buf, "c\n", 2));
 
+  kthread_join(threads[2]);
   KEXPECT_EQ(-EAGAIN, data[2].out_len);
 
   ld_provide(g_ld, 'd');
   ld_provide(g_ld, '\n');
-  kthread_join(threads[2]);
 
   // TODO(aoates): fix this to differentiate between empty-buffer EOF (which
   // *should* wake up all threads) and '\n' which is read by one thread, which
