@@ -23,6 +23,7 @@
 #include "common/kprintf.h"
 #include "common/math.h"
 #include "dev/dev.h"
+#include "dev/interrupts.h"
 #include "dev/ramdisk/ramdisk.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
@@ -33,6 +34,7 @@
 #include "proc/fork.h"
 #include "proc/kthread-internal.h"
 #include "proc/limit.h"
+#include "proc/preemption_hook.h"
 #include "proc/signal/signal.h"
 #include "proc/wait.h"
 #include "proc/process.h"
@@ -62,6 +64,11 @@
     KEXPECT_EQ((count), vfs_get_vnode_refcount_for_path(path))
 
 #define RWX "rwxrwxrwx"
+
+// TODO(aoates): delete this hack
+#if !ENABLE_TSAN
+bool interrupt_set_legacy_full_sync(bool full_sync) { return false; }
+#endif
 
 // TODO(aoates): put this in some sort of proper test context data structure.
 static int g_orig_root_vnode_refcount = -1;
@@ -95,8 +102,7 @@ static int get_file_refcount(int fd) {
 
 typedef struct {
   const char* path;
-  // TODO(aoates): use spinlock, mutex, or notification.
-  bool done;
+  atomic32_t done;
 } chaos_args_t;
 
 // A thread that just tries to get mutexes locked to force other threads to
@@ -111,7 +117,7 @@ static void* chaos_helper(void* arg) {
   KEXPECT_EQ(0, result);
   const apos_ino_t dir_ino = stat.st_ino;
   vnode_t* dir_vnode = vfs_get(vfs_get_root_fs(), dir_ino);
-  while (!args->done) {
+  while (!atomic_load_relaxed(&args->done)) {
     kmutex_lock(&dir_vnode->mutex);
     scheduler_yield();
     kmutex_unlock(&dir_vnode->mutex);
@@ -635,6 +641,8 @@ static void vfs_open_create_race_test(void) {
   KTEST_BEGIN("vfs_open() creation race test");
   kthread_t threads[THREAD_SAFETY_TEST_THREADS];
   kthread_t chaos_thread;
+  sched_enable_preemption_for_test();
+  bool old_legacy = interrupt_set_legacy_full_sync(false);
 
   // Set things up.
   KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
@@ -645,17 +653,19 @@ static void vfs_open_create_race_test(void) {
   }
   chaos_args_t chaos_args;
   chaos_args.path = "thread_safety_test";
-  chaos_args.done = false;
+  atomic_store_relaxed(&chaos_args.done, false);
   KEXPECT_EQ(0, proc_thread_create(&chaos_thread, &chaos_helper, &chaos_args));
 
   for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
     kthread_join(threads[i]);
   }
-  chaos_args.done = true;
+  atomic_store_relaxed(&chaos_args.done, true);
   kthread_join(chaos_thread);
 
   // Clean up
   KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
+  sched_disable_preemption();
+  interrupt_set_legacy_full_sync(old_legacy);
 }
 
 static void* vfs_get_fifo_socket_test_func(void* arg) {
@@ -813,9 +823,9 @@ static void* unlink_race_test_func1(void* arg) {
 }
 
 static void* unlink_race_test_func2(void* arg) {
-  // TODO(aoates): use lock, atomic, or notification.
-  bool* done = (bool*)arg;
-  while (!*done) {
+  atomic32_t* done = (atomic32_t*)arg;
+  KEXPECT_TRUE(sched_preemption_enabled());
+  while (!atomic_load_relaxed(done)) {
     int result = vfs_unlink("thread_safety_test/file2");
     if (result < 0) {
       KEXPECT_EQ(-ENOENT, result);
@@ -829,6 +839,8 @@ static void unlink_race_test(void) {
   KTEST_BEGIN("vfs_unlink() race test");
   kthread_t creating_thread, chaos_thread;
   kthread_t unlink_threads[THREAD_SAFETY_TEST_THREADS];
+  sched_enable_preemption_for_test();
+  bool old_legacy = interrupt_set_legacy_full_sync(false);
 
   // Set things up.
   KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
@@ -836,7 +848,7 @@ static void unlink_race_test(void) {
 
   chaos_args_t chaos_args;
   chaos_args.path = "thread_safety_test";
-  chaos_args.done = false;
+  atomic_store_relaxed(&chaos_args.done, false);
   KEXPECT_EQ(0, proc_thread_create(&chaos_thread, &chaos_helper, &chaos_args));
 
   KEXPECT_EQ(
@@ -849,7 +861,7 @@ static void unlink_race_test(void) {
   }
 
   kthread_join(creating_thread);
-  chaos_args.done = true;
+  atomic_store_relaxed(&chaos_args.done, true);
   kthread_join(chaos_thread);
   for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
     kthread_join(unlink_threads[i]);
@@ -858,6 +870,8 @@ static void unlink_race_test(void) {
   // Clean up
   KEXPECT_EQ(0, vfs_unlink("thread_safety_test/file1"));
   KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
+  sched_disable_preemption();
+  interrupt_set_legacy_full_sync(old_legacy);
 }
 
 static void* rmdir_race_test_func1(void* arg) {
@@ -874,9 +888,9 @@ static void* rmdir_race_test_func1(void* arg) {
 }
 
 static void* rmdir_race_test_func2(void* arg) {
-  // TODO(aoates): use lock, atomic, or notification.
-  bool* done = (bool*)arg;
-  while (!*done) {
+  atomic32_t* done = (atomic32_t*)arg;
+  KEXPECT_TRUE(sched_preemption_enabled());
+  while (!atomic_load_relaxed(done)) {
     int result = vfs_rmdir("thread_safety_test/dir");
     if (result < 0) {
       KEXPECT_EQ(-ENOENT, result);
@@ -890,13 +904,15 @@ static void rmdir_race_test(void) {
   KTEST_BEGIN("vfs_rmdir() race test");
   kthread_t creating_thread, chaos_thread;
   kthread_t rmdir_threads[THREAD_SAFETY_TEST_THREADS];
+  sched_enable_preemption_for_test();
+  bool old_legacy = interrupt_set_legacy_full_sync(false);
 
   // Set things up.
   KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
 
   chaos_args_t chaos_args;
   chaos_args.path = "thread_safety_test";
-  chaos_args.done = false;
+  atomic_store_relaxed(&chaos_args.done, false);
   KEXPECT_EQ(0, proc_thread_create(&chaos_thread, &chaos_helper, &chaos_args));
 
   KEXPECT_EQ(
@@ -908,7 +924,7 @@ static void rmdir_race_test(void) {
   }
 
   kthread_join(creating_thread);
-  chaos_args.done = true;
+  atomic_store_relaxed(&chaos_args.done, true);
   kthread_join(chaos_thread);
   for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
     kthread_join(rmdir_threads[i]);
@@ -916,6 +932,8 @@ static void rmdir_race_test(void) {
 
   // Clean up
   KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
+  sched_disable_preemption();
+  interrupt_set_legacy_full_sync(old_legacy);
 }
 
 static void get_path_test(void) {
@@ -3374,9 +3392,8 @@ static void symlink_testE(void) {
 }
 
 static void* vfs_swap_test_helper(void* arg) {
-  // TODO(aoates): use spinlock, mutex, or notification.
-  const bool* done = (const bool*)arg;
-  while (!(*done)) {
+  const atomic32_t* done = (const atomic32_t*)arg;
+  while (!atomic_load_relaxed(done)) {
     KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/target"));
     KEXPECT_EQ(0, vfs_symlink("file2", "symlink_swap_test/target"));
     scheduler_yield();
@@ -3390,6 +3407,8 @@ static void* vfs_swap_test_helper(void* arg) {
 
 static void vfs_open_symlink_swap_test(void) {
   KTEST_BEGIN("vfs: file replaced with symlink during open()");
+  sched_enable_preemption_for_test();
+  bool old_legacy = interrupt_set_legacy_full_sync(false);
   // Setup two files that will stay put.  Link the first file and a create a
   // symlink to that linked version.
   KEXPECT_EQ(0, vfs_mkdir("symlink_swap_test", VFS_S_IRWXU));
@@ -3408,7 +3427,7 @@ static void vfs_open_symlink_swap_test(void) {
   kthread_t thread1, thread2;
   chaos_args_t args;
   args.path = "symlink_swap_test";
-  args.done = false;
+  atomic_store_relaxed(&args.done, false);
   KEXPECT_EQ(0,
              proc_thread_create(&thread1, &vfs_swap_test_helper, &args.done));
   KEXPECT_EQ(0, proc_thread_create(&thread2, &chaos_helper, &args));
@@ -3429,7 +3448,7 @@ static void vfs_open_symlink_swap_test(void) {
     KEXPECT_EQ(0, vfs_close(fd));
   }
 
-  args.done = true;
+  atomic_store_relaxed(&args.done, true);
   kthread_join(thread1);
   kthread_join(thread2);
 
@@ -3438,6 +3457,8 @@ static void vfs_open_symlink_swap_test(void) {
   KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/file1"));
   KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/file2"));
   KEXPECT_EQ(0, vfs_rmdir("symlink_swap_test"));
+  sched_disable_preemption();
+  interrupt_set_legacy_full_sync(old_legacy);
 }
 
 static void symlink_test(void) {
@@ -6134,12 +6155,13 @@ typedef struct {
   int num_dests;
   int rename_successes;
   int rename_attempts;
-  bool* done;
+  atomic32_t* done;
 } rename_simultaneous_race_test_args;
 
 static void* rename_simultaneous_race_test_func1(void* arg) {
   rename_simultaneous_race_test_args* args =
       (rename_simultaneous_race_test_args*)arg;
+  KEXPECT_TRUE(sched_preemption_enabled());
   for (int i = 0; i < args->creations; ++i) {
     // Usually create new files, but occasionally link existing ones.
     if (i % 5 != 0) {
@@ -6161,7 +6183,7 @@ static void* rename_simultaneous_race_test_func1(void* arg) {
     }
     apos_stat_t stat;
     while (vfs_lstat("thread_safety_test/A/src", &stat) != -ENOENT) {
-      scheduler_yield();
+      sched_preempt_me(10);
     }
   }
   return 0;
@@ -6170,16 +6192,16 @@ static void* rename_simultaneous_race_test_func1(void* arg) {
 static void* rename_simultaneous_race_test_func2(void* arg) {
   rename_simultaneous_race_test_args* args =
       (rename_simultaneous_race_test_args*)arg;
+  KEXPECT_TRUE(sched_preemption_enabled());
   char dest_path[40];
   const char* dest_dir = (kthread_current_thread()->id % 2) ? "A" : "B";
   ksprintf(dest_path, "thread_safety_test/%s/dst%d", dest_dir,
            kthread_current_thread()->id % args->num_dests);
-  // TODO(aoates): use lock, atomic, or notification.
   bool me_done = false;
   uint32_t rand = fnv_hash((uint32_t)kthread_current_thread()->id);
   while (!me_done) {
     // Once the creating thread finishes, try one final rename.
-    if (*(args->done)) me_done = true;
+    if (atomic_load_relaxed(args->done)) me_done = true;
 
     rand = fnv_hash(rand);
     int result;
@@ -6209,7 +6231,6 @@ static void* rename_simultaneous_race_test_func2(void* arg) {
         KEXPECT_EQ(-ENOENT, result);
       }
     }
-    scheduler_yield();
   }
   return 0;
 }
@@ -6221,6 +6242,8 @@ static void* rename_simultaneous_race_test_func2(void* arg) {
 static void rename_simultaneous_race_test(void) {
   const int kNumRenameThreads = THREAD_SAFETY_TEST_THREADS;
   KTEST_BEGIN("vfs_rename() simultaneous race test");
+  sched_enable_preemption_for_test();
+  bool old_legacy = interrupt_set_legacy_full_sync(false);
   kthread_t creating_thread, chaos_thread[2];
   kthread_t rename_threads[kNumRenameThreads];
 
@@ -6237,9 +6260,9 @@ static void rename_simultaneous_race_test(void) {
 
   chaos_args_t chaos_args[2];
   chaos_args[0].path = "thread_safety_test/A";
-  chaos_args[0].done = false;
+  atomic_store_relaxed(&chaos_args[0].done, false);
   chaos_args[1].path = "thread_safety_test/B";
-  chaos_args[1].done = false;
+  atomic_store_relaxed(&chaos_args[1].done, false);
   for (int i = 0; i < 2; ++i) {
     KEXPECT_EQ(
         0, proc_thread_create(&chaos_thread[i], &chaos_helper, &chaos_args[i]));
@@ -6263,7 +6286,7 @@ static void rename_simultaneous_race_test(void) {
 
   kthread_join(creating_thread);
   for (int i = 0; i < 2; ++i) {
-    chaos_args[i].done = true;
+    atomic_store_relaxed(&chaos_args[i].done, true);
     kthread_join(chaos_thread[i]);
   }
   for (int i = 0; i < kNumRenameThreads; ++i) {
@@ -6293,6 +6316,8 @@ static void rename_simultaneous_race_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("thread_safety_test/A"));
   KEXPECT_EQ(0, vfs_rmdir("thread_safety_test/B"));
   KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
+  sched_disable_preemption();
+  interrupt_set_legacy_full_sync(old_legacy);
 }
 
 typedef struct {
@@ -6303,7 +6328,7 @@ typedef struct {
   int unlink_attempts;
   int link_successes;
   int link_attempts;
-  bool* done;
+  atomic32_t done;
 } link_simultaneous_race_test_args;
 
 // Have several length paths to add some randomness to first-fitting-dirent
@@ -6321,6 +6346,7 @@ const char* kLinkSimulDestRoots[kNumLinkSimulDestRoots] = {
 static void* link_simultaneous_race_test_func1(void* arg) {
   link_simultaneous_race_test_args* args =
       (link_simultaneous_race_test_args*)arg;
+  KEXPECT_TRUE(sched_preemption_enabled());
   uint32_t rand = fnv_hash((uint32_t)(intptr_t)args);
   char dest[100];
   while (args->unlink_successes < args->unlinks_target) {
@@ -6333,7 +6359,6 @@ static void* link_simultaneous_race_test_func1(void* arg) {
     // Only reader/writer of these fields, no need to lock.
     args->unlink_attempts++;
     if (result == 0) args->unlink_successes++;
-    scheduler_yield();
   }
   return 0;
 }
@@ -6343,11 +6368,11 @@ static void* link_simultaneous_race_test_func2(void* arg) {
       (link_simultaneous_race_test_args*)arg;
   const char* kSourcePaths[2] = {"thread_safety_test/file1",
                                  "thread_safety_test/file2"};
+  KEXPECT_TRUE(sched_preemption_enabled());
 
-  // TODO(aoates): use lock, atomic, or notification.
   uint32_t rand = fnv_hash((uint32_t)kthread_current_thread()->id);
   char dest[100];
-  while (!(*args->done)) {
+  while (!atomic_load_relaxed(&args->done)) {
     rand = fnv_hash(rand);
     const char* src = kSourcePaths[rand % 2];
     rand = fnv_hash(rand);
@@ -6363,8 +6388,6 @@ static void* link_simultaneous_race_test_func2(void* arg) {
     args->link_attempts++;
     if (result == 0) args->link_successes++;
     kspin_unlock(&args->lock);
-
-    scheduler_yield();
   }
   return 0;
 }
@@ -6379,6 +6402,8 @@ static void link_simultaneous_race_test(void) {
   const int kNumDests = 5;
   const int kNumLinkThreads = THREAD_SAFETY_TEST_THREADS;
   KTEST_BEGIN("vfs_link() simultaneous race test");
+  sched_enable_preemption_for_test();
+  bool old_legacy = interrupt_set_legacy_full_sync(false);
   // Note: we specifically _don't_ want chaos threads that lock files for this
   // test --- it introduces sequencing between the threads that makes the test
   // ineffective.
@@ -6393,9 +6418,8 @@ static void link_simultaneous_race_test(void) {
   create_file("thread_safety_test/file2", "rwxrwxrwx");
   char dest[100];
 
-  bool done = false;
   link_simultaneous_race_test_args args;
-  args.done = &done;
+  atomic_store_relaxed(&args.done, false);
   args.lock = KSPINLOCK_NORMAL_INIT;
   args.unlink_successes = args.unlink_attempts = args.link_attempts =
       args.link_successes = 0;
@@ -6411,7 +6435,7 @@ static void link_simultaneous_race_test(void) {
   }
 
   kthread_join(creating_thread);
-  done = true;
+  atomic_store_relaxed(&args.done, true);
   for (int i = 0; i < kNumLinkThreads; ++i) {
     kthread_join(link_threads[i]);
   }
@@ -6438,6 +6462,8 @@ static void link_simultaneous_race_test(void) {
   KEXPECT_EQ(0, vfs_unlink("thread_safety_test/file2"));
   KEXPECT_EQ(0, vfs_rmdir("thread_safety_test/B"));
   KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
+  sched_disable_preemption();
+  interrupt_set_legacy_full_sync(old_legacy);
 }
 
 static void* fd_concurrent_close_test_helper(void* arg) {
@@ -6656,14 +6682,14 @@ typedef enum {
 } test_create_type_t;
 
 typedef struct {
-  bool done;
+  atomic32_t done;
   test_create_type_t type;
 } mtcdrt_args_t;
 
 static void* multithread_create_delete_race_test_make_func(void* arg) {
   mtcdrt_args_t* args = (mtcdrt_args_t*)arg;
-  // TODO(aoates): use atomic or notification.
-  while (!args->done) {
+  KEXPECT_TRUE(sched_preemption_enabled());
+  while (!atomic_load_relaxed(&args->done)) {
     int result;
     switch (args->type) {
       case TEST_CREATE_MKDIR:
@@ -6687,8 +6713,6 @@ static void* multithread_create_delete_race_test_make_func(void* arg) {
     if (result != 0) {
       KEXPECT_EQ(-EEXIST, result);
     }
-    // TODO(aoates): remove this when preemption or randomized scheduler is in.
-    scheduler_yield();
   }
   return 0x0;
 }
@@ -6696,9 +6720,10 @@ static void* multithread_create_delete_race_test_make_func(void* arg) {
 // Helper to do a create/delete race test using vfs_unlink() to remove the path.
 static void do_create_unlink_race_test(int iters, const char* path,
                                        test_create_type_t type) {
+  sched_enable_preemption_for_test();
   kthread_t create_thread;
   mtcdrt_args_t args;
-  args.done = false;
+  atomic_store_relaxed(&args.done, false);
   args.type = type;
   KEXPECT_EQ(0, proc_thread_create(
                     &create_thread,
@@ -6712,24 +6737,25 @@ static void do_create_unlink_race_test(int iters, const char* path,
     } else {
       KEXPECT_EQ(-ENOENT, result);
     }
-    // TODO(aoates): remove this when preemption or randomized scheduler is in.
-    scheduler_yield();
   }
-  args.done = true;
+  atomic_store_relaxed(&args.done, true);
   kthread_join(create_thread);
   vfs_unlink(path);
+  sched_disable_preemption();
 }
 
 // A series of tests where one thread continuously creates entries (files,
 // directories, symlinks, etc), while another deletes them.
 static void multithread_create_delete_race_test(void) {
   KTEST_BEGIN("vfs: create+delete race tests (mkdir/rmdir)");
+  sched_enable_preemption_for_test();
+  bool old_legacy = interrupt_set_legacy_full_sync(false);
   const int kIters = THREAD_SAFETY_TEST_ITERS / 2;
   KEXPECT_EQ(0, vfs_mkdir("vfs_race_test", VFS_S_IRWXU));
 
   kthread_t create_thread;
   mtcdrt_args_t args;
-  args.done = false;
+  atomic_store_relaxed(&args.done, false);
   args.type = TEST_CREATE_MKDIR;
   KEXPECT_EQ(0, proc_thread_create(
                     &create_thread,
@@ -6743,12 +6769,11 @@ static void multithread_create_delete_race_test(void) {
     } else {
       KEXPECT_EQ(-ENOENT, result);
     }
-    // TODO(aoates): remove this when preemption or randomized scheduler is in.
-    scheduler_yield();
   }
-  args.done = true;
+  atomic_store_relaxed(&args.done, true);
   kthread_join(create_thread);
   vfs_rmdir("vfs_race_test/dir");
+  sched_disable_preemption();
 
 
   KTEST_BEGIN("vfs: create+delete race tests (mknod/unlink)");
@@ -6766,6 +6791,7 @@ static void multithread_create_delete_race_test(void) {
   // comprehensive.
 
   KEXPECT_EQ(0, vfs_rmdir("vfs_race_test"));
+  interrupt_set_legacy_full_sync(old_legacy);
 }
 
 // TODO(aoates): multi-threaded test for creating a file in directory that is
@@ -6881,4 +6907,5 @@ void vfs_test(void) {
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
 
   KEXPECT_EQ(0, vfs_chdir(orig_cwd));
+  KEXPECT_FALSE(sched_preemption_enabled());
 }
