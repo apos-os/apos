@@ -81,4 +81,9 @@ void tsan_raw_unlock(raw_spinlock_t* rsp) RELEASE(rsp);
 void tsan_raw_lock_with_tsan(raw_spinlock_t* rsp) ACQUIRE(rsp);
 void tsan_raw_unlock_with_tsan(raw_spinlock_t* rsp) RELEASE(rsp);
 
+// Calls the given function with a pointer to an initialized stack variable,
+// then modifies the stack memory, then calls func(NULL).  Returns the address
+// that is raced on.
+addr_t tsan_access_stack_var(void (*func)(void*, uint64_t*), void* arg);
+
 #endif

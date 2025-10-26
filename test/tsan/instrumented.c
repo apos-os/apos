@@ -206,3 +206,19 @@ void tsan_raw_lock(raw_spinlock_t* rsp) {
 void tsan_raw_unlock(raw_spinlock_t* rsp) {
   raw_spin_unlock(rsp);
 }
+
+typedef struct {
+  uint64_t data;
+} u64_struct_t;
+
+addr_t tsan_access_stack_var(void (*func)(void* arg, uint64_t*), void* arg) {
+  u64_struct_t struct_var[2];
+  struct_var[0].data = struct_var[1].data = 0;
+  func(arg, (uint64_t*)&struct_var[0]);
+  for (int i = 0; i < 2; ++i) {
+    struct_var[i].data = 1;
+  }
+  func(arg, NULL);
+  addr_t result = (addr_t)&struct_var[0].data;
+  return result;
+}

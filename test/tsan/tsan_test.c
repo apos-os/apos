@@ -2261,9 +2261,46 @@ static void defint_stack_test(void) {
 // TODO(tsan): write a test for the opposite race --- a thread uses its stack,
 // then an interrupt fires.  Hard to do currently.
 
+static void* stack_aggregate_thread2(void* arg) {
+  ksleep(10);
+  tsan_rw_u64((uint64_t*)arg);
+  return NULL;
+}
+
+static void stack_aggregate_func(void* arg, uint64_t* mem) {
+  kthread_t* thread = (kthread_t*)arg;
+  if (mem == 0) {
+    KEXPECT_EQ(NULL, kthread_join(*thread));
+  } else {
+    KEXPECT_EQ(0, proc_thread_create(thread, &stack_aggregate_thread2, mem));
+    ksleep(10);
+  }
+}
+
+static void* stack_aggregate_thread1(void* arg) {
+  sched_enable_preemption_for_test();
+  intercept_reports();
+  kthread_t thread = NULL;
+  addr_t addr = tsan_access_stack_var(&stack_aggregate_func, &thread);
+  wait_for_race();
+  EXPECT_REPORT((void*)addr, 8, "?", (void*)addr, 8, "w");
+  intercept_reports_done();
+  return NULL;
+}
+
+// A test for the clang bug that was fixed in commit
+// 59b26abbbe89994c2ffd50a933654be247b68aaf.
+static void clang_bug_aggregate_stack_test(void) {
+  KTEST_BEGIN("TSAN: accesses to stack vars escaped via aggregate (clang bug)");
+  kthread_t thread;
+  KEXPECT_EQ(0, proc_thread_create(&thread, stack_aggregate_thread1, NULL));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+}
+
 static void stack_tests(void) {
   interrupt_stack_test();
   defint_stack_test();
+  clang_bug_aggregate_stack_test();
 }
 
 typedef struct {
