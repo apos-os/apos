@@ -35,6 +35,7 @@
 #include "proc/sleep.h"
 #include "proc/spinlock.h"
 #include "proc/wait.h"
+#include "proc/preemption_hook.h"
 #include "sanitizers/tsan/tsan.h"
 #include "sanitizers/tsan/internal.h"
 #include "sanitizers/tsan/spinlock_core.h"
@@ -1501,10 +1502,99 @@ static void basic_tests(void) {
   kmutex_lock_loop_test();
 }
 
+typedef struct {
+  uint64_t* shared_val;
+  atomic32_t writer_done_flag;
+  int preempt_level;
+} sched_preempt_me_test_args_t;
+
+static void* writer_thread_sched_preempt_me(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  sched_preempt_me_test_args_t* args = (sched_preempt_me_test_args_t*)arg;
+
+  tsan_rw_u64(args->shared_val);
+  for (int i = 0; i < 20; ++i) {
+    sched_preempt_me(args->preempt_level);
+  }
+  atomic_store_relaxed(&args->writer_done_flag, 1);
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void* reader_thread_sched_preempt_me(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  sched_preempt_me_test_args_t* args = (sched_preempt_me_test_args_t*)arg;
+
+  while (atomic_load_relaxed(&args->writer_done_flag) == 0)
+    ; // Spin
+  for (int i = 0; i < 20; ++i) {
+    sched_preempt_me(args->preempt_level);
+  }
+  tsan_rw_u64(args->shared_val);
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void sched_preempt_me_level0_test(void) {
+  KTEST_BEGIN("TSAN: sched_preempt_me(0) doesn't synchronize");
+  sched_preempt_me_test_args_t args;
+  args.shared_val = tsan_test_alloc(sizeof(uint64_t));
+  *args.shared_val = 0;
+  tsan_rw_u64(args.shared_val);
+  atomic_store_relaxed(&args.writer_done_flag, 0);
+  args.preempt_level = 0;
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &writer_thread_sched_preempt_me, &args));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &reader_thread_sched_preempt_me, &args));
+
+  // The two threads should race.
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_UNORDERED(thread1->id, args.shared_val, 8, "?",
+                          thread2->id, args.shared_val, 8, "w");
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
+static void sched_preempt_me_level10_test(void) {
+  KTEST_BEGIN("TSAN: sched_preempt_me(10) doesn't synchronize");
+  sched_preempt_me_test_args_t args;
+  args.shared_val = tsan_test_alloc(sizeof(uint64_t));
+  *args.shared_val = 0;
+  tsan_rw_u64(args.shared_val);
+  atomic_store_relaxed(&args.writer_done_flag, 0);
+  args.preempt_level = 10;
+
+  kthread_t thread1, thread2;
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&thread1, &writer_thread_sched_preempt_me, &args));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &reader_thread_sched_preempt_me, &args));
+
+  // The two threads should race.
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT_UNORDERED(thread1->id, args.shared_val, 8, "?",
+                          thread2->id, args.shared_val, 8, "w");
+  KEXPECT_EQ(NULL, kthread_join(thread1));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+  intercept_reports_done();
+
+  tsan_test_cleanup();
+}
+
 static void scheduler_tests(void) {
   scheduler_interrupt_thread_synchronizes_test();
   scheduler_interrupt_different_threads_test();
   scheduler_wait_on_separate_queues_test();
+  sched_preempt_me_level0_test();
+  sched_preempt_me_level10_test();
 }
 
 static void interrupt_fn(void* arg) {
