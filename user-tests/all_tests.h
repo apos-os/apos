@@ -35,4 +35,6 @@ void memory_test(void);
 // Helper when self-exec'ing in execve() tests.
 int execve_helper(int argc, char** argv);
 
+void riscv_stack_helper(void);
+
 #endif

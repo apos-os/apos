@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <signal.h>
 
+#include "arch.h"
 #include "ktest.h"
 #include "all_tests.h"
 
@@ -22,6 +23,12 @@ bool run_slow_tests = false;
 int main(int argc, char** argv) {
   if (strcmp(argv[0], "execve_test_helper") == 0)
     return execve_helper(argc, argv);
+#ifdef ARCH_RISCV
+  else if (strcmp(argv[0], "riscv_stack_helper") == 0) {
+    riscv_stack_helper();
+    exit(1);
+  }
+#endif
 
   if (argc > 1 && strcmp(argv[1], "all") == 0)
     run_slow_tests = true;

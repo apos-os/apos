@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <assert.h>
+#include <inttypes.h>
 #include <sys/mman.h>
 #include <sys/signal.h>
 #include <sys/stat.h>
@@ -22,8 +23,11 @@
 #include <apos/syscall_decls.h>
 
 #include "all_tests.h"
+#include "arch.h"
 #include "ktest.h"
 #include "util.h"
+
+#define SELF_PROGRAM "/bin/all_tests"
 
 static void mmap_test(void) {
   KTEST_BEGIN("mmap(): basic private and shared test");
@@ -238,8 +242,57 @@ static void fork_test(void) {
   KEXPECT_EQ(0, unlink("_memory_fork_test_child2_done"));
 }
 
+#ifdef ARCH_RISCV
+void riscv_stack_helper(void) {
+  uint64_t sp;
+  asm ("mv %0, sp" : "=r"(sp));
+  if (sp % 16 == 0) {
+    printf("Stack alignment correct\n");
+    exit(0);
+  } else {
+    printf("Stack alignment incorrect: %" PRIu64 "\n", sp % 16);
+    exit(1);
+  }
+}
+
+static void riscv64_stack_test(void) {
+  KTEST_BEGIN("riscv64: stack is aligned correctly");
+  pid_t child;
+  int status;
+  char* const kEmptyEnv[] = {NULL};
+  // Try several different invocations to attempt to get different stack
+  // alignments.
+  if ((child = fork()) == 0) {
+    char* const kArgv[] = {"riscv_stack_helper", NULL};
+    execve(SELF_PROGRAM, kArgv, kEmptyEnv);
+    exit(1);
+  }
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_EQ(0, status);
+
+  if ((child = fork()) == 0) {
+    char* const kArgv[] = {"riscv_stack_helper", "defg", NULL};
+    execve(SELF_PROGRAM, kArgv, kEmptyEnv);
+    exit(1);
+  }
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_EQ(0, status);
+
+  if ((child = fork()) == 0) {
+    char* const kArgv[] = {"riscv_stack_helper", "abcdefg", NULL};
+    execve(SELF_PROGRAM, kArgv, kEmptyEnv);
+    exit(1);
+  }
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_EQ(0, status);
+}
+#endif
+
 void memory_test(void) {
   KTEST_SUITE_BEGIN("basic memory tests");
+#ifdef ARCH_RISCV
+  riscv64_stack_test();
+#endif
   mmap_test();
   mmap_read_errors_test();
   basic_memory_limits_test();

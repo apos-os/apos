@@ -113,6 +113,9 @@ int arch_prep_exec(const load_binary_t* bin, char* const argv[],
     return result;
   }
 
+  // Align the stack top on a 16-byte boundary.
+  stack_top = stack_top & -16;
+
   kmemset(ctx, 0, sizeof(user_context_t));
   ctx->ctx.sp = stack_top;
   ctx->ctx.a0 = argv_addr;
