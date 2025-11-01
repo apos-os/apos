@@ -20,6 +20,8 @@
 #include "ktest.h"
 
 #define BUF_SIZE 1000
+#define STDOUT_FILE "_bbtest_stdout.txt"
+#define STDERR_FILE "_bbtest_stderr.txt"
 
 typedef struct {
   int status;
@@ -28,15 +30,16 @@ typedef struct {
 } cmd_result_t;
 
 static int run_bb(const char* cmd[], cmd_result_t* result) {
-  int pfds_out[2];
-  int pfds_err[2];
-  KEXPECT_EQ(0, pipe(pfds_out));
-  KEXPECT_EQ(0, pipe(pfds_err));
+  int stdout_fd = open(STDOUT_FILE, O_RDWR | O_CREAT | O_TRUNC, VFS_S_IRWXU);
+  KEXPECT_GE(stdout_fd, 0);
+  int stderr_fd = open(STDERR_FILE, O_RDWR | O_CREAT | O_TRUNC, VFS_S_IRWXU);
+  KEXPECT_GE(stderr_fd, 0);
+
   pid_t child = fork();
   if (child == 0) {
     // In the child.  Redirect stdout/stderr and run the command.
-    dup2(pfds_out[1], 1);
-    dup2(pfds_err[1], 2);
+    dup2(stdout_fd, 1);
+    dup2(stderr_fd, 2);
     size_t args;
     for (args = 0; cmd[args] != NULL; ++args);
     char** argv = malloc(sizeof(char*) * args + 1);
@@ -50,21 +53,23 @@ static int run_bb(const char* cmd[], cmd_result_t* result) {
   }
 
   KEXPECT_EQ(child, waitpid(child, &result->status, 0));
-  KEXPECT_EQ(0, close(pfds_out[1]));  // Close our side.
-  KEXPECT_EQ(0, close(pfds_err[1]));
 
   // Read stdout and stderr.
-  ssize_t bytes = read(pfds_out[0], result->out, BUF_SIZE - 1);
+  KEXPECT_EQ(0, lseek(stdout_fd, 0, SEEK_SET));
+  ssize_t bytes = read(stdout_fd, result->out, BUF_SIZE - 1);
   KEXPECT_GE(bytes, 0);
   KEXPECT_LT(bytes, BUF_SIZE - 1);  // Make sure buffer is big enough.
   result->out[bytes] = 0;
-  KEXPECT_EQ(0, close(pfds_out[0]));
+  KEXPECT_EQ(0, close(stdout_fd));
+  KEXPECT_EQ(0, unlink(STDOUT_FILE));
 
-  bytes = read(pfds_err[0], result->err, BUF_SIZE - 1);
+  KEXPECT_EQ(0, lseek(stderr_fd, 0, SEEK_SET));
+  bytes = read(stderr_fd, result->err, BUF_SIZE - 1);
   KEXPECT_GE(bytes, 0);
   KEXPECT_LT(bytes, BUF_SIZE - 1);  // Make sure buffer is big enough.
   result->err[bytes] = 0;
-  KEXPECT_EQ(0, close(pfds_err[0]));
+  KEXPECT_EQ(0, close(stderr_fd));
+  KEXPECT_EQ(0, unlink(STDERR_FILE));
   return result->status;
 }
 
