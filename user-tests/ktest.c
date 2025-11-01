@@ -15,6 +15,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "os/common/apos_klog.h"
 
@@ -138,6 +139,70 @@ void kexpect_int(const char* name, const char* file, const char* line,
     sprintf(bval_str, "%d", (int)bval);
   }
   kexpect(result, name, astr, bstr, aval_str, bval_str, "", opstr, file, line);
+}
+
+static void cpy_or_trunc(char* dst, const char* start, size_t strlen,
+                         size_t buflen) {
+  if (strlen + 1 < buflen) {
+    strncpy(dst, start, strlen);
+    dst[strlen] = '\0';  // Shouldn't cpy do this?
+  } else {
+    sprintf(dst, "<too long (%zu bytes)>", strlen);
+  }
+}
+
+static const char* kstrchrnul(const char* s, int c) {
+  while (*s) {
+    if (*s == c) {
+      return s;
+    }
+    s++;
+  }
+  return s;
+}
+
+bool kexpect_multiline_streq(const char* file, const char* line,
+                             const char* astr, const char* bstr,
+                             const char* aval, const char* bval) {
+  int result = !strcmp(aval, bval);
+  char buf1[30], buf2[30];
+  sprintf(buf1, "<%d-byte string>", (int)strlen(aval));
+  sprintf(buf2, "<%u-byte string>", (int)strlen(bval));
+  kexpect(result, "KEXPECT_MULTILINE_STREQ", astr, bstr, buf1, buf2, "",
+          " == ", file, line);
+  if (result == 0) {
+    // If this gets used a lot, should switch to a proper LCS/diff algorithm.
+    const ssize_t kBufSize = 1000;
+    char* buf = (char*)malloc(kBufSize);
+    int cline = 0, badlines = 0;
+    while (*aval && *bval) {
+      const char* aend = kstrchrnul(aval, '\n');
+      const char* bend = kstrchrnul(bval, '\n');
+      if ((aend - aval) != (bend - bval) ||
+          strncmp(aval, bval, aend - aval) != 0) {
+        apos_klogf("Mismatch on line %d: ", cline);
+        cpy_or_trunc(buf, aval, aend - aval, kBufSize);
+        apos_klogf("'%s' != ", buf);
+        cpy_or_trunc(buf, bval, bend - bval, kBufSize);
+        apos_klogf("'%s'\n", buf);
+        badlines++;
+      } else {
+        badlines = 0;
+      }
+      // If we've seen more than a few bad lines in a row, bail.
+      if (badlines > 3) {
+        apos_klogf("(stopping comparison, too many mismatches)\n");
+        break;
+      }
+      aval = aend;
+      bval = bend;
+      if (*aval == '\n') aval++;
+      if (*bval == '\n') bval++;
+      cline++;
+    }
+    free(buf);
+  }
+  return result;
 }
 
 void ktest_begin_all(void) {

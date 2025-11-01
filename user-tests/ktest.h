@@ -49,6 +49,10 @@ void kexpect_int(const char* name, const char* file, const char* line,
                  long result, const char* opstr, kexpect_print_t a_type,
                  kexpect_print_t b_type);
 
+bool kexpect_multiline_streq(const char* file, const char* line,
+                             const char* astr, const char* bstr,
+                             const char* aval, const char* bval);
+
 #define PRINT_TYPE(expr) \
     _Generic((expr), \
              char: PRINT_SIGNED, \
@@ -98,6 +102,13 @@ void kexpect_int(const char* name, const char* file, const char* line,
 
 #define KEXPECT_FALSE(b) \
   KEXPECT_INT_("KEXPECT_FALSE", "false", #b, false, ((bool)(b)), ==, " != ")
+
+#define KEXPECT_MULTILINE_STREQ(a, b)                                     \
+  ({                                                                      \
+    const char* aval = a;                                                 \
+    const char* bval = b;                                                 \
+    kexpect_multiline_streq(__FILE__, STR(__LINE__), #a, #b, aval, bval); \
+  })
 
 #define KEXPECT_ERRNO(e, expr) do { \
   int _result_val = (expr); \
