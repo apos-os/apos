@@ -24,15 +24,19 @@
 typedef struct {
   int status;
   char out[BUF_SIZE];
+  char err[BUF_SIZE];
 } cmd_result_t;
 
 static int run_bb(const char* cmd[], cmd_result_t* result) {
-  int pfds[2];
-  KEXPECT_EQ(0, pipe(pfds));
+  int pfds_out[2];
+  int pfds_err[2];
+  KEXPECT_EQ(0, pipe(pfds_out));
+  KEXPECT_EQ(0, pipe(pfds_err));
   pid_t child = fork();
   if (child == 0) {
-    // In the child.  Redirect stdout and run the command.
-    dup2(pfds[1], 1);
+    // In the child.  Redirect stdout/stderr and run the command.
+    dup2(pfds_out[1], 1);
+    dup2(pfds_err[1], 2);
     size_t args;
     for (args = 0; cmd[args] != NULL; ++args);
     char** argv = malloc(sizeof(char*) * args + 1);
@@ -46,14 +50,21 @@ static int run_bb(const char* cmd[], cmd_result_t* result) {
   }
 
   KEXPECT_EQ(child, waitpid(child, &result->status, 0));
-  KEXPECT_EQ(0, close(pfds[1]));  // Close our side.
+  KEXPECT_EQ(0, close(pfds_out[1]));  // Close our side.
+  KEXPECT_EQ(0, close(pfds_err[1]));
 
-  // Read stdout.
-  ssize_t bytes = read(pfds[0], result->out, BUF_SIZE - 1);
+  // Read stdout and stderr.
+  ssize_t bytes = read(pfds_out[0], result->out, BUF_SIZE - 1);
   KEXPECT_GE(bytes, 0);
   KEXPECT_LT(bytes, BUF_SIZE - 1);  // Make sure buffer is big enough.
   result->out[bytes] = 0;
-  KEXPECT_EQ(0, close(pfds[0]));
+  KEXPECT_EQ(0, close(pfds_out[0]));
+
+  bytes = read(pfds_err[0], result->err, BUF_SIZE - 1);
+  KEXPECT_GE(bytes, 0);
+  KEXPECT_LT(bytes, BUF_SIZE - 1);  // Make sure buffer is big enough.
+  result->err[bytes] = 0;
+  KEXPECT_EQ(0, close(pfds_err[0]));
   return result->status;
 }
 
@@ -73,6 +84,11 @@ static void date_test(void) {
                        {"date", "-u", "-d", "2025-11-01-12:52:15", NULL},
                        &res));
   KEXPECT_STREQ(stripr(res.out), "Fri Oct 31 12:52:15 UTC 2025");
+
+  KEXPECT_EQ(1, run_bb((const char*[])
+                       {"date", "-u", "-d", "-1234", NULL},
+                       &res));
+  KEXPECT_STREQ(stripr(res.err), "date: invalid date '-1234'");
 }
 
 void busybox_tests(void) {
