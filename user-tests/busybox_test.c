@@ -61,6 +61,18 @@ static void read_and_close(char* buf_out, const char* fname, int fd) {
   KEXPECT_EQ(0, unlink(fname));
 }
 
+static void write_file(const char* fname, const char* buf) {
+  int fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU);
+  int bytes_left = strlen(buf);
+  while (bytes_left > 0) {
+    ssize_t written = write(fd, buf, bytes_left);
+    assert(written >= 0);
+    buf += written;
+    bytes_left -= written;
+  }
+  close(fd);
+}
+
 static int run_bb(const char* cmd[], cmd_result_t* result) {
   int stdout_fd = open(STDOUT_FILE, O_RDWR | O_CREAT | O_TRUNC, VFS_S_IRWXU);
   KEXPECT_GE(stdout_fd, 0);
@@ -103,16 +115,7 @@ static char* stripr(char* str) {
 
 static void setup_busybox_tests(void) {
   KTEST_BEGIN("busybox: test setup");
-  int fd = open(TEST_FILE, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU);
-  const char* buf = kTestFileData;
-  int bytes_left = strlen(buf);
-  while (bytes_left > 0) {
-    ssize_t written = write(fd, buf, bytes_left);
-    assert(written >= 0);
-    buf += written;
-    bytes_left -= written;
-  }
-  close(fd);
+  write_file(TEST_FILE, kTestFileData);
 }
 
 static void cleanup_busybox_tests(void) {
@@ -145,6 +148,31 @@ static void ascii_test(void) {
     " 14 0e SO   30 1e RS   46 2e .  62 3e >  78 4e N  94 5e ^  110 6e n  126 7e ~\n"
     " 15 0f SI   31 1f US   47 2f /  63 3f ?  79 4f O  95 5f _  111 6f o  127 7f DEL\n"
     );
+}
+
+static void awk_test(void) {
+  KTEST_BEGIN("busybox: awk test");
+  cmd_result_t res;
+  KEXPECT_EQ(0, run_bb((const char*[])
+                       {"awk", "/.*I.*/ {print $0}", TEST_FILE, NULL},
+                       &res));
+  KEXPECT_MULTILINE_STREQ(res.out,
+                          "ACT I\n"
+                          "SCENE I. Elsinore. A platform before the castle.\n"
+                          "FRANCISCO at his post. Enter to him BERNARDO\n"
+                          "FRANCISCO\n");
+}
+
+static void bc_test(void) {
+  KTEST_BEGIN("busybox: bctest");
+  const char* kFileName = "_bbtest_bc_expr_.txt";
+  write_file(kFileName, "2 +3 * 5\nquit");
+  cmd_result_t res;
+  KEXPECT_EQ(0, run_bb((const char*[])
+                       {"bc", "-q", kFileName, NULL},
+                       &res));
+  KEXPECT_STREQ(stripr(res.out), "17");
+  KEXPECT_EQ(0, unlink(kFileName));
 }
 
 static void cat_test(void) {
@@ -266,6 +294,8 @@ void busybox_tests(void) {
   setup_busybox_tests();
 
   ascii_test();
+  awk_test();
+  bc_test();
   cat_test();
   date_test();
   wc_test();
