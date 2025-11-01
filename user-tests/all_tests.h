@@ -31,6 +31,7 @@ void setjmp_test(void);
 void cpu_exception_test(void);
 void thread_test(void);
 void memory_test(void);
+void busybox_tests(void);
 
 // Helper when self-exec'ing in execve() tests.
 int execve_helper(int argc, char** argv);
