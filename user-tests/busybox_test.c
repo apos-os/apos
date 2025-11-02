@@ -362,6 +362,29 @@ static void env_test(void) {
   KEXPECT_STREQ(stripr(res.out), "e=f");
 }
 
+static void xxd_test(void) {
+  KTEST_BEGIN("busybox: xxd test");
+  cmd_result_t res;
+  KEXPECT_EQ(0, run_bb((const char*[])
+                       {"xxd", TEST_FILE, NULL},
+                       &res));
+  KEXPECT_MULTILINE_STREQ(
+      res.out,
+      "00000000: 4143 5420 490a 0a53 4345 4e45 2049 2e20  ACT I..SCENE I. \n"
+      "00000010: 456c 7369 6e6f 7265 2e20 4120 706c 6174  Elsinore. A plat\n"
+      "00000020: 666f 726d 2062 6566 6f72 6520 7468 6520  form before the \n"
+      "00000030: 6361 7374 6c65 2e0a 0a46 5241 4e43 4953  castle...FRANCIS\n"
+      "00000040: 434f 2061 7420 6869 7320 706f 7374 2e20  CO at his post. \n"
+      "00000050: 456e 7465 7220 746f 2068 696d 2042 4552  Enter to him BER\n"
+      "00000060: 4e41 5244 4f0a 4245 524e 4152 444f 0a57  NARDO.BERNARDO.W\n"
+      "00000070: 686f 2773 2074 6865 7265 3f0a 4652 414e  ho's there?.FRAN\n"
+      "00000080: 4349 5343 4f0a 4e61 792c 2061 6e73 7765  CISCO.Nay, answe\n"
+      "00000090: 7220 6d65 3a20 7374 616e 642c 2061 6e64  r me: stand, and\n"
+      "000000a0: 2075 6e66 6f6c 6420 796f 7572 7365 6c66   unfold yourself\n"
+      "000000b0: 2e0a 4245 524e 4152 444f 0a4c 6f6e 6720  ..BERNARDO.Long \n"
+      "000000c0: 6c69 7665 2074 6865 206b 696e 6721 0a    live the king!.\n");
+}
+
 void busybox_tests(void) {
   KTEST_SUITE_BEGIN("busybox tests");
   setup_busybox_tests();
@@ -378,6 +401,7 @@ void busybox_tests(void) {
   tail_test();
   printf_test();
   env_test();
+  xxd_test();
 
   // Hash function tests.
   cksum_test();
