@@ -24,6 +24,7 @@
 #define STDOUT_FILE "_bbtest_stdout.txt"
 #define STDERR_FILE "_bbtest_stderr.txt"
 #define TEST_FILE "_bbtest_data.txt"
+#define TEST_FILE2 "_bbtest_data2.txt"
 
 const char kTestFileData[] =
     "ACT I\n"
@@ -37,6 +38,13 @@ const char kTestFileData[] =
     "Nay, answer me: stand, and unfold yourself.\n"
     "BERNARDO\n"
     "Long live the king!\n";
+
+const char kTestFile2Data[] =
+    "def\n"
+    "abc\n"
+    "abc\n"
+    "xyz\n"
+    "def\n";
 
 typedef struct {
   int status;
@@ -116,11 +124,13 @@ static char* stripr(char* str) {
 static void setup_busybox_tests(void) {
   KTEST_BEGIN("busybox: test setup");
   write_file(TEST_FILE, kTestFileData);
+  write_file(TEST_FILE2, kTestFile2Data);
 }
 
 static void cleanup_busybox_tests(void) {
   KTEST_BEGIN("busybox: test cleanup");
   KEXPECT_EQ(0, unlink(TEST_FILE));
+  KEXPECT_EQ(0, unlink(TEST_FILE2));
 }
 
 static void ascii_test(void) {
@@ -385,6 +395,33 @@ static void xxd_test(void) {
       "000000c0: 6c69 7665 2074 6865 206b 696e 6721 0a    live the king!.\n");
 }
 
+static void uniq_test(void) {
+  KTEST_BEGIN("busybox: uniq test");
+  cmd_result_t res;
+  KEXPECT_EQ(0, run_bb((const char*[])
+                       {"uniq", TEST_FILE2, NULL},
+                       &res));
+  KEXPECT_MULTILINE_STREQ(res.out,
+                          "def\n"
+                          "abc\n"
+                          "xyz\n"
+                          "def\n");
+}
+
+static void sort_test(void) {
+  KTEST_BEGIN("busybox: sort test");
+  cmd_result_t res;
+  KEXPECT_EQ(0, run_bb((const char*[])
+                       {"sort", TEST_FILE2, NULL},
+                       &res));
+  KEXPECT_MULTILINE_STREQ(res.out,
+                          "abc\n"
+                          "abc\n"
+                          "def\n"
+                          "def\n"
+                          "xyz\n");
+}
+
 void busybox_tests(void) {
   KTEST_SUITE_BEGIN("busybox tests");
   setup_busybox_tests();
@@ -402,6 +439,8 @@ void busybox_tests(void) {
   printf_test();
   env_test();
   xxd_test();
+  uniq_test();
+  sort_test();
 
   // Hash function tests.
   cksum_test();
