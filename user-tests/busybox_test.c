@@ -345,6 +345,23 @@ static void printf_test(void) {
   // KEXPECT_STREQ(stripr(res.out), "hello 5 world 10");
 }
 
+static void env_test(void) {
+  KTEST_BEGIN("busybox: env test");
+  cmd_result_t res;
+  KEXPECT_EQ(0, run_bb((const char*[])
+                       {"env", "-i", "a=b", "c=d", "/bin/env", "e=f", "/bin/printenv", NULL},
+                       &res));
+  KEXPECT_MULTILINE_STREQ(res.out,
+                          "a=b\n"
+                          "c=d\n"
+                          "e=f\n");
+
+  KEXPECT_EQ(0, run_bb((const char*[])
+                       {"env", "-i", "a=b", "c=d", "/bin/env", "-i", "e=f", "/bin/printenv", NULL},
+                       &res));
+  KEXPECT_STREQ(stripr(res.out), "e=f");
+}
+
 void busybox_tests(void) {
   KTEST_SUITE_BEGIN("busybox tests");
   setup_busybox_tests();
@@ -360,6 +377,7 @@ void busybox_tests(void) {
   head_test();
   tail_test();
   printf_test();
+  env_test();
 
   // Hash function tests.
   cksum_test();
