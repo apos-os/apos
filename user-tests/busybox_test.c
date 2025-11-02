@@ -276,6 +276,15 @@ static void crc32_test(void) {
   KEXPECT_STREQ(stripr(res.out), "88ec64a2 " TEST_FILE);
 }
 
+static void sum_test(void) {
+  KTEST_BEGIN("busybox: sum test");
+  cmd_result_t res;
+  KEXPECT_EQ(0, run_bb((const char*[])
+                       {"sum", TEST_FILE, NULL},
+                       &res));
+  KEXPECT_STREQ(stripr(res.out), "08457     1");
+}
+
 static void date_test(void) {
   KTEST_BEGIN("busybox: date test");
   cmd_result_t res;
@@ -422,6 +431,15 @@ static void sort_test(void) {
                           "xyz\n");
 }
 
+static void expr_test(void) {
+  KTEST_BEGIN("busybox: expr test");
+  cmd_result_t res;
+  KEXPECT_EQ(0, run_bb((const char*[])
+                       {"expr", "1", "+", "2", NULL},
+                       &res));
+  KEXPECT_STREQ(stripr(res.out), "3");
+}
+
 void busybox_tests(void) {
   KTEST_SUITE_BEGIN("busybox tests");
   setup_busybox_tests();
@@ -441,6 +459,7 @@ void busybox_tests(void) {
   xxd_test();
   uniq_test();
   sort_test();
+  expr_test();
 
   // Hash function tests.
   cksum_test();
@@ -450,6 +469,7 @@ void busybox_tests(void) {
   sha256sum_test();
   sha3sum_test();
   sha512sum_test();
+  sum_test();
 
   cleanup_busybox_tests();
 }
