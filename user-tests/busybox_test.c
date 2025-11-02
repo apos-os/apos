@@ -289,6 +289,62 @@ static void wc_test(void) {
   KEXPECT_STREQ(stripr(res.out), "       11        34       207 " TEST_FILE);
 }
 
+static void echo_test(void) {
+  KTEST_BEGIN("busybox: echo test");
+  cmd_result_t res;
+  KEXPECT_EQ(0, run_bb((const char*[])
+                       {"echo", "abc", "def", NULL},
+                       &res));
+  KEXPECT_STREQ(res.out, "abc def\n");
+}
+
+static void grep_test(void) {
+  KTEST_BEGIN("busybox: grep test");
+  cmd_result_t res;
+  KEXPECT_EQ(0, run_bb((const char*[])
+                       {"grep", ".*I.*", TEST_FILE, NULL},
+                       &res));
+  KEXPECT_MULTILINE_STREQ(res.out,
+                          "ACT I\n"
+                          "SCENE I. Elsinore. A platform before the castle.\n"
+                          "FRANCISCO at his post. Enter to him BERNARDO\n"
+                          "FRANCISCO\n");
+}
+
+static void head_test(void) {
+  KTEST_BEGIN("busybox: head test");
+  cmd_result_t res;
+  KEXPECT_EQ(0, run_bb((const char*[])
+                       {"head", "-n", "3", TEST_FILE, NULL},
+                       &res));
+  KEXPECT_MULTILINE_STREQ(res.out,
+                          "ACT I\n"
+                          "\n"
+                          "SCENE I. Elsinore. A platform before the castle.\n");
+}
+
+static void tail_test(void) {
+  KTEST_BEGIN("busybox: tail test");
+  cmd_result_t res;
+  KEXPECT_EQ(0, run_bb((const char*[])
+                       {"tail", "-n", "3", TEST_FILE, NULL},
+                       &res));
+  KEXPECT_MULTILINE_STREQ(res.out,
+                          "Nay, answer me: stand, and unfold yourself.\n"
+                          "BERNARDO\n"
+                          "Long live the king!\n");
+}
+
+static void printf_test(void) {
+  KTEST_BEGIN("busybox: printf test");
+  cmd_result_t res;
+  // TODO(aoates): fix busybox printf, which requires fcntl
+  KEXPECT_EQ(1, run_bb((const char*[])
+                       {"printf", "hello %d world %d", "5", "10", NULL},
+                       &res));
+  // KEXPECT_STREQ(stripr(res.out), "hello 5 world 10");
+}
+
 void busybox_tests(void) {
   KTEST_SUITE_BEGIN("busybox tests");
   setup_busybox_tests();
@@ -299,6 +355,11 @@ void busybox_tests(void) {
   cat_test();
   date_test();
   wc_test();
+  echo_test();
+  grep_test();
+  head_test();
+  tail_test();
+  printf_test();
 
   // Hash function tests.
   cksum_test();
