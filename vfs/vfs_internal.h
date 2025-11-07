@@ -213,4 +213,7 @@ int vfs_close_locked(int fd);
 // Succeeds unconditionally.
 void vfs_close_file(int fd, file_t* file);
 
+// Returns the next free FD in the process that is >= min.
+int vfs_next_free_fd(process_t* p, int min) REQUIRES(p->mu);
+
 #endif

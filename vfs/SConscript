@@ -17,6 +17,7 @@ Import('env AposAddSources')
 srcs = [
   'anonfs.c',
   'cbfs.c',
+  'fcntl.c',
   'fifo.c',
   'file.c',
   'fs_types.c',

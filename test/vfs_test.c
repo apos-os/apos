@@ -46,6 +46,8 @@
 #include "test/test_params.h"
 #include "test/vfs_test_util.h"
 #include "user/include/apos/vfs/dirent.h"
+#include "user/include/apos/vfs/fcntl.h"
+#include "vfs/fcntl.h"
 #include "vfs/fs.h"
 #include "vfs/pipe.h"
 #include "vfs/poll.h"
@@ -4778,6 +4780,150 @@ static void o_cloexec_test(void) NO_THREAD_SAFETY_ANALYSIS {
   KEXPECT_EQ(0, vfs_unlink("_o_cloexec_file"));
 }
 
+static void fcntl_dupfd_tests(const int* pfds) {
+  KTEST_BEGIN("vfs_fcntl(F_DUPFD): basic test");
+  int new_fd = vfs_fcntl(pfds[0], VFS_F_DUPFD, 0);
+  KEXPECT_GE(new_fd, 0);
+  KEXPECT_NE(new_fd, pfds[0]);
+
+  file_t* file1 = NULL, *file2 = NULL;
+  KEXPECT_EQ(0, lookup_fd(pfds[0], &file1));
+  KEXPECT_EQ(0, lookup_fd(new_fd, &file2));
+  KEXPECT_EQ(file1, file2);
+  if (file1) file_unref(file1);
+  if (file2) file_unref(file2);
+  file1 = file2 = NULL;
+  KEXPECT_EQ(0, vfs_close(new_fd));
+
+
+  KTEST_BEGIN("vfs_fcntl(F_DUPFD): bad arg");
+  KEXPECT_EQ(-EINVAL, vfs_fcntl(pfds[0], VFS_F_DUPFD, -1));
+  KEXPECT_EQ(-EINVAL, vfs_fcntl(pfds[0], VFS_F_DUPFD, INT_MIN));
+  KEXPECT_EQ(-EINVAL, vfs_fcntl(pfds[0], VFS_F_DUPFD, INT_MAX));
+  KEXPECT_EQ(-EINVAL, vfs_fcntl(pfds[0], VFS_F_DUPFD, PROC_MAX_FDS));
+
+
+  KTEST_BEGIN("vfs_fcntl(F_DUPFD): arg is used as min new FD");
+  const int kTestArg = 20;
+  new_fd = vfs_fcntl(pfds[0], VFS_F_DUPFD, kTestArg);
+  KEXPECT_EQ(new_fd, kTestArg);
+  int new_fd2 = vfs_fcntl(pfds[0], VFS_F_DUPFD, kTestArg);
+  KEXPECT_EQ(new_fd + 1, new_fd2);
+
+  file_t* file3 = NULL;
+  KEXPECT_EQ(0, lookup_fd(pfds[0], &file1));
+  KEXPECT_EQ(0, lookup_fd(new_fd, &file2));
+  KEXPECT_EQ(0, lookup_fd(new_fd2, &file3));
+  KEXPECT_EQ(file1, file2);
+  KEXPECT_EQ(file1, file3);
+  if (file1) file_unref(file1);
+  if (file2) file_unref(file2);
+  if (file3) file_unref(file3);
+  file1 = file2 = file3 = NULL;
+  KEXPECT_EQ(0, vfs_close(new_fd));
+  KEXPECT_EQ(0, vfs_close(new_fd2));
+
+
+  KTEST_BEGIN("vfs_fcntl(F_DUPFD): too many FDs already open");
+  int all_fds[PROC_MAX_FDS];
+  for (int i = 0; i < PROC_MAX_FDS; ++i) all_fds[i] = -1;
+  int i = 0, fd1 = -1;
+  do {
+    fd1 = vfs_dup(pfds[0]);
+    if (fd1 >= 0)
+      all_fds[i++] = fd1;
+  } while (fd1 >= 0);
+
+  KEXPECT_EQ(-EMFILE, fd1);
+  KEXPECT_GE(all_fds[0], 0);
+  KEXPECT_EQ(-EMFILE, vfs_fcntl(pfds[0], VFS_F_DUPFD, 0));
+  KEXPECT_EQ(-EMFILE, vfs_fcntl(pfds[0], VFS_F_DUPFD, kTestArg));
+
+
+  KTEST_BEGIN("vfs_fcntl(F_DUPFD): no FDs available above requested min FD");
+  // Create a hole before kTestArg.
+  KEXPECT_LT(all_fds[0], kTestArg);
+  vfs_close(all_fds[0]);
+  all_fds[0] = -1;
+
+  // Requesting kTestArg or above should fail.
+  KEXPECT_EQ(-EMFILE, vfs_fcntl(pfds[0], VFS_F_DUPFD, kTestArg));
+  KEXPECT_EQ(-EMFILE, vfs_fcntl(pfds[0], VFS_F_DUPFD, kTestArg + 1));
+  // ...but below should still succeed.
+  new_fd = vfs_fcntl(pfds[0], VFS_F_DUPFD, 0);
+  KEXPECT_GE(new_fd, 0);
+  KEXPECT_EQ(0, vfs_close(new_fd));
+
+
+  KTEST_BEGIN("vfs_fcntl(F_DUPFD): too many files open (rlimit)");
+  struct apos_rlimit lim;
+  KEXPECT_EQ(0, proc_getrlimit(APOS_RLIMIT_NOFILE, &lim));
+  const struct apos_rlimit orig_lim = lim;
+
+  lim.rlim_cur = kTestArg + 3;
+  KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &lim));
+  // Requesting kTestArg or above should fail, because there aren't any free.
+  KEXPECT_EQ(-EMFILE, vfs_fcntl(pfds[0], VFS_F_DUPFD, kTestArg));
+  KEXPECT_EQ(-EMFILE, vfs_fcntl(pfds[0], VFS_F_DUPFD, kTestArg + 1));
+  KEXPECT_EQ(-EMFILE, vfs_fcntl(pfds[0], VFS_F_DUPFD, kTestArg + 5));
+  // ...but below should still succeed.
+  new_fd = vfs_fcntl(pfds[0], VFS_F_DUPFD, 0);
+  KEXPECT_GE(new_fd, 0);
+  KEXPECT_EQ(0, vfs_close(new_fd));
+
+  // Opening a hole above the rlim should still cause failure.
+  KEXPECT_EQ(0, vfs_close(kTestArg + 4));
+  KEXPECT_EQ(-EMFILE, vfs_fcntl(pfds[0], VFS_F_DUPFD, kTestArg));
+  KEXPECT_EQ(-EMFILE, vfs_fcntl(pfds[0], VFS_F_DUPFD, kTestArg + 5));
+
+  lim.rlim_cur = PROC_MAX_FDS;
+  KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &lim));
+  new_fd = vfs_fcntl(pfds[0], VFS_F_DUPFD, 0);
+  KEXPECT_GE(new_fd, 0);
+  KEXPECT_EQ(0, vfs_close(new_fd));
+
+  KEXPECT_EQ(kTestArg + 4, vfs_dup2(pfds[0], kTestArg + 4));
+  KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &orig_lim));
+
+  for (int i = 0; i < PROC_MAX_FDS; ++i) {
+    if (all_fds[i] >= 0) vfs_close(all_fds[i]);
+    all_fds[i] = -1;
+  }
+
+  // TODO(aoates): test F_DUPFD clears O_CLOEXEC when F_SETFD  is implemented.
+  // TODO(aoates): test F_DUPFD_CLOEXEC when F_SETFD  is implemented.
+}
+
+static void fcntl_test(void) {
+  KTEST_BEGIN("vfs_fcntl(): invalid FD test");
+  KEXPECT_EQ(-EBADF, vfs_fcntl(-1, 0, 0));
+  KEXPECT_EQ(-EBADF, vfs_fcntl(-1, 1000, 0));
+  KEXPECT_EQ(-EBADF, vfs_fcntl(100, 0, 0));
+
+  int pfds[2];
+  KEXPECT_EQ(0, vfs_pipe(pfds));
+  int bad_fd = vfs_dup(pfds[0]);
+  KEXPECT_GE(bad_fd, 0);
+  KEXPECT_EQ(0, vfs_close(bad_fd));
+  KEXPECT_EQ(-EBADF, vfs_fcntl(bad_fd, 0, 0));
+  KEXPECT_EQ(-EBADF, vfs_fcntl(bad_fd, 1, 0));
+  KEXPECT_EQ(-EBADF, vfs_fcntl(bad_fd, 100, 0));
+
+
+  KTEST_BEGIN("vfs_fcntl(): invalid command test");
+  KEXPECT_EQ(-EINVAL, vfs_fcntl(pfds[0], -1, 0));
+  KEXPECT_EQ(-EINVAL, vfs_fcntl(pfds[0], 10, 0));
+  KEXPECT_EQ(-EINVAL, vfs_fcntl(pfds[0], 100, 0));
+  KEXPECT_EQ(-EINVAL, vfs_fcntl(pfds[0], INT_MAX, 0));
+  KEXPECT_EQ(-EINVAL, vfs_fcntl(pfds[0], INT_MIN, 0));
+
+  fcntl_dupfd_tests(pfds);
+
+  // Cleanup.
+  KEXPECT_EQ(0, vfs_close(pfds[0]));
+  KEXPECT_EQ(0, vfs_close(pfds[1]));
+}
+
 static void link_test(void) {
   apos_stat_t statA, statB;
 
@@ -6880,6 +7026,7 @@ void vfs_test(void) {
   o_directory_test();
   o_nofollow_test();
   o_cloexec_test();
+  fcntl_test();
 
   link_test();
   link_testB();

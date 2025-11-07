@@ -41,6 +41,7 @@ HEADERS = [
   'apos/thread.h',
   'apos/time_types.h',
   'apos/vfs/dirent.h',
+  'apos/vfs/fcntl.h',
   'apos/vfs/poll.h',
   'apos/vfs/stat.h',
   'apos/vfs/vfs.h',

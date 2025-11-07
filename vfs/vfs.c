@@ -37,6 +37,7 @@
 #include "proc/user.h"
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/anonfs.h"
+#include "vfs/fcntl.h"
 #include "vfs/file.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
@@ -100,12 +101,16 @@ static int next_free_file_idx(void) {
 }
 
 // Return the lowest free fd in the process.
-static int next_free_fd(process_t* p) {
+int vfs_next_free_fd(process_t* p, int min) {
   pmutex_assert_is_held(&p->mu);
+  if (min < 0 || min >= PROC_MAX_FDS) {
+    return -EINVAL;
+  }
+
   int max_fd = PROC_MAX_FDS;
   if (p->limits[APOS_RLIMIT_NOFILE].rlim_cur != APOS_RLIM_INFINITY)
     max_fd = min((apos_rlim_t)max_fd, p->limits[APOS_RLIMIT_NOFILE].rlim_cur);
-  for (int i = 0; i < max_fd; ++i) {
+  for (int i = min; i < max_fd; ++i) {
     if (p->fds[i].file == PROC_UNUSED_FD) {
       return i;
     }
@@ -626,7 +631,7 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   // Find the next free file descriptor.
   process_t* proc = proc_current();
   pmutex_lock(&proc->mu);
-  int fd = next_free_fd(proc);
+  int fd = vfs_next_free_fd(proc, 0);
   if (fd < 0) {
     pmutex_unlock(&proc->mu);
     if (child->type == VNODE_FIFO) vfs_close_fifo(child, mode);
@@ -822,23 +827,7 @@ int vfs_close(int fd) {
 }
 
 int vfs_dup(int orig_fd) {
-  file_t* file = 0x0;
-  int result = lookup_fd(orig_fd, &file);
-  if (result) return result;
-
-  process_t* proc = proc_current();
-  pmutex_lock(&proc->mu);
-  int new_fd = next_free_fd(proc);
-  if (new_fd < 0) {
-    pmutex_unlock(&proc->mu);
-    file_unref(file);
-    return new_fd;
-  }
-
-  KASSERT_DBG(proc->fds[new_fd].file == PROC_UNUSED_FD);
-  proc->fds[new_fd] = proc->fds[orig_fd];  // Transfer our ref on |file|.
-  pmutex_unlock(&proc->mu);
-  return new_fd;
+  return vfs_fcntl(orig_fd, VFS_F_DUPFD, 0);
 }
 
 int vfs_dup2(int fd1, int fd2) {
