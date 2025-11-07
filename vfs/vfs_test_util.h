@@ -24,6 +24,9 @@ void vfs_log_cache(void);
 // Return how many vnodes are currently in the cache.
 int vfs_cache_size(void);
 
+// Returns how many fds are open in the current process.
+int vfs_open_fds(void);
+
 // Looks up the given path and returns the refcount of the corresponding vnode,
 // 0 if there is no matching vnode in the cache, or -errno if the path can't be
 // found.

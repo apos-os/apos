@@ -50,6 +50,19 @@ int vfs_cache_size(void) {
   return size;
 }
 
+int vfs_open_fds(void) {
+  process_t* p = proc_current();
+  pmutex_lock(&p->mu);
+  int count = 0;
+  for (int i = 0; i < PROC_MAX_FDS; ++i) {
+    if (p->fds[i].file != PROC_UNUSED_FD) {
+      count++;
+    }
+  }
+  pmutex_unlock(&p->mu);
+  return count;
+}
+
 // TODO(aoates): can this be used as a helper for other functions as well?
 static int vfs_get_vnode(const char* path, vnode_t** vnode_out) {
   vnode_t* root = get_root_for_path(path);

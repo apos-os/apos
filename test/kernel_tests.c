@@ -23,12 +23,12 @@
 #include "dev/qemu-profiler.h"
 #include "main/kernel.h"
 #include "proc/fork.h"
-#include "proc/process.h"
 #include "proc/signal/signal.h"
 #include "proc/user.h"
 #include "proc/wait.h"
 #include "test/ktest.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_test_util.h"
 
 typedef struct {
   const char* name;
@@ -141,25 +141,12 @@ static bool should_enable_profiling(void) {
   return false;
 }
 
-static int count_fds(void) {
-  process_t* p = proc_current();
-  pmutex_lock(&p->mu);
-  int count = 0;
-  for (int i = 0; i < PROC_MAX_FDS; ++i) {
-    if (p->fds[i].file != PROC_UNUSED_FD) {
-      count++;
-    }
-  }
-  pmutex_unlock(&p->mu);
-  return count;
-}
-
 static void run_test_entry(const test_entry_t* e) {
-  int num_fds = count_fds();
+  int num_fds = vfs_open_fds();
   e->func();
 
   KTEST_BEGIN("File descriptor leak verification");
-  KEXPECT_EQ(num_fds, count_fds());
+  KEXPECT_EQ(num_fds, vfs_open_fds());
 }
 
 static void run_all_tests(void) {
