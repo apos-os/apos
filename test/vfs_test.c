@@ -4756,10 +4756,10 @@ static void o_cloexec_test(void) NO_THREAD_SAFETY_ANALYSIS {
 
   int fd1 = vfs_open("_o_cloexec_file", VFS_O_RDONLY);
   KEXPECT_GE(fd1, 0);
-  KEXPECT_EQ(0, proc_current()->fds[fd1].flags);
+  KEXPECT_EQ(0, vfs_fcntl(fd1, VFS_F_GETFD, 0));
   int fd2 = vfs_open("_o_cloexec_file", VFS_O_RDONLY | VFS_O_CLOEXEC);
   KEXPECT_GE(fd2, 0);
-  KEXPECT_EQ(VFS_O_CLOEXEC, proc_current()->fds[fd2].flags);
+  KEXPECT_EQ(VFS_O_CLOEXEC, vfs_fcntl(fd2, VFS_F_GETFD, 0));
 
 #if ARCH_RUN_USER_TESTS
   kpid_t child = proc_fork(&o_cloexec_test_proc, NULL);
@@ -4894,6 +4894,38 @@ static void fcntl_dupfd_tests(const int* pfds) {
   // TODO(aoates): test F_DUPFD_CLOEXEC when F_SETFD  is implemented.
 }
 
+static void fcntl_getfd_tests(int* pfds) {
+  KTEST_BEGIN("vfs_fcntl(): F_GETFD on opened fd test");
+  const char kPath[] = "_fcntl_test";
+  int fd = vfs_open(kPath, VFS_O_EXCL | VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_fcntl(fd, VFS_F_GETFD, /* unused */ 100));
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  fd = vfs_open(kPath, VFS_O_CLOEXEC | VFS_O_RDWR, VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(VFS_O_CLOEXEC, vfs_fcntl(fd, VFS_F_GETFD, /* unused */ 100));
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KTEST_BEGIN("vfs_fcntl(): F_SETFD");
+  fd = vfs_open(kPath, VFS_O_RDWR, VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_fcntl(fd, VFS_F_GETFD, /* unused */ 100));
+
+  KEXPECT_EQ(0, vfs_fcntl(fd, VFS_F_SETFD, VFS_O_CLOEXEC));
+  KEXPECT_EQ(VFS_O_CLOEXEC, vfs_fcntl(fd, VFS_F_GETFD, /* unused */ 100));
+  KEXPECT_EQ(0, vfs_fcntl(fd, VFS_F_SETFD, 123 + VFS_O_CLOEXEC));
+  KEXPECT_EQ(VFS_O_CLOEXEC, vfs_fcntl(fd, VFS_F_GETFD, /* unused */ 100));
+  KEXPECT_EQ(0, vfs_fcntl(fd, VFS_F_SETFD, 123));
+  KEXPECT_EQ(0, vfs_fcntl(fd, VFS_F_GETFD, /* unused */ 100));
+  KEXPECT_EQ(0, vfs_fcntl(fd, VFS_F_SETFD, 0));
+  KEXPECT_EQ(0, vfs_fcntl(fd, VFS_F_GETFD, /* unused */ 100));
+
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+}
+
 static void fcntl_test(void) {
   KTEST_BEGIN("vfs_fcntl(): invalid FD test");
   KEXPECT_EQ(-EBADF, vfs_fcntl(-1, 0, 0));
@@ -4918,6 +4950,7 @@ static void fcntl_test(void) {
   KEXPECT_EQ(-EINVAL, vfs_fcntl(pfds[0], INT_MIN, 0));
 
   fcntl_dupfd_tests(pfds);
+  fcntl_getfd_tests(pfds);
 
   // Cleanup.
   KEXPECT_EQ(0, vfs_close(pfds[0]));

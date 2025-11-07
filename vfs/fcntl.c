@@ -14,15 +14,17 @@
 #include "vfs/fcntl.h"
 
 #include "common/errno.h"
+#include "proc/pmutex.h"
+#include "user/include/apos/vfs/vfs.h"
 #include "vfs/file.h"
 #include "vfs/vfs_internal.h"
 
-static int fcntl_dupfd(file_t* file, int orig_fd, int cmd, int arg) {
-  process_t* proc = proc_current();
-  pmutex_lock(&proc->mu);
+#define SETFD_VALID_FLAGS VFS_O_CLOEXEC
+
+static int fcntl_dupfd(process_t* proc, file_t* file, int orig_fd, int cmd,
+                       int arg) REQUIRES(proc->mu) {
   int new_fd = vfs_next_free_fd(proc, arg);
   if (new_fd < 0) {
-    pmutex_unlock(&proc->mu);
     return new_fd;
   }
 
@@ -30,20 +32,43 @@ static int fcntl_dupfd(file_t* file, int orig_fd, int cmd, int arg) {
   file_ref(file);
   proc->fds[new_fd] = proc->fds[orig_fd];
   // TODO(aoates): clear O_CLOEXEC.
-  pmutex_unlock(&proc->mu);
   return new_fd;
 }
 
+static int fcntl_getfd(process_t* proc, file_t* file, int orig_fd, int cmd,
+                       int arg) REQUIRES(proc->mu) {
+  return proc->fds[orig_fd].flags;
+}
+
+static int fcntl_setfd(process_t* proc, file_t* file, int orig_fd, int cmd,
+                       int arg) REQUIRES(proc->mu) {
+  proc->fds[orig_fd].flags = (arg & SETFD_VALID_FLAGS);
+  return 0;
+}
+
 int vfs_fcntl(int fd, int cmd, int arg) {
+  process_t* proc = proc_current();
+  pmutex_lock(&proc->mu);
   file_t* file = 0x0;
-  int result = lookup_fd(fd, &file);
-  if (result) return result;
+  int result = lookup_fd_locked(fd, &file);
+  if (result) {
+    pmutex_unlock(&proc->mu);
+    return result;
+  }
 
   {
     kmutex_lock(&file->vnode->mutex);
     switch (cmd) {
       case VFS_F_DUPFD:
-        result = fcntl_dupfd(file, fd, cmd, arg);
+        result = fcntl_dupfd(proc, file, fd, cmd, arg);
+        break;
+
+      case VFS_F_GETFD:
+        result = fcntl_getfd(proc, file, fd, cmd, arg);
+        break;
+
+      case VFS_F_SETFD:
+        result = fcntl_setfd(proc, file, fd, cmd, arg);
         break;
 
       default:
@@ -53,6 +78,7 @@ int vfs_fcntl(int fd, int cmd, int arg) {
     kmutex_unlock(&file->vnode->mutex);
   }
 
+  pmutex_unlock(&proc->mu);
   file_unref(file);
   return result;
 }
