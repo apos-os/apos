@@ -14,6 +14,7 @@
 #include "net/socket/socket.h"
 
 #include "common/kassert.h"
+#include "memory/kmalloc.h"
 #include "user/include/apos/errors.h"
 #include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/vfs/vfs.h"

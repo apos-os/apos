@@ -17,6 +17,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/list.h"
+#include "memory/kmalloc.h"
 #include "proc/process.h"
 #include "proc/spinlock.h"
 

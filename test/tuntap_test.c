@@ -16,6 +16,7 @@
 
 #include "common/endian.h"
 #include "dev/net/nic.h"
+#include "memory/kmalloc.h"
 #include "net/eth/eth.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/mac.h"

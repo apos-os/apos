@@ -24,6 +24,7 @@
 #include "dev/dev.h"
 #include "dev/net/tuntap.h"
 #include "dev/timer.h"
+#include "memory/kmalloc.h"
 #include "net/addr.h"
 #include "net/bind.h"
 #include "net/eth/eth.h"

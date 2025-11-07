@@ -17,7 +17,6 @@
 
 #include "common/refcount.h"
 #include "common/types.h"
-#include "memory/kmalloc.h"
 
 struct vnode;
 
