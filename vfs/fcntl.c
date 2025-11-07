@@ -31,7 +31,11 @@ static int fcntl_dupfd(process_t* proc, file_t* file, int orig_fd, int cmd,
   KASSERT_DBG(proc->fds[new_fd].file == PROC_UNUSED_FD);
   file_ref(file);
   proc->fds[new_fd] = proc->fds[orig_fd];
-  proc->fds[new_fd].flags = 0;
+  if (cmd == VFS_F_DUPFD_CLOEXEC) {
+    proc->fds[new_fd].flags = VFS_O_CLOEXEC;
+  } else {
+    proc->fds[new_fd].flags = 0;
+  }
   return new_fd;
 }
 
@@ -60,6 +64,7 @@ int vfs_fcntl(int fd, int cmd, int arg) {
     kmutex_lock(&file->vnode->mutex);
     switch (cmd) {
       case VFS_F_DUPFD:
+      case VFS_F_DUPFD_CLOEXEC:
         result = fcntl_dupfd(proc, file, fd, cmd, arg);
         break;
 
