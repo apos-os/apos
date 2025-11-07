@@ -865,6 +865,7 @@ int vfs_dup2(int fd1, int fd2) {
 
   KASSERT_DBG(proc->fds[fd2].file == PROC_UNUSED_FD);
   proc->fds[fd2] = proc->fds[fd1];  // Transfer our ref on |file1|.
+  proc->fds[fd2].flags = 0;
   pmutex_unlock(&proc->mu);
   return fd2;
 }

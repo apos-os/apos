@@ -3585,6 +3585,17 @@ static void dup_test(void) {
     if (all_fds[i] >= 0) vfs_close(all_fds[i]);
   }
 
+  KTEST_BEGIN("vfs_dup(): clears O_CLOEXEC");
+  fd1 = vfs_open("dup_test/file", VFS_O_RDONLY | VFS_O_CLOEXEC);
+  KEXPECT_GE(fd1, 0);
+  KEXPECT_EQ(VFS_O_CLOEXEC, vfs_fcntl(fd1, VFS_F_GETFD, VFS_O_CLOEXEC));
+  fd2 = vfs_dup(fd1);
+  KEXPECT_EQ(0, vfs_fcntl(fd2, VFS_F_GETFD, VFS_O_CLOEXEC));
+  KEXPECT_EQ(VFS_O_CLOEXEC, vfs_fcntl(fd1, VFS_F_GETFD, VFS_O_CLOEXEC));
+  KEXPECT_EQ(0, vfs_close(fd1));
+  KEXPECT_EQ(0, vfs_close(fd2));
+
+
   KTEST_BEGIN("vfs_dup() test cleanup");
   KEXPECT_EQ(0, vfs_unlink("dup_test/file"));
   KEXPECT_EQ(0, vfs_rmdir("dup_test"));
@@ -3717,6 +3728,19 @@ static void dup2_test(void) NO_THREAD_SAFETY_ANALYSIS {
   KEXPECT_EQ(-EBADF, vfs_dup2(fd1, PROC_MAX_FDS + 1));
   KEXPECT_EQ(orig_fd1_idx, proc_current()->fds[fd1].file);
   vfs_close(fd1);
+
+
+  KTEST_BEGIN("vfs_dup2(): clears O_CLOEXEC");
+  fd1 = vfs_open("dup2_test/file", VFS_O_RDONLY | VFS_O_CLOEXEC);
+  KEXPECT_GE(fd1, 0);
+  KEXPECT_EQ(VFS_O_CLOEXEC, vfs_fcntl(fd1, VFS_F_GETFD, VFS_O_CLOEXEC));
+  // Use vfs_dup() to get a free fd, then dup2() to it.
+  fd2 = vfs_dup(fd1);
+  fd2 = vfs_dup2(fd1, fd2);
+  KEXPECT_EQ(0, vfs_fcntl(fd2, VFS_F_GETFD, VFS_O_CLOEXEC));
+  KEXPECT_EQ(VFS_O_CLOEXEC, vfs_fcntl(fd1, VFS_F_GETFD, VFS_O_CLOEXEC));
+  KEXPECT_EQ(0, vfs_close(fd1));
+  KEXPECT_EQ(0, vfs_close(fd2));
 
 
   KTEST_BEGIN("vfs_dup2() test cleanup");
@@ -4890,7 +4914,20 @@ static void fcntl_dupfd_tests(const int* pfds) {
     all_fds[i] = -1;
   }
 
-  // TODO(aoates): test F_DUPFD clears O_CLOEXEC when F_SETFD  is implemented.
+
+  KTEST_BEGIN("vfs_fcntl(F_DUPFD): clears O_CLOEXEC");
+  new_fd = vfs_fcntl(pfds[0], VFS_F_DUPFD, 0);
+  KEXPECT_GE(new_fd, 0);
+  KEXPECT_EQ(0, vfs_fcntl(new_fd, VFS_F_SETFD, VFS_O_CLOEXEC));
+  KEXPECT_NE(new_fd, pfds[0]);
+
+  new_fd2 = vfs_fcntl(new_fd, VFS_F_DUPFD, 0);
+  KEXPECT_GE(new_fd2, 0);
+  KEXPECT_EQ(VFS_O_CLOEXEC, vfs_fcntl(new_fd, VFS_F_GETFD, VFS_O_CLOEXEC));
+  KEXPECT_EQ(0, vfs_fcntl(new_fd2, VFS_F_GETFD, 0));
+  KEXPECT_EQ(0, vfs_close(new_fd2));
+  KEXPECT_EQ(0, vfs_close(new_fd));
+
   // TODO(aoates): test F_DUPFD_CLOEXEC when F_SETFD  is implemented.
 }
 

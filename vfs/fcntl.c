@@ -31,7 +31,7 @@ static int fcntl_dupfd(process_t* proc, file_t* file, int orig_fd, int cmd,
   KASSERT_DBG(proc->fds[new_fd].file == PROC_UNUSED_FD);
   file_ref(file);
   proc->fds[new_fd] = proc->fds[orig_fd];
-  // TODO(aoates): clear O_CLOEXEC.
+  proc->fds[new_fd].flags = 0;
   return new_fd;
 }
 
