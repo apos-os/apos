@@ -70,6 +70,7 @@ static void poll_file_test(void) {
   KEXPECT_EQ(0, pfd.revents);
 
   KEXPECT_EQ(0, vfs_unlink("_poll_test_dir/file"));
+  KEXPECT_EQ(0, vfs_close(fd));
 }
 
 static void poll_dir_test(void) {
@@ -125,6 +126,7 @@ static void poll_dir_test(void) {
   KEXPECT_EQ(fd, pfd.fd);
   KEXPECT_EQ(532, pfd.events);
   KEXPECT_EQ(KPOLLNVAL, pfd.revents);
+  KEXPECT_EQ(0, vfs_close(fd));
 }
 
 #define CHARDEV_NUM_DEVS 3
@@ -549,6 +551,7 @@ static void weird_fd_test(chardev_args_t* args) {
   KEXPECT_EQ(KPOLLOUT, pfds[2].revents);
   KEXPECT_GE(end - start, 20);
   KEXPECT_LE(end - start, 40);
+  KEXPECT_EQ(0, vfs_close(pfds[2].fd));
 }
 
 static void unmaskable_events_test(chardev_args_t* args) {
