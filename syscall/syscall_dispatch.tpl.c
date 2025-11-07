@@ -223,6 +223,7 @@ int SYSCALL_DMZ_fchown(int fd, apos_uid_t owner, apos_gid_t group);
 int SYSCALL_DMZ_lchown(const char* path, apos_uid_t owner, apos_gid_t group);
 int SYSCALL_DMZ_chmod(const char* path, apos_mode_t mode);
 int SYSCALL_DMZ_fchmod(int fd, apos_mode_t mode);
+int SYSCALL_DMZ_fcntl(int fd, int cmd, int arg);
 apos_pid_t SYSCALL_DMZ_fork(void);
 apos_pid_t SYSCALL_DMZ_vfork(void);
 int SYSCALL_DMZ_exit(int status);
@@ -429,6 +430,9 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
 
     case SYS_FCHMOD:
       return SYSCALL_DMZ_fchmod((int)arg1, (apos_mode_t)arg2);
+
+    case SYS_FCNTL:
+      return SYSCALL_DMZ_fcntl((int)arg1, (int)arg2, (int)arg3);
 
     case SYS_FORK:
       return SYSCALL_DMZ_fork();

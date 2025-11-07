@@ -967,6 +967,22 @@ cleanup:
   return result;
 }
 
+int vfs_fcntl(int fd, int cmd, int arg);
+int SYSCALL_DMZ_fcntl(int fd, int cmd, int arg) {
+  int result;
+
+  result = vfs_fcntl(fd, cmd, arg);
+
+  // TODO(aoates): this should only copy the written bytes, not the full kernel
+  // buffer (e.g. in a read() syscall).
+
+  goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
+
+cleanup:
+
+  return result;
+}
+
 apos_pid_t proc_fork_syscall(void);
 apos_pid_t SYSCALL_DMZ_fork(void) {
   int result;

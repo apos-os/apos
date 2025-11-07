@@ -60,6 +60,14 @@ int execve_helper(int argc, char** argv) {
     printf("sleeping for %d ms\n", len_ms);
     sleep_ms(len_ms);
     return 0;
+  } else if (strcmp(argv[1], "read_bad_fd_15") == 0) {
+    struct stat stat;
+    int result = fstat(15, &stat);
+    if (result == 0 || errno != EBADF) {
+      printf("error: fstat() didn't return -EBADF\n");
+      return 1;
+    }
+    return 0;
   }
 
   printf("error: bad subcommand in execve() test helper: '%s'\n", argv[1]);
@@ -145,11 +153,40 @@ static void execve_args_test(void) {
   KEXPECT_EQ(SIGSEGV, do_execve_expect_term("path", argv_ok, bad_argvB));
 }
 
+static void cloexec_test(void) {
+  KTEST_BEGIN("execve(): O_CLOEXEC test");
+  KEXPECT_EQ(15, dup2(0, 15));
+  KEXPECT_EQ(0, fcntl(15, F_GETFD, 0));
+  KEXPECT_EQ(0, fcntl(15, F_SETFD, O_CLOEXEC));
+  KEXPECT_EQ(O_CLOEXEC, fcntl(15, F_GETFD, 0));
+
+  pid_t child = fork();
+  if (child == 0) {
+    if (fcntl(15, F_GETFD, 0) != O_CLOEXEC) {
+      printf("error: O_CLOEXEC not set after fork\n");
+      exit(1);
+    }
+    char* sub_argv[] = {EXECVE_HELPER, "read_bad_fd_15", NULL};
+    char* sub_envp[] = {NULL};
+    int result = execve(SELF_PROGRAM, sub_argv, sub_envp);
+    if (result) {
+      perror("execve failed");
+    }
+    exit(1);
+  }
+
+  int status;
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_EQ(0, status);
+  KEXPECT_EQ(0, close(15));
+}
+
 void execve_test(void) {
   KTEST_SUITE_BEGIN("execve() test");
 
   basic_execve_test();
   execve_args_test();
+  cloexec_test();
   // TODO(aoates): test envp functionality.
   // TODO(aoates): test too-large argv and envp tables.
 }

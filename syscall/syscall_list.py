@@ -299,6 +299,10 @@ AddSyscall('chmod', 70, 'vfs_chmod', 'vfs/vfs.h', '<sys/stat.h>',
 AddSyscall('fchmod', 71, 'vfs_fchmod', 'vfs/vfs.h', '<sys/stat.h>',
     'int', ['int:fd:u', 'apos_mode_t:mode:u'])
 
+AddSyscall('fcntl', 103, 'vfs_fcntl', 'vfs/vfs.h', '<fcntl.h>',
+           'int', ['int:fd:u', 'int:cmd:u', 'int:arg:u'],
+           newlib_defined=True)
+
 AddSyscall('fork', 13, 'proc_fork_syscall', 'syscall/fork.h', '<unistd.h>',
     'apos_pid_t', [], newlib_defined=True)
 
