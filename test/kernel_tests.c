@@ -167,6 +167,10 @@ static void do_run_user_tests(void) {
   KASSERT(2 == vfs_dup2(g_stderr_saved, 2));
 
   run_user_tests();
+
+  KEXPECT_EQ(0, vfs_close(0));
+  KEXPECT_EQ(0, vfs_close(1));
+  KEXPECT_EQ(0, vfs_close(2));
 }
 
 typedef struct {
