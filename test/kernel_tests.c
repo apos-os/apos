@@ -23,6 +23,7 @@
 #include "dev/qemu-profiler.h"
 #include "main/kernel.h"
 #include "proc/fork.h"
+#include "proc/process.h"
 #include "proc/signal/signal.h"
 #include "proc/user.h"
 #include "proc/wait.h"
@@ -140,11 +141,32 @@ static bool should_enable_profiling(void) {
   return false;
 }
 
+static int count_fds(void) {
+  process_t* p = proc_current();
+  pmutex_lock(&p->mu);
+  int count = 0;
+  for (int i = 0; i < PROC_MAX_FDS; ++i) {
+    if (p->fds[i].file != PROC_UNUSED_FD) {
+      count++;
+    }
+  }
+  pmutex_unlock(&p->mu);
+  return count;
+}
+
+static void run_test_entry(const test_entry_t* e) {
+  int num_fds = count_fds();
+  e->func();
+
+  KTEST_BEGIN("File descriptor leak verification");
+  KEXPECT_EQ(num_fds, count_fds());
+}
+
 static void run_all_tests(void) {
   const test_entry_t* e = &TESTS[0];
   while (e->name != 0x0) {
     if (e->run_in_all) {
-      e->func();
+      run_test_entry(e);
     }
     e++;
   }
@@ -212,7 +234,7 @@ static void do_test_cmd(void* arg) {
 
   ktest_begin_all();
   for (int i = 0; i < args->num_entries; ++i) {
-    args->entry[i]->func();
+    run_test_entry(args->entry[i]);
   }
   ktest_finish_all();
   vfs_close(g_stdin_saved);
