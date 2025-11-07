@@ -59,6 +59,7 @@ int main(int argc, char** argv) {
   thread_test();
   memory_test();
   busybox_tests();
+  libc_tests();
 
   return ktest_finish_all();
 }
