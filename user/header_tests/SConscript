@@ -20,5 +20,7 @@ Import('user_env')
 user_env.StaticLibrary('apos_header_tests', [
   'access_test.c',
   'fcntl_test.c',
+  'signal_test.c',
   'stdio_test.c',
+  'unistd_test.c',
   ])
