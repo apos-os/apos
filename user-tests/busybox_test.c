@@ -357,11 +357,10 @@ static void tail_test(void) {
 static void printf_test(void) {
   KTEST_BEGIN("busybox: printf test");
   cmd_result_t res;
-  // TODO(aoates): fix busybox printf, which requires fcntl
-  KEXPECT_EQ(1, run_bb((const char*[])
+  KEXPECT_EQ(0, run_bb((const char*[])
                        {"printf", "hello %d world %d", "5", "10", NULL},
                        &res));
-  // KEXPECT_STREQ(stripr(res.out), "hello 5 world 10");
+  KEXPECT_STREQ(stripr(res.out), "hello 5 world 10");
 }
 
 static void env_test(void) {
