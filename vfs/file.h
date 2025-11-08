@@ -17,8 +17,7 @@
 
 #include "common/refcount.h"
 #include "common/types.h"
-
-struct vnode;
+#include "vfs/vnode.h"
 
 // Represents an open file on the VFS.  There may be multiple file_t's per vnode
 // (if multpile calls to vfs_open() are made), and multiple file descriptors per
@@ -30,7 +29,7 @@ struct file {
   refcount_t refcount;  // Interrupt-safe refcount is overkill.
   koff_t pos;  // Current position within the vnode.
   kmode_t mode;
-  int flags;
+  int flags;  // GUARDED_BY(vnode->mutex)
 };
 typedef struct file file_t;
 
@@ -43,5 +42,8 @@ typedef struct {
   int file;  // Index into the global file table.
   int flags;
 } fd_t;
+
+// Returns the flags on the given file.
+int file_flags(file_t* f);
 
 #endif

@@ -1374,14 +1374,14 @@ ssize_t vfs_read(int fd, void* buf, size_t count) {
 
   if (file->vnode->type == VNODE_FIFO) {
     result = fifo_read(file->vnode->fifo, buf, count,
-                       !(file->flags & VFS_O_NONBLOCK));
+                       !(file_flags(file) & VFS_O_NONBLOCK));
   } else if (file->vnode->type == VNODE_SOCKET) {
     KASSERT(file->vnode->socket != NULL);
     result = file->vnode->socket->s_ops->recvfrom(
-        file->vnode->socket, file->flags, buf, count, 0, NULL, 0);
+        file->vnode->socket, file_flags(file), buf, count, 0, NULL, 0);
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_read(file->vnode->type, file->vnode->dev, file->pos,
-                                 buf, count, file->flags);
+                                 buf, count, file_flags(file));
   } else {
     kmutex_lock(&file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
@@ -1423,14 +1423,14 @@ ssize_t vfs_write(int fd, const void* buf, size_t count) {
 
   if (file->vnode->type == VNODE_FIFO) {
     result = fifo_write(file->vnode->fifo, buf, count,
-                        !(file->flags & VFS_O_NONBLOCK));
+                        !(file_flags(file) & VFS_O_NONBLOCK));
   } else if (file->vnode->type == VNODE_SOCKET) {
     KASSERT(file->vnode->socket != NULL);
     result = file->vnode->socket->s_ops->sendto(
-        file->vnode->socket, file->flags, buf, count, 0, NULL, 0);
+        file->vnode->socket, file_flags(file), buf, count, 0, NULL, 0);
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_write(file->vnode->type, file->vnode->dev,
-                                  file->pos, buf, count, file->flags);
+                                  file->pos, buf, count, file_flags(file));
   } else {
     pmutex_lock(&proc_current()->mu);
     const apos_rlim_t limit =

@@ -36,3 +36,10 @@ file_t* file_alloc(void) {
 void file_free(file_t* f) {
   kfree(f);
 }
+
+int file_flags(file_t* f) {
+  kmutex_lock(&f->vnode->mutex);
+  int flags = f->flags;
+  kmutex_unlock(&f->vnode->mutex);
+  return flags;
+}
