@@ -15,11 +15,14 @@
 
 #include "common/errno.h"
 #include "proc/pmutex.h"
+#include "user/include/apos/vfs/fcntl.h"
 #include "user/include/apos/vfs/vfs.h"
 #include "vfs/file.h"
 #include "vfs/vfs_internal.h"
 
 #define SETFD_VALID_FLAGS VFS_O_CLOEXEC
+#define SETFL_MUTABLE_FLAGS (VFS_O_APPEND | VFS_O_NONBLOCK)
+#define SETFL_READ_FLAGS (SETFL_MUTABLE_FLAGS | VFS_O_ACCMODE)
 
 static int fcntl_dupfd(process_t* proc, file_t* file, int orig_fd, int cmd,
                        int arg) REQUIRES(proc->mu) {
@@ -50,6 +53,17 @@ static int fcntl_setfd(process_t* proc, file_t* file, int orig_fd, int cmd,
   return 0;
 }
 
+static int fcntl_getfl(process_t* proc, file_t* file, int orig_fd, int cmd,
+                       int arg) REQUIRES(proc->mu) {
+  return (file->flags & SETFL_READ_FLAGS);
+}
+
+static int fcntl_setfl(process_t* proc, file_t* file, int orig_fd, int cmd,
+                       int arg) REQUIRES(proc->mu) {
+  file->flags = (arg & SETFL_MUTABLE_FLAGS);
+  return 0;
+}
+
 int vfs_fcntl(int fd, int cmd, int arg) {
   process_t* proc = proc_current();
   pmutex_lock(&proc->mu);
@@ -74,6 +88,14 @@ int vfs_fcntl(int fd, int cmd, int arg) {
 
       case VFS_F_SETFD:
         result = fcntl_setfd(proc, file, fd, cmd, arg);
+        break;
+
+      case VFS_F_GETFL:
+        result = fcntl_getfl(proc, file, fd, cmd, arg);
+        break;
+
+      case VFS_F_SETFL:
+        result = fcntl_setfl(proc, file, fd, cmd, arg);
         break;
 
       default:

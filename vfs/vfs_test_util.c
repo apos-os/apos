@@ -15,6 +15,7 @@
 #include "vfs/vfs_test_util.h"
 
 #include "common/kassert.h"
+#include "vfs/fcntl.h"
 #include "vfs/vnode.h"
 #include "vfs/vfs_internal.h"
 #include "vfs/vfs.h"
@@ -121,19 +122,15 @@ bool vfs_get_force_no_files(void) {
 }
 
 void vfs_make_nonblock(int fd) {
-  file_t* file = 0x0;
-  int result = lookup_fd(fd, &file);
-  KASSERT(result == 0);
-  KASSERT((file->flags & VFS_O_NONBLOCK) == 0);
-  file->flags |= VFS_O_NONBLOCK;
-  file_unref(file);
+  int flags = vfs_fcntl(fd, VFS_F_GETFL, 0);
+  KASSERT(flags >= 0);
+  KASSERT((flags & VFS_O_NONBLOCK) == 0);
+  KASSERT(0 == vfs_fcntl(fd, VFS_F_SETFL, flags | VFS_O_NONBLOCK));
 }
 
 void vfs_make_blocking(int fd) {
-  file_t* file = 0x0;
-  int result = lookup_fd(fd, &file);
-  KASSERT(result == 0);
-  KASSERT((file->flags & VFS_O_NONBLOCK) != 0);
-  file->flags &= ~VFS_O_NONBLOCK;
-  file_unref(file);
+  int flags = vfs_fcntl(fd, VFS_F_GETFL, 0);
+  KASSERT(flags >= 0);
+  KASSERT((flags & VFS_O_NONBLOCK) != 0);
+  KASSERT(0 == vfs_fcntl(fd, VFS_F_SETFL, flags & ~VFS_O_NONBLOCK));
 }

@@ -37,6 +37,8 @@ bool kexpect(int cond, const char* name, const char* astr,
 void ktest_add_failure(const char* file, const char* line, const char* msg);
 void ktest_add_failuref(const char* file, const char* line, const char* fmt,
                         ...) __attribute__((format(printf, 3, 4)));
+void ktest_add_trace(const char* file, const char* line, const char* fmt, ...)
+    __attribute__((format(printf, 3, 4)));
 
 typedef enum {
   PRINT_SIGNED,
@@ -124,6 +126,11 @@ bool kexpect_multiline_streq(const char* file, const char* line,
 #define KTEST_ADD_FAILURE(_msg) ktest_add_failure(__FILE__, STR(__LINE__), _msg)
 #define KTEST_ADD_FAILUREF(fmt, ...) \
   ktest_add_failuref(__FILE__, STR(__LINE__), fmt, __VA_ARGS__)
+
+// Add a dynamic trace string to the current test (for example, in a loop).  If
+// the test fails, the trace string will be printed.
+#define KTEST_TRACE(fmt, ...) \
+  ktest_add_trace(__FILE__, STR(__LINE__), fmt, __VA_ARGS__);
 
 // Initialize the testing framework.
 void ktest_begin_all(void);

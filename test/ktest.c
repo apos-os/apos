@@ -63,6 +63,8 @@ static int current_test_failures = 0;
 static apos_ms_t test_start_time;
 
 static const char* current_test_name = 0x0;
+#define TRACE_LEN 200
+static char current_trace[TRACE_LEN];
 
 // Array of failing test names.  Assumes that test names aren't generated on the
 // fly (i.e. the pointers we get to them in KTEST_BEGIN() stay good).
@@ -123,6 +125,7 @@ void KTEST_SUITE_BEGIN(const char* name) {
 void KTEST_BEGIN(const char* name) {
   finish_test();  // Finish the previous test, if running.
   current_test_name = name;
+  current_trace[0] = '\0';
   current_test_passing = 1;
   current_test_failures = 0;
   num_tests++;
@@ -134,12 +137,28 @@ void KTEST_BEGIN(const char* name) {
   }
 }
 
+void ktest_add_trace(const char* file, const char* line, const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  int r = kvsnprintf(current_trace, TRACE_LEN, fmt, args);
+  va_end(args);
+  if (r >= TRACE_LEN) {
+    klog("warning: buffer too small in ktest_add_trace()\n");
+  }
+}
+
 static void do_failure(void) {
   if (current_test_passing && !KTEST_PRINT_ALL_TESTS_VAL) {
     klogm(KL_TEST, INFO, "\nTEST: ");
     klogm(KL_TEST, INFO, current_test_name);
     klogm(KL_TEST, INFO, "\n");
     klogm(KL_TEST, INFO, "---------------------------------------\n");
+  }
+  if (current_trace[0] != '\0') {
+    klogm(KL_TEST, INFO, "TRACE: ");
+    klogm(KL_TEST, INFO, current_trace);
+    klogm(KL_TEST, INFO, "\n");
+    current_trace[0] = '\0';  // Only print the trace again when it changes.
   }
   current_test_passing = 0;
   current_suite_passing = 0;

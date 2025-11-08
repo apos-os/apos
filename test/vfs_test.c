@@ -4989,6 +4989,113 @@ static void fcntl_getfd_tests(int* pfds) {
   KEXPECT_EQ(0, vfs_unlink(kPath));
 }
 
+typedef struct {
+  const char* name;
+  int flags_in;
+  int flags_expected;
+} getfl_test_args_t;
+
+static void fcntl_getfl_tests(int* pfds) {
+  KTEST_BEGIN("vfs_fcntl(): F_GETFL on opened fd test");
+#define X1(expected_flags) \
+  { #expected_flags, expected_flags, expected_flags }
+#define X2(expected_flags, extra_flags) \
+  { #expected_flags " | " #extra_flags, expected_flags | extra_flags, expected_flags }
+  const getfl_test_args_t kTests[] = {
+      // Tests where we open only with flags that should show up in GETFL.
+      X1(VFS_O_RDONLY),
+      X1(VFS_O_WRONLY),
+      X1(VFS_O_RDWR),
+      X1(VFS_O_RDONLY | VFS_O_APPEND),
+      X1(VFS_O_WRONLY | VFS_O_APPEND),
+      X1(VFS_O_RDWR | VFS_O_APPEND),
+      X1(VFS_O_RDONLY | VFS_O_APPEND | VFS_O_NONBLOCK),
+      X1(VFS_O_WRONLY | VFS_O_NONBLOCK),
+
+      // Tests with creation flags as well.
+      X2(VFS_O_RDONLY, VFS_O_CREAT),
+      X2(VFS_O_RDONLY, VFS_O_CREAT | VFS_O_EXCL),
+      X2(VFS_O_RDWR, VFS_O_CREAT | VFS_O_EXCL | VFS_O_TRUNC),
+      X2(VFS_O_RDWR | VFS_O_NONBLOCK, VFS_O_CREAT | VFS_O_EXCL | VFS_O_TRUNC),
+      X2(VFS_O_WRONLY | VFS_O_NONBLOCK, VFS_O_NOCTTY),
+      X2(VFS_O_WRONLY | VFS_O_NONBLOCK, VFS_O_NOFOLLOW),
+      X2(VFS_O_WRONLY | VFS_O_NONBLOCK, VFS_O_CLOEXEC),
+  };
+#undef X1
+#undef X2
+
+  const int kNumTests = sizeof(kTests) / sizeof(getfl_test_args_t);
+  const char kFile[] = "_fcntl_getfl_test";
+  for (int i = 0; i < kNumTests; ++i) {
+    KTEST_TRACE("vfs_open(%s)", kTests[i].name);
+    if (!(kTests[i].flags_in & VFS_O_CREAT)) {
+      create_file_with_data(kFile, "");
+    }
+    int fd = vfs_open(kFile, kTests[i].flags_in, VFS_S_IRWXU);
+    KEXPECT_GE(fd, 0);
+    KEXPECT_EQ(kTests[i].flags_expected, vfs_fcntl(fd, VFS_F_GETFL, 0));
+    KEXPECT_EQ(0, vfs_close(fd));
+    KEXPECT_EQ(0, vfs_unlink(kFile));
+  }
+
+  // Test O_DIRECTORY.
+  KEXPECT_EQ(0, vfs_mkdir(kFile, VFS_S_IRWXU));
+  int fd = vfs_open(kFile, VFS_O_RDONLY | VFS_O_DIRECTORY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(VFS_O_RDONLY, vfs_fcntl(fd, VFS_F_GETFL, 0));
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_rmdir(kFile));
+
+
+  KTEST_BEGIN("vfs_fcntl(): F_SETFL sets flags");
+#define X2(expected_flags, extra_flags) \
+  { #expected_flags " | " #extra_flags, expected_flags | extra_flags, expected_flags }
+  const getfl_test_args_t kTests2[] = {
+      X2(0, VFS_O_RDONLY),
+      X2(0, VFS_O_WRONLY),
+      X2(0, VFS_O_RDWR),
+      X2(VFS_O_APPEND, VFS_O_RDONLY),
+      X2(VFS_O_APPEND, VFS_O_WRONLY),
+      X2(VFS_O_APPEND, VFS_O_RDWR),
+      X2(VFS_O_APPEND | VFS_O_NONBLOCK, VFS_O_RDONLY),
+      X2(VFS_O_NONBLOCK, VFS_O_WRONLY),
+
+      // Creation flag tests (should be ignored).
+      X2(VFS_O_NONBLOCK, VFS_O_CREAT),
+      X2(0, VFS_O_CREAT),
+      X2(VFS_O_NONBLOCK, VFS_O_EXCL),
+      X2(VFS_O_NONBLOCK, VFS_O_TRUNC),
+      X2(VFS_O_NONBLOCK, VFS_O_NOCTTY),
+      X2(VFS_O_NONBLOCK, VFS_O_NOFOLLOW),
+      X2(VFS_O_NONBLOCK, VFS_O_CLOEXEC),
+      X2(VFS_O_NONBLOCK, VFS_O_DIRECTORY),
+      X2(VFS_O_NONBLOCK | VFS_O_APPEND, VFS_O_CLOEXEC),
+
+      // Random flags, garbage.
+      X2(0, 12345 << 12),
+      X2(VFS_O_APPEND, 12345 << 12),
+  };
+#undef X1
+#undef X2
+  const int kNumTests2 = sizeof(kTests2) / sizeof(getfl_test_args_t);
+  create_file_with_data(kFile, "");
+  for (int i = 0; i < kNumTests2; ++i) {
+    KTEST_TRACE("vfs_fcntl(O_SETFL, %s)", kTests2[i].name);
+    int fd = vfs_open(kFile, VFS_O_RDWR);
+    KEXPECT_GE(fd, 0);
+    KEXPECT_EQ(0, vfs_fcntl(fd, VFS_F_SETFL, kTests2[i].flags_in));
+    KEXPECT_EQ(kTests2[i].flags_expected, vfs_fcntl(fd, VFS_F_GETFL, 0));
+    KEXPECT_EQ(0, vfs_close(fd));
+  }
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+  KTEST_BEGIN("vfs_fcntl(): F_GETFL/F_SETFL bad file descriptor");
+  KEXPECT_EQ(-EBADF, vfs_fcntl(-1, VFS_F_GETFL, 0));
+  KEXPECT_EQ(-EBADF, vfs_fcntl(100, VFS_F_GETFL, 0));
+  KEXPECT_EQ(-EBADF, vfs_fcntl(-1, VFS_F_SETFL, 0));
+  KEXPECT_EQ(-EBADF, vfs_fcntl(100, VFS_F_SETFL, 0));
+}
+
 static void fcntl_test(void) {
   KTEST_BEGIN("vfs_fcntl(): invalid FD test");
   KEXPECT_EQ(-EBADF, vfs_fcntl(-1, 0, 0));
@@ -5014,6 +5121,7 @@ static void fcntl_test(void) {
 
   fcntl_dupfd_tests(pfds);
   fcntl_getfd_tests(pfds);
+  fcntl_getfl_tests(pfds);
 
   // Cleanup.
   KEXPECT_EQ(0, vfs_close(pfds[0]));

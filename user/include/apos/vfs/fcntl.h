@@ -20,12 +20,16 @@
 #define VFS_F_DUPFD_CLOEXEC 2
 #define VFS_F_GETFD         3
 #define VFS_F_SETFD         4
+#define VFS_F_GETFL         5
+#define VFS_F_SETFL         6
 
 #if !__APOS_BUILDING_KERNEL__
 #define F_DUPFD VFS_F_DUPFD
 #define F_DUPFD_CLOEXEC VFS_F_DUPFD_CLOEXEC
 #define F_GETFD VFS_F_GETFD
 #define F_SETFD VFS_F_SETFD
+#define F_GETFL VFS_F_GETFL
+#define F_SETFL VFS_F_SETFL
 #endif
 
 #endif
