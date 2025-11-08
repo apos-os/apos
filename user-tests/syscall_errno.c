@@ -90,10 +90,13 @@ void syscall_errno_test(void) {
 
 
   KTEST_BEGIN("getcwd() errno");
-  KEXPECT_SIGNAL(SIGSEGV, getcwd(NULL, 100));
+  KEXPECT_SIGNAL(SIGSEGV, getcwd((char*)0x1, 100));
   KEXPECT_SIGNAL(SIGSEGV, getcwd((char*)0x1234, 100));
 
   KEXPECT_EQ(&buf[0], getcwd(buf, 100));
+  char* allocated = getcwd(0, 0);
+  KEXPECT_STREQ(buf, allocated);
+  free(allocated);
 
   KTEST_BEGIN("mmap() errno");
   ERRNO_TEST(mmap(0x0, 1000, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0),

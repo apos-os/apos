@@ -16,6 +16,7 @@
 
 {# Manually implemented syscall stubs. -#}
 #include <stdarg.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <apos/mmap.h>
 
@@ -25,7 +26,14 @@ __attribute__((noreturn)) void _exit(int status) {
   while (1) {}
 }
 
+// We need a custom wrapper to return char* rather than error int.
 char* _getcwd_r(struct _reent* reent_ptr, char* buf, size_t size) {
+  if (!buf) {
+    // TODO(aoates): use VFS_MAX_PATH_LENGTH.
+    const int kMaxSize = 1000;  // Guess the max size.
+    buf = malloc(kMaxSize);
+    size = kMaxSize;
+  }
   int result = _do_getcwd(buf, size);
   if (result < 0) {
     reent_ptr->_errno = -result;
