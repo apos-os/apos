@@ -62,6 +62,7 @@ const char* klog_module_name(klog_module_t m) {
     CONSIDER(TCP)
     CONSIDER(TEST)
     CONSIDER(USER)
+    CONSIDER(TEMP)
 
     case KL_MODULE_MAX: return "<invalid>";
   }

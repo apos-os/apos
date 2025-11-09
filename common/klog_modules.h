@@ -47,6 +47,10 @@ typedef enum {
   KL_TEST,
   KL_USER,  // From userspace.
 
+  // Log lines that should never be checked in, only used when doing printf
+  // debugging.
+  KL_TEMP,
+
   KL_MODULE_MAX,
 } klog_module_t;
 
