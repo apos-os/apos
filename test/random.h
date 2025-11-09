@@ -19,5 +19,6 @@
 
 // A mediocre global pseudo-random number generator that tests can use.
 uint32_t test_rand(void);
+void test_rand_seed(uint32_t seed);
 
 #endif

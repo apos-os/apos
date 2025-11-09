@@ -21,6 +21,7 @@
 #include "common/arch-config.h"
 #include "common/config.h"
 #include "common/errno.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/klog_control.h"
@@ -57,6 +58,7 @@
 #include "memory/page_alloc.h"
 #include "proc/scheduler.h"
 #include "sanitizers/tsan/tsan.h"
+#include "test/random.h"
 #include "vfs/mount_table.h"
 #include "vfs/vfs.h"
 #include "test/ktest.h"
@@ -214,6 +216,16 @@ static void parse_command_line(boot_info_t* boot, const char* cmdline) {
   boot->cmd_line = cmdline_args;
 }
 
+static void dtree_seed_rng(const dt_tree_t* dt) {
+  const dt_property_t* rngseed_prop =
+      dt_get_nprop(dt, "/chosen", "rng-seed");
+  if (rngseed_prop) {
+    uint32_t rng_hash = fnv_hash_array(rngseed_prop->val,
+        rngseed_prop->val_len);
+    test_rand_seed(rng_hash);
+  }
+}
+
 void kmain(boot_info_t* boot, const char* cmdline) {
   g_boot_info = boot;
   set_global_meminfo(boot->meminfo);
@@ -283,6 +295,7 @@ void kmain(boot_info_t* boot, const char* cmdline) {
   // Initialize devices.
   if (boot->dtree) {
     dtree_load_drivers(boot->dtree);
+    dtree_seed_rng(boot->dtree);
   }
 
   klog("pci_init()\n");

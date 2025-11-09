@@ -17,14 +17,20 @@
 #include "common/hash.h"
 #include "common/kassert.h"
 
+static atomic32_t g_testrand_val = ATOMIC32_INIT(12345);
+
 uint32_t test_rand(void) {
-  static atomic32_t val = ATOMIC32_INIT(12345);
   while (true) {
-    uint32_t cval = atomic_load_relaxed(&val);
+    uint32_t cval = atomic_load_relaxed(&g_testrand_val);
     uint32_t next = fnv_hash(cval);
     KASSERT(cval != 0);
-    if (atomic_cmp_xchg_relaxed_weak(&val, &cval, next)) {
+    if (atomic_cmp_xchg_relaxed_weak(&g_testrand_val, &cval, next)) {
       return next;
     }
   }
+}
+
+void test_rand_seed(uint32_t seed) {
+  klogf("Seed for test_rand(): %u\n", seed);
+  atomic_store_relaxed(&g_testrand_val, seed);
 }
