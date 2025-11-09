@@ -58,6 +58,7 @@ srcs = [
   'proc_thread_test.c',
   'ramdisk_test.c',
   'ramfs_test.c',
+  'random.c',
   'run_user_tests.c',
   'session_test.c',
   'signal_test.c',

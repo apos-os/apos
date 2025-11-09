@@ -34,6 +34,15 @@ static void atomic32_test(void) {
   KEXPECT_EQ(200, atomic_xchg_relaxed(&x, 1000));
   KEXPECT_EQ(1000, atomic_load_relaxed(&x));
 
+  KTEST_BEGIN("atomic32_t: relaxed compare-exchange test");
+  atomic_store_relaxed(&x, 100);
+  uint32_t expected = 105;
+  KEXPECT_FALSE(atomic_cmp_xchg_relaxed_weak(&x, &expected, 106));
+  KEXPECT_EQ(100, expected);
+  KEXPECT_EQ(100, atomic_load_relaxed(&x));
+  KEXPECT_TRUE(atomic_cmp_xchg_relaxed_weak(&x, &expected, 106));
+  KEXPECT_EQ(106, atomic_load_relaxed(&x));
+
   KTEST_BEGIN("atomic32_t: basic acquire/release operations test");
   atomic_store_release(&x, 100);
   KEXPECT_EQ(100, atomic_load_acquire(&x));
