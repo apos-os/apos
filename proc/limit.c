@@ -29,7 +29,8 @@ int proc_getrlimit(int resource, struct apos_rlimit* lim) {
 }
 
 int proc_setrlimit(int resource, const struct apos_rlimit* lim) {
-  if (resource < 0 || resource >= APOS_RLIMIT_NUM_RESOURCES)
+  if (resource < 0 || resource >= APOS_RLIMIT_NUM_RESOURCES ||
+      resource == APOS_RLIMIT_DATA || resource == APOS_RLIMIT_STACK)
     return -EINVAL;
 
   if (lim->rlim_cur > lim->rlim_max)

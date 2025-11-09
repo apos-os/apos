@@ -190,6 +190,18 @@ static void rlimit_test(void) {
   KEXPECT_EQ(EINVAL, errno);
   KEXPECT_SIGNAL(SIGSEGV, setrlimit(RLIMIT_NOFILE, NULL));
   KEXPECT_SIGNAL(SIGSEGV, setrlimit(100, (struct rlimit*)0x1fff));
+
+  // Try the unsupported RLIMIT types.
+  rl.rlim_cur = rl.rlim_max = 1;
+  KEXPECT_EQ(0, getrlimit(RLIMIT_DATA, &rl));
+  KEXPECT_EQ(RLIM_INFINITY, rl.rlim_cur);
+  KEXPECT_EQ(RLIM_INFINITY, rl.rlim_max);
+  KEXPECT_ERRNO(EINVAL, setrlimit(RLIMIT_DATA, &rl));
+  rl.rlim_cur = rl.rlim_max = 1;
+  KEXPECT_EQ(0, getrlimit(RLIMIT_STACK, &rl));
+  KEXPECT_EQ(RLIM_INFINITY, rl.rlim_cur);
+  KEXPECT_EQ(RLIM_INFINITY, rl.rlim_max);
+  KEXPECT_ERRNO(EINVAL, setrlimit(RLIMIT_STACK, &rl));
 }
 
 // Test the poll()-wrapping version of select() included in the APOS newlib

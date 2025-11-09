@@ -37,10 +37,10 @@ struct _APOS_RLIMIT {
 // TODO(aoates): implement all of these.
 // #define APOS_RLIMIT_CORE 0  // Limit on size of core file.
 // #define APOS_RLIMIT_CPU 1  // Limit on CPU time per process.
-// #define APOS_RLIMIT_DATA 2  // Limit on data segment size.
+#define APOS_RLIMIT_DATA 2  // Limit on data segment size.
 #define APOS_RLIMIT_FSIZE 3  // Limit on file size.
 #define APOS_RLIMIT_NOFILE 4  // Limit on number of open files.
-// #define APOS_RLIMIT_STACK 5  // Limit on stack size.
+#define APOS_RLIMIT_STACK 5  // Limit on stack size.
 #define APOS_RLIMIT_AS 6  // Limit on address space size.
 #define APOS_RLIMIT_NUM_RESOURCES 7
 
@@ -52,6 +52,8 @@ struct _APOS_RLIMIT {
 # define RLIMIT_FSIZE APOS_RLIMIT_FSIZE
 # define RLIMIT_NOFILE APOS_RLIMIT_NOFILE
 # define RLIMIT_AS APOS_RLIMIT_AS
+# define RLIMIT_DATA APOS_RLIMIT_DATA
+# define RLIMIT_STACK APOS_RLIMIT_STACK
 #endif
 
 #endif
