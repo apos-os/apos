@@ -272,6 +272,7 @@ int kernel_run_ktests(const char** names, int len) {
   const test_entry_t** tests = kmalloc(sizeof(test_entry_t*) * len);
   int result = find_tests(names, len, tests);
   if (result) {
+    kfree(tests);
     klogf("Cannot run tests: %s\n", errorname(-result));
     return result;
   }
