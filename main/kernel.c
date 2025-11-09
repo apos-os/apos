@@ -28,6 +28,7 @@
 #include "common/kstring.h"
 #include "common/per_cpu.h"
 #include "common/perf_trace.h"
+#include "common/time.h"
 #include "dev/devicetree/devicetree.h"
 #include "dev/devicetree/drivers.h"
 #include "dev/interrupts.h"
@@ -216,14 +217,69 @@ static void parse_command_line(boot_info_t* boot, const char* cmdline) {
   boot->cmd_line = cmdline_args;
 }
 
-static void dtree_seed_rng(const dt_tree_t* dt) {
-  const dt_property_t* rngseed_prop =
-      dt_get_nprop(dt, "/chosen", "rng-seed");
-  if (rngseed_prop) {
-    uint32_t rng_hash = fnv_hash_array(rngseed_prop->val,
-        rngseed_prop->val_len);
-    test_rand_seed(rng_hash);
+static uint32_t find_seed_cmdline(const boot_info_t* boot) {
+  if (!boot->cmd_line) return 0;
+  const char kKey[] = "rng_seed=";
+  for (int i = 0; boot->cmd_line[i] != NULL; ++i) {
+    if (!kstr_startswith(boot->cmd_line[i], kKey)) {
+      continue;
+    }
+    const char* val = boot->cmd_line[i] + kstrlen(kKey);
+    for (int j = 0; val[j] != '\0'; ++j) {
+      if (!kisdigit(val[j])) {
+        klogfm(KL_GENERAL, FATAL, "Bad rng_seed value: %s\n",
+               boot->cmd_line[i]);
+      }
+    }
+    unsigned long seed = katou(val);
+    if (seed > UINT32_MAX) {
+      klogfm(KL_GENERAL, FATAL, "Bad rng_seed value: %s\n", boot->cmd_line[i]);
+    }
+    return (uint32_t)seed;
   }
+  return 0;
+}
+
+static void rng_init(const boot_info_t* boot) {
+  // First check if a seed is given on the command line.
+  uint32_t seed = find_seed_cmdline(boot);
+  const char* source = "from command line";
+  if (seed != 0) {
+    goto found;
+  }
+
+  // Next look for a devicetree setting.
+  if (boot->dtree) {
+    const dt_property_t* rngseed_prop =
+        dt_get_nprop(boot->dtree, "/chosen", "rng-seed");
+    if (rngseed_prop) {
+      seed = fnv_hash_array(rngseed_prop->val, rngseed_prop->val_len);
+      source = "from dtree /chosen/rng-seed";
+      goto found;
+    }
+  }
+
+  // Fall back to hashing the system clock value, if we can.
+  struct apos_tm tm;
+  if (apos_get_time(&tm) == 0) {
+    seed = fnv_hash_array(&tm, sizeof(tm));
+    source = "from RTC value #1";
+    goto found;
+  }
+  struct apos_timespec ts;
+  if (apos_get_timespec(&ts) == 0) {
+    seed = fnv_hash_array(&ts, sizeof(ts));
+    source = "from RTC value #2";
+    goto found;
+  }
+
+  // Can't do anything, use a static value.
+  seed = 12345;
+  source = "constant fallback value";
+
+found:
+  klogf("Seeding RNG: %u (%s)\n", seed, source);
+  test_rand_seed(seed);
 }
 
 void kmain(boot_info_t* boot, const char* cmdline) {
@@ -295,8 +351,10 @@ void kmain(boot_info_t* boot, const char* cmdline) {
   // Initialize devices.
   if (boot->dtree) {
     dtree_load_drivers(boot->dtree);
-    dtree_seed_rng(boot->dtree);
   }
+
+  klog("rng_init()\n");
+  rng_init(boot);
 
   klog("pci_init()\n");
   pci_init();
