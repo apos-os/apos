@@ -187,6 +187,13 @@ uint32_t tsan_atomic_xchg(atomic32_t* x, uint32_t newval, int memorder) {
   die("Bad memory order");
 }
 
+bool tsan_atomic_cmp_xchg(atomic32_t* x, uint32_t* expected,
+                               uint32_t desired, int memorder,
+                               int fail_memorder) {
+  return __atomic_compare_exchange_n(&x->_val, expected, desired,
+                                     /* weak */ false, memorder, fail_memorder);
+}
+
 bool tsan_flag_get(const atomic_flag_t* f) {
   return atomic_flag_get(f);
 }

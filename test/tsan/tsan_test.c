@@ -4064,6 +4064,330 @@ static void atomic_acqrel_syncs_relaxed_test2(void) {
   tsan_test_cleanup();
 }
 
+typedef struct {
+  atomic32_t* val;
+  uint32_t expected;
+  uint32_t desired;
+} atomic_cmpxch_basic_args_t;
+
+static void* atomic_cmpxch_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  atomic_cmpxch_basic_args_t* args = (atomic_cmpxch_basic_args_t*)arg;
+  tsan_atomic_cmp_xchg(args->val, &args->expected, args->desired,
+                       ATOMIC_RELAXED, ATOMIC_RELAXED);
+  sched_disable_preemption();
+  return NULL;
+}
+
+static void atomic_cmpxch_tests(void) {
+  KTEST_BEGIN("TSAN: atomic_compare_exchange basic functionality");
+  atomic32_t* x = TS_MALLOC(atomic32_t);
+
+  const int kMemorders[] = {ATOMIC_RELAXED, ATOMIC_ACQUIRE, ATOMIC_RELEASE,
+                            ATOMIC_ACQ_REL, ATOMIC_SEQ_CST};
+  for (size_t i = 0; i < sizeof(kMemorders) / sizeof(int); ++i) {
+    KTEST_TRACE("memorder %d", kMemorders[i]);
+    atomic_store_relaxed(x, 10);
+    uint32_t expected = 10;
+    KEXPECT_TRUE(
+        tsan_atomic_cmp_xchg(x, &expected, 20, kMemorders[i], ATOMIC_RELAXED));
+    KEXPECT_EQ(20, atomic_load_relaxed(x));
+    KEXPECT_EQ(10, expected);
+
+    expected = 15;
+    KEXPECT_FALSE(
+        tsan_atomic_cmp_xchg(x, &expected, 30, kMemorders[i], ATOMIC_RELAXED));
+    KEXPECT_EQ(20, atomic_load_relaxed(x));
+    KEXPECT_EQ(20, expected);
+  }
+
+  KTEST_BEGIN("TSAN: atomic_compare_exchange read race");
+  atomic_store_relaxed(x, 10);
+  kthread_t thread;
+  atomic_cmpxch_basic_args_t args = {.val = x, .expected = 10, .desired = 20};
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&thread, &atomic_cmpxch_thread, &args));
+  ksleep(5);
+  tsan_read32((uint32_t*)x);
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT(x, 4, "atomic_w", x, 4, "r");
+  kthread_join(thread);
+  intercept_reports_done();
+
+  KTEST_BEGIN("TSAN: atomic_compare_exchange write race");
+  atomic_store_relaxed(x, 10);
+  args.expected = 10;
+  intercept_reports();
+  KEXPECT_EQ(0, proc_thread_create(&thread, &atomic_cmpxch_thread, &args));
+  ksleep(5);
+  tsan_write32((uint32_t*)x, 5);
+  KEXPECT_TRUE(wait_for_race());
+  EXPECT_REPORT(x, 4, "atomic_w", x, 4, "w");
+  kthread_join(thread);
+  intercept_reports_done();
+
+  KTEST_BEGIN("TSAN: atomic_compare_exchange safe");
+  atomic_store_relaxed(x, 10);
+  args.expected = 10;
+  atomic_cmpxch_basic_args_t args2 = {.val = x, .expected = 20, .desired = 30};
+  KEXPECT_EQ(0, proc_thread_create(&thread, &atomic_cmpxch_thread, &args2));
+  ksleep(5);
+  tsan_atomic_cmp_xchg(x, &args.expected, 20, ATOMIC_RELAXED, ATOMIC_RELAXED);
+  kthread_join(thread);
+  KEXPECT_FALSE(g_found_report);
+
+  tsan_test_cleanup();
+}
+
+typedef struct {
+  atomic32_t* flag;
+  alignas(8) uint32_t expected;
+  uint32_t desired;
+  int mo;
+  int fail_mo;
+  bool result;
+  uint32_t* nonatomic_val;
+} atomic_cmpxch_args_t;
+
+// Thread that waits (non-synchronizing) for the flag to be set to 1, then does
+// an atomic compare/exchange on the flag, then does a non-atomic access on the
+// value.
+static void* atomic_cmpxch_read_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  atomic_cmpxch_args_t* args = (atomic_cmpxch_args_t*)arg;
+  while (!atomic_load_relaxed(args->flag))  //
+    ;  // Spin
+
+  // Do atomic operation being tested.
+  args->result = tsan_atomic_cmp_xchg(args->flag, &args->expected,
+                                      args->desired, args->mo, args->fail_mo);
+
+  // Do non-atomic access that may or may not race.
+  tsan_write32(args->nonatomic_val, 123);
+  sched_disable_preemption();
+  return NULL;
+}
+
+// Thread that writes a value non-atomically, then does an atomic
+// compare/exchange on the flag.  If the operation is unsuccessful, does a
+// non-synchronizing (relaxed) unconditional write to the flag.
+static void* atomic_cmpxch_write_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  ksleep(10);
+  atomic_cmpxch_args_t* args = (atomic_cmpxch_args_t*)arg;
+
+  // Do non-atomic access that may or may not race.
+  tsan_write32(args->nonatomic_val, 123);
+
+  // Do atomic operation being tested.
+  args->result = tsan_atomic_cmp_xchg(args->flag, &args->expected,
+                                      args->desired, args->mo, args->fail_mo);
+
+  // If the operation failed, unblock the reader anyway.
+  if (!args->result) {
+    atomic_store_relaxed(args->flag, 1);
+  }
+
+  sched_disable_preemption();
+  return NULL;
+}
+
+typedef struct axchtestspec {
+  const char * name;
+  uint32_t expected;
+  uint32_t desired;
+  int mo;
+  int fail_mo;
+  uint32_t expected_expected;
+  bool expected_result;
+  bool expected_race;
+} axchtestspec_t;
+
+#define TEST_NON_SYNC(memorder, starting_val) \
+  {#memorder " (doesn't synchronize)",        \
+   starting_val,                              \
+   starting_val + 1,                          \
+   memorder,                                  \
+   ATOMIC_RELAXED,                            \
+   starting_val,                              \
+   true,                                      \
+   true}
+#define TEST_SYNC(memorder, starting_val) \
+  {#memorder " (synchronizes)",           \
+   starting_val,                          \
+   starting_val + 1,                      \
+   memorder,                              \
+   ATOMIC_RELAXED,                        \
+   starting_val,                          \
+   true,                                  \
+   false}
+#define TEST_NON_SYNC_FAILMO(memorder, starting_val)      \
+  {#memorder " (doesn't synchronize) [failure memorder]", \
+   2,                                                     \
+   3,                                                     \
+   ATOMIC_SEQ_CST,                                        \
+   memorder,                                              \
+   starting_val,                                          \
+   false,                                                 \
+   true}
+#define TEST_SYNC_FAILMO(memorder, starting_val)   \
+  {#memorder " (synchronizes) [failure memorder]", \
+   2,                                              \
+   3,                                              \
+   ATOMIC_SEQ_CST,                                 \
+   memorder,                                       \
+   starting_val,                                   \
+   false,                                          \
+   false}
+
+// Tests that the "read" part of atomic cmpxch synchronizes (or not).
+static void atomic_cmpxch_read_tests(void) {
+  KTEST_BEGIN("TSAN: atomic compare/exchange read synchronization");
+  const axchtestspec_t kTests[] = {
+    TEST_NON_SYNC(ATOMIC_RELAXED, 1),
+    TEST_SYNC(ATOMIC_ACQUIRE, 1),
+    TEST_NON_SYNC(ATOMIC_RELEASE, 1),
+    TEST_SYNC(ATOMIC_ACQ_REL, 1),
+    TEST_SYNC(ATOMIC_SEQ_CST, 1),
+
+    // Failure memorder tests:
+    TEST_NON_SYNC_FAILMO(ATOMIC_RELAXED, 1),
+    TEST_SYNC_FAILMO(ATOMIC_ACQUIRE, 1),
+    // ATOMIC_RELEASE not allowed as fail_memorder
+    // ATOMIC_ACQ_REL not allowed as fail_memorder
+    TEST_SYNC_FAILMO(ATOMIC_SEQ_CST, 1),
+  };
+  const size_t kNumTests = sizeof(kTests) / sizeof(axchtestspec_t);
+  for (size_t i = 0; i < kNumTests; ++i) {
+    KTEST_TRACE("Atomic compare/exchange %s", kTests[i].name);
+    sync_test_args_t* st_args = alloc_sync_test_args();
+    atomic_cmpxch_args_t cx_args = {
+        .flag = &st_args->flag,
+        .expected = kTests[i].expected,
+        .desired = kTests[i].desired,
+        .mo = kTests[i].mo,
+        .fail_mo = kTests[i].fail_mo,
+        .nonatomic_val = &st_args->val,
+    };
+
+    kthread_t threads[2];
+    intercept_reports();
+    KEXPECT_EQ(0, proc_thread_create(&threads[0], &sync_test_writer_release,
+                                     st_args));
+    KEXPECT_EQ(0, proc_thread_create(&threads[1], &atomic_cmpxch_read_thread,
+                                     &cx_args));
+    KEXPECT_EQ(NULL, kthread_join(threads[0]));
+    KEXPECT_EQ(NULL, kthread_join(threads[1]));
+    if (kTests[i].expected_race) {
+      EXPECT_REPORT(&st_args->val, 4, "?", &st_args->val, 4, "w");
+    } else {
+      KEXPECT_FALSE(g_found_report);
+    }
+    KEXPECT_EQ(kTests[i].expected_result, cx_args.result);
+    KEXPECT_EQ(kTests[i].expected_expected, cx_args.expected);
+    if (kTests[i].expected_result) {
+      KEXPECT_EQ(kTests[i].desired, atomic_load_relaxed(cx_args.flag));
+    }
+    intercept_reports_done();
+  }
+  tsan_test_cleanup();
+}
+
+// Tests that the "write" part of atomic cmpxch synchronizes (or not).
+static void atomic_cmpxch_write_tests(void) {
+  KTEST_BEGIN("TSAN: atomic compare/exchange write synchronization");
+  const axchtestspec_t kTests[] = {
+    TEST_NON_SYNC(ATOMIC_RELAXED, 0),
+    TEST_NON_SYNC(ATOMIC_ACQUIRE, 0),
+    TEST_SYNC(ATOMIC_RELEASE, 0),
+    TEST_SYNC(ATOMIC_ACQ_REL, 0),
+    TEST_SYNC(ATOMIC_SEQ_CST, 0),
+
+    // Failure memorder tests:
+    TEST_NON_SYNC_FAILMO(ATOMIC_RELAXED, 0),
+    TEST_NON_SYNC_FAILMO(ATOMIC_ACQUIRE, 0),
+    // ATOMIC_RELEASE not allowed as fail_memorder
+    // ATOMIC_ACQ_REL not allowed as fail_memorder
+    TEST_SYNC_FAILMO(ATOMIC_SEQ_CST, 0),
+  };
+  const size_t kNumTests = sizeof(kTests) / sizeof(axchtestspec_t);
+  for (size_t i = 0; i < kNumTests; ++i) {
+    KTEST_TRACE("Atomic compare/exchange %s", kTests[i].name);
+    sync_test_args_t* st_args = alloc_sync_test_args();
+    atomic_cmpxch_args_t cx_args = {
+        .flag = &st_args->flag,
+        .expected = kTests[i].expected,
+        .desired = kTests[i].desired,
+        .mo = kTests[i].mo,
+        .fail_mo = kTests[i].fail_mo,
+        .nonatomic_val = &st_args->val,
+    };
+
+    // Ensure a sync object is created already so that creation in the writer
+    // thread doesn't accidentally synchronize.
+    tsan_atomic_write(&st_args->flag, 0, ATOMIC_SEQ_CST);
+
+    kthread_t threads[2];
+    intercept_reports();
+    KEXPECT_EQ(0, proc_thread_create(&threads[0], &sync_test_reader_acquire,
+                                     st_args));
+    KEXPECT_EQ(0, proc_thread_create(&threads[1], &atomic_cmpxch_write_thread,
+                                     &cx_args));
+    KEXPECT_EQ((void*)123, kthread_join(threads[0]));
+    KEXPECT_EQ(NULL, kthread_join(threads[1]));
+    if (kTests[i].expected_race) {
+      EXPECT_REPORT(&st_args->val, 4, "?", &st_args->val, 4, "w");
+    } else {
+      KEXPECT_FALSE(g_found_report);
+    }
+    KEXPECT_EQ(kTests[i].expected_result, cx_args.result);
+    KEXPECT_EQ(kTests[i].expected_expected, cx_args.expected);
+    intercept_reports_done();
+  }
+  tsan_test_cleanup();
+}
+
+#undef TEST_SYNC
+#undef TEST_NON_SYNC
+#undef TEST_SYNC_FAILMO
+#undef TEST_NON_SYNC_FAILMO
+
+static void atomic_cmpxch_expected_race_test(void) {
+  KTEST_BEGIN("TSAN: atomic compare/exchange race on expected value");
+  sync_test_args_t* st_args = alloc_sync_test_args();
+  atomic_cmpxch_args_t* cx_args = TS_MALLOC(atomic_cmpxch_args_t);
+  *cx_args = (atomic_cmpxch_args_t){
+      .flag = &st_args->flag,
+      .expected = 1,
+      .desired = 2,
+      .mo = ATOMIC_RELAXED,
+      .fail_mo = ATOMIC_RELAXED,
+      .nonatomic_val = &st_args->val,
+  };
+
+  kthread_t threads[2];
+  intercept_reports();
+  // The "other" thread here accesses "expected", not the flag value or
+  // protected value.
+  KEXPECT_EQ(
+      0, proc_thread_create(&threads[0], access_u32, &cx_args->expected));
+  KEXPECT_EQ(
+      0, proc_thread_create(&threads[1], &atomic_cmpxch_write_thread, cx_args));
+  KEXPECT_EQ(NULL, kthread_join(threads[0]));
+  KEXPECT_EQ(NULL, kthread_join(threads[1]));
+  EXPECT_REPORT(&cx_args->expected, 4, "?", &cx_args->expected, 4, "w");
+  intercept_reports_done();
+  tsan_test_cleanup();
+}
+
+static void atomic_cmpxch_memorder_tests(void) {
+  atomic_cmpxch_read_tests();
+  atomic_cmpxch_write_tests();
+  atomic_cmpxch_expected_race_test();
+}
+
 static void atomic_acq_rel_tests(void) {
   atomic_acqrel_safe_test();
   atomic_acqrel_safe_test2();
@@ -4491,6 +4815,8 @@ static void atomic_tests(void) {
   atomic_seq_cst_tests();
   atomic_flag_tests();
   atomic_weak_rmw_tests();
+  atomic_cmpxch_tests();
+  atomic_cmpxch_memorder_tests();
 }
 
 static void atomic_hooks_tests(void) {

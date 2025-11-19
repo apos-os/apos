@@ -68,6 +68,9 @@ uint32_t tsan_atomic_rmw(atomic32_t* x, uint32_t val, int memorder);
 
 uint32_t tsan_atomic_xchg(atomic32_t* x, uint32_t newval, int memorder);
 
+bool tsan_atomic_cmp_xchg(atomic32_t* x, uint32_t* expected, uint32_t desired,
+                          int memorder, int fail_memorder);
+
 bool tsan_flag_get(const atomic_flag_t* f);
 void tsan_flag_set(atomic_flag_t* f);
 void tsan_flag_clear(atomic_flag_t* f);

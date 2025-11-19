@@ -100,3 +100,39 @@ DEFINE_ATOMIC_RMW(__tsan_atomic32, _fetch_add, )
 DEFINE_ATOMIC_RMW(__tsan_atomic32, _fetch_sub, )
 DEFINE_ATOMIC_RMW(__tsan_atomic32, _fetch_or, )
 DEFINE_ATOMIC_RMW(__tsan_atomic32, _exchange, _n)
+
+int __tsan_atomic32_compare_exchange_weak(
+    volatile __tsan_atomic32* a, __tsan_atomic32* c, __tsan_atomic32 v,
+    __tsan_mo mo, __tsan_mo fail_mo) {
+  tsan_check(CALLERPC, (addr_t)a, sizeof(__tsan_atomic32),
+             TSAN_ACCESS_WRITE | TSAN_ACCESS_IS_ATOMIC);
+
+  // Relaxed fast-path.
+  if (mo == ATOMIC_RELAXED || !tsan_initialized()) {
+    return __atomic_compare_exchange_n(a, c, v, false, mo, fail_mo);
+  }
+
+  tsan_sync_t* sync = tsan_sync_get((addr_t)a, sizeof(__tsan_atomic32), true);
+  tsan_spinlock_lock(&sync->spin);
+  __tsan_atomic32 result =
+      __atomic_compare_exchange_n(a, c, v, false, mo, fail_mo);
+  if (!result) {
+    mo = fail_mo;
+  }
+  if (tsan_is_acquire(mo)) {
+    tsan_acquire(&sync->lock, TSAN_LOCK);
+  }
+  if (tsan_is_release(mo)) {
+    tsan_release(&sync->lock, TSAN_LOCK);
+  }
+  tsan_spinlock_unlock(&sync->spin);
+
+  return result;
+}
+
+int __tsan_atomic32_compare_exchange_val(volatile __tsan_atomic32* a,
+                                         __tsan_atomic32 c, __tsan_atomic32 v,
+                                         __tsan_mo mo, __tsan_mo fail_mo) {
+  __tsan_atomic32_compare_exchange_weak(a, &c, v, mo, fail_mo);
+  return c;
+}
