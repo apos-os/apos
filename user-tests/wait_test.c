@@ -24,6 +24,9 @@
 #include <apos/syscall_decls.h>
 
 #include "ktest.h"
+#include "user-tests/util.h"
+
+const char kNftn[] = "_wait_test_ntfn";
 
 static bool create_file(const char* path) {
   int fd = open(path, O_CREAT | O_RDONLY, S_IRWXU);
@@ -321,7 +324,9 @@ static void continued_test(void) {
   KTEST_BEGIN("waitpid() with WCONTINUED (doesn't return twice for one continue)");
   if ((child = fork()) == 0) {
     kill(getpid(), SIGSTOP);
-    sleep_ms(100);
+    while (!fntfn_has_been_notified(kNftn)) {
+      sleep_ms(10);
+    }
     exit(0);
   }
   KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
@@ -332,14 +337,18 @@ static void continued_test(void) {
   KEXPECT_EQ(0, WIFSIGNALED(status));
   KEXPECT_EQ(0, WIFSTOPPED(status));
   KEXPECT_NE(0, WIFCONTINUED(status));
+  fntfn_notify(kNftn);
 
   KEXPECT_EQ(child, waitpid(-1, &status, WCONTINUED));
   KEXPECT_NE(0, WIFEXITED(status));
+  fntfn_destroy(kNftn);
 
 
   KTEST_BEGIN("waitpid() with WCONTINUED (SIGCONT on running process)");
   if ((child = fork()) == 0) {
-    sleep_ms(100);
+    while (!fntfn_has_been_notified(kNftn)) {
+      sleep_ms(10);
+    }
     exit(0);
   }
   KEXPECT_EQ(0, kill(child, SIGCONT));
@@ -350,13 +359,17 @@ static void continued_test(void) {
   KEXPECT_EQ(0, WIFSTOPPED(status));
   KEXPECT_NE(0, WIFCONTINUED(status));
 
+  fntfn_notify(kNftn);
   KEXPECT_EQ(child, waitpid(-1, &status, WCONTINUED));
   KEXPECT_NE(0, WIFEXITED(status));
+  fntfn_destroy(kNftn);
 
 
-  KTEST_BEGIN("waitpid() with WCONTINUED (SIGCONT on running process)");
+  KTEST_BEGIN("waitpid() with WCONTINUED (SIGCONT on running process) #2");
   if ((child = fork()) == 0) {
-    sleep_ms(100);
+    while (!fntfn_has_been_notified(kNftn)) {
+      sleep_ms(10);
+    }
     kill(getpid(), SIGKILL);
   }
   KEXPECT_EQ(0, kill(child, SIGCONT));
@@ -366,7 +379,13 @@ static void continued_test(void) {
   KEXPECT_EQ(0, WIFSIGNALED(status));
   KEXPECT_EQ(0, WIFSTOPPED(status));
   KEXPECT_NE(0, WIFCONTINUED(status));
-  KEXPECT_EQ(child, wait(NULL));
+
+  fntfn_notify(kNftn);
+  KEXPECT_EQ(child, waitpid(-1, &status, WCONTINUED));
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_NE(0, WIFSIGNALED(status));
+  KEXPECT_EQ(SIGKILL, WTERMSIG(status));
+  fntfn_destroy(kNftn);
 }
 
 static void no_hang_test(void) {
@@ -415,7 +434,9 @@ static void no_hang_test(void) {
   KTEST_BEGIN("waitpid(): WNOHANG with continued child");
   if ((child = fork()) == 0) {
     kill(getpid(), SIGSTOP);
-    sleep_ms(100);
+    while (!fntfn_has_been_notified(kNftn)) {
+      sleep_ms(10);
+    }
     exit(0);
   }
   sleep_ms(10);
@@ -426,8 +447,10 @@ static void no_hang_test(void) {
   KEXPECT_EQ(child, waitpid(-1, &status, WNOHANG | WCONTINUED));
   KEXPECT_NE(0, WIFCONTINUED(status));
   KEXPECT_EQ(0, waitpid(-1, &status, WNOHANG | WUNTRACED));
+  KEXPECT_EQ(0, waitpid(-1, &status, WNOHANG | WUNTRACED));
+  fntfn_notify(kNftn);
   KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
-  // TODO(aoates): without the above, the child segfaults.  Why?
+  fntfn_destroy(kNftn);
 }
 
 void wait_test(void) {

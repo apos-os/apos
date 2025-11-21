@@ -26,4 +26,10 @@ bool fntfn_await(const char* name, int timeout_ms);
 // Notify the given notification.
 void fntfn_notify(const char* name);
 
+// Returns true if the notification has been notified.
+bool fntfn_has_been_notified(const char* name);
+
+// Destroy a notification (unlink the file).
+void fntfn_destroy(const char* name);
+
 #endif

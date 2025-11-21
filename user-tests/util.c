@@ -15,6 +15,7 @@
 #include "user-tests/util.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -24,9 +25,7 @@
 bool fntfn_await(const char* name, int timeout_ms) {
   const int kSleepMs = 50;
   while (timeout_ms > 0) {
-    int fd = open(name, O_RDWR);
-    if (fd >= 0) {
-      close(fd);
+    if (fntfn_has_been_notified(name)) {
       return true;
     }
     sleep_ms(kSleepMs);
@@ -39,4 +38,19 @@ void fntfn_notify(const char* name) {
   int fd = open(name, O_RDWR | O_CREAT | O_EXCL, S_IRWXU);
   assert(fd >= 0);
   close(fd);
+}
+
+bool fntfn_has_been_notified(const char* name) {
+  struct stat stat;
+  int result = lstat(name, &stat);
+  if (result == 0) {
+    return true;
+  }
+
+  assert(errno == ENOENT);
+  return false;
+}
+
+void fntfn_destroy(const char* name) {
+  assert(unlink(name) == 0);
 }
