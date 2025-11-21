@@ -149,7 +149,7 @@ int main(int argc, char** argv) {
   // TODO(aoates): what environment variables should we set?
   char* shell_arg = NULL;
   asprintf(&shell_arg, "-%s", pw.pw_shell);
-  char* shell_argv[] = {pw.pw_shell, shell_arg, NULL};
+  char* shell_argv[] = {shell_arg, NULL};
   char* shell_envp[] = {NULL};
   execve(pw.pw_shell, shell_argv, shell_envp);
   perror("Unable to exec user shell");
