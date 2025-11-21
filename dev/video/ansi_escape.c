@@ -84,6 +84,11 @@ int parse_ansi_escape(const char* buf, size_t len, ansi_seq_t* seq) {
 int apply_ansi_color(const ansi_seq_t* seq, video_attr_t* attr) {
   if (seq->final_letter != 'm') return ANSI_INVALID;
 
+  if (seq->num_codes == 0) {
+    *attr = VGA_DEFAULT_ATTR;
+    return ANSI_SUCCESS;
+  }
+
   for (int i = 0; i < seq->num_codes; ++i) {
     int code = seq->codes[i];
     if (code >= 30 && code <= 37) {

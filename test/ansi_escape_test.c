@@ -118,8 +118,9 @@ void ansi_escape_test(void) {
   parse_test();
 
   KTEST_BEGIN("FG color escape sequence");
-  video_attr_t attr = video_mk_attr(VGA_BLUE | VGA_BRIGHT,
-                                    VGA_RED | VGA_BRIGHT);
+  const video_attr_t kDefaultAttr =
+      video_mk_attr(VGA_BLUE | VGA_BRIGHT, VGA_RED | VGA_BRIGHT);
+  video_attr_t attr = kDefaultAttr;
   KEXPECT_EQ(ANSI_SUCCESS, apply_ansi_escape(CSI "32m", 5, &attr));
   KEXPECT_EQ(video_mk_attr(VGA_GREEN | VGA_BRIGHT, VGA_RED | VGA_BRIGHT), attr);
 
@@ -129,7 +130,13 @@ void ansi_escape_test(void) {
              attr);
 
   KTEST_BEGIN("Normal escape sequence");
+  attr = kDefaultAttr;
   KEXPECT_EQ(ANSI_SUCCESS, apply_ansi_escape(CSI "0m", 4, &attr));
+  KEXPECT_EQ(VGA_DEFAULT_ATTR, attr);
+
+  KTEST_BEGIN("Normal escape sequence");
+  attr = kDefaultAttr;
+  KEXPECT_EQ(ANSI_SUCCESS, apply_ansi_escape(CSI "m", 3, &attr));
   KEXPECT_EQ(VGA_DEFAULT_ATTR, attr);
 
   KTEST_BEGIN("Bold escape sequence");
