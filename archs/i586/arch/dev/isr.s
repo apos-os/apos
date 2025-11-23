@@ -142,4 +142,4 @@ int_common_handler:
   add $0x8, %esp
 
   sti
-  iret
+  iret  # gdb-interrupt-end

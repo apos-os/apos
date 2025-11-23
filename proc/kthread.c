@@ -499,7 +499,7 @@ NO_TSAN void kthread_switch(kthread_t new_thread) NO_THREAD_SAFETY_ANALYSIS {
 #endif
   }
 
-  POP_INTERRUPTS();
+  POP_INTERRUPTS();  // gdb-until-thread-switch
 }
 
 // NO_SANITIZER: because this function is used by TSAN to determine current

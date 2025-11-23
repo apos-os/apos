@@ -151,4 +151,4 @@ int_common_handler:
   pop %rbp
   add $0x10, %rsp
 
-  iretq
+  iretq  # gdb-interrupt-end

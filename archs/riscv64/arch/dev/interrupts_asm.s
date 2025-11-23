@@ -229,6 +229,6 @@ int_handler_asm:
   # Restore the original value of ra (from the interrupted code) and sp.
   ld ra, 0(sp)
   ld sp, 0x08(sp)
-  sret
+  sret  # gdb-interrupt-end
 
 _int_handlers_end:
