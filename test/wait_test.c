@@ -14,16 +14,21 @@
 
 #include "proc/wait.h"
 
+#include "memory/kmalloc.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
 #include "proc/group.h"
+#include "proc/kthread.h"
 #include "proc/notification.h"
+#include "proc/pmutex.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
+#include "test/random.h"
+#include "test/test_point.h"
 #include "user/include/apos/wait.h"
 
 static void do_nothing(void* arg) {
@@ -387,12 +392,189 @@ static void wait_guid_test(void) {
   KEXPECT_EQ(child, proc_wait(NULL));
 }
 
+static void* locker_thread(void* arg) {
+  notification_t* done = (notification_t*)arg;
+  while (!ntfn_has_been_notified(done)) {
+    pmutex_lock(&proc_current()->mu);
+    for (int i = 0; i < test_rand() % 3; ++i) scheduler_yield();
+    pmutex_unlock(&proc_current()->mu);
+    for (int i = 0; i < test_rand() % 3; ++i) scheduler_yield();
+  }
+  kfree(done);
+  return NULL;
+}
+
+static void stress_test_child(void* arg) {
+  KASSERT(sched_preemption_enabled());
+  notification_t* done = KMALLOC(notification_t);
+  ntfn_init(done);
+  kthread_t locker;
+  KEXPECT_EQ(0, proc_thread_create(&locker, &locker_thread, done));
+  kthread_detach(locker);
+  // Each child yields a random number of times then exits.
+  for (int i = 0; i < test_rand_range(3, 20); ++i) {
+    scheduler_yield();
+  }
+  ntfn_notify(done);
+}
+
+static void stress_test_parent(void* arg) {
+  sched_enable_preemption_for_test();
+  // Each stress test parent spins off N children then waits for a subset of
+  // them to exit.  It also has a thread randomly take its mutex sometimes.
+  notification_t* done = KMALLOC(notification_t);
+  ntfn_init(done);
+  kthread_t locker;
+  KEXPECT_EQ(0, proc_thread_create(&locker, locker_thread, done));
+  kthread_detach(locker);
+
+  const int kNumChildren = 5;
+  for (int i = 0; i < kNumChildren; ++i) {
+    kpid_t child = proc_fork(&stress_test_child, NULL);
+    KEXPECT_GE(child, 0);
+  }
+
+  // Wait for a random subset to finish, then exit.
+  for (int i = 0; i < test_rand_range(1, kNumChildren - 2); ++i) {
+    proc_wait(NULL);
+  }
+  ntfn_notify(done);
+  proc_exit(0);
+}
+
+static void yield_test_point(const char* name, int count, void* arg) {
+  for (int i = 0; i < test_rand_range(1, 10); ++i) {
+    scheduler_yield();
+  }
+}
+
+static void wait_multithread_test(void) {
+  KTEST_BEGIN("Multi-process waitpid() stress test");
+  const int kNumParents = 5;
+  kpid_t parents[kNumParents];
+  test_point_add("proc:exit_get_parent_loop", yield_test_point, NULL);
+  for (int i = 0; i < kNumParents; ++i) {
+    parents[i] = proc_fork(&stress_test_parent, NULL);
+    KEXPECT_GE(parents[i], 0);
+  }
+  for (int i = 0; i < kNumParents; ++i) {
+    int status;
+    KEXPECT_EQ(parents[i], proc_waitpid(parents[i], &status, 0));
+    KEXPECT_EQ(0, status);
+  }
+  test_point_remove("proc:exit_get_parent_loop");
+}
+
+typedef struct {
+  notification_t child_started;
+  notification_t child_can_exit;
+  notification_t parent_wait_done;
+  kpid_t child;
+  int wait_result;
+} wait_ref_args_t;
+
+static void wait_ref_test_child(void* arg) {
+  wait_ref_args_t* args = (wait_ref_args_t*)arg;
+  ntfn_notify(&args->child_started);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args->child_can_exit, 1000));
+  proc_exit(0);
+}
+
+static void wait_ref_test_parent(void* arg) {
+  wait_ref_args_t* args = (wait_ref_args_t*)arg;
+  args->child = proc_fork(&wait_ref_test_child, arg);
+  KEXPECT_GE(args->child, 0);
+  int status;
+  args->wait_result = proc_waitpid(-1, &status, 0);
+  ntfn_notify(&args->parent_wait_done);
+  proc_exit(0);
+}
+
+static void do_wait_reference_held_test(bool put_locked) {
+  wait_ref_args_t args;
+  ntfn_init(&args.child_started);
+  ntfn_init(&args.child_can_exit);
+  ntfn_init(&args.parent_wait_done);
+  kpid_t parent = proc_fork(&wait_ref_test_parent, &args);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.child_started, 1000));
+
+  process_t* child = proc_get_ref(args.child);  // Take a ref.
+  ntfn_notify(&args.child_can_exit);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.parent_wait_done, 20));
+  kspin_lock(&child->spin_mu);
+  KEXPECT_EQ(PROC_ZOMBIE, child->state);
+  kspin_unlock(&child->spin_mu);
+
+  // For fun, try setpgid on the child (it should fail).
+  KEXPECT_EQ(-ESRCH, setpgid(args.child, args.child));
+
+  // Get another ref with the parent in its wait loop.
+  proc_put(child);
+  KEXPECT_EQ(child, proc_get_ref(args.child));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.parent_wait_done, 20));
+
+  // Put the second ref, now the wait should finish.
+  if (put_locked) {
+    kspin_lock(&g_proc_table_lock);
+    proc_put_locked(child);
+    kspin_unlock(&g_proc_table_lock);
+  } else {
+    proc_put(child);
+  }
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.parent_wait_done, 1000));
+  KEXPECT_EQ(args.child, args.wait_result);
+  KEXPECT_EQ(parent, proc_waitpid(parent, NULL, 0));
+}
+
+static void wait_reference_held_interrupted_test(void) {
+  wait_ref_args_t args;
+  ntfn_init(&args.child_started);
+  ntfn_init(&args.child_can_exit);
+  ntfn_init(&args.parent_wait_done);
+  kpid_t parent = proc_fork(&wait_ref_test_parent, &args);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.child_started, 1000));
+
+  process_t* child = proc_get_ref(args.child);  // Take a ref.
+  ntfn_notify(&args.child_can_exit);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.parent_wait_done, 20));
+  kspin_lock(&child->spin_mu);
+  KEXPECT_EQ(PROC_ZOMBIE, child->state);
+  kspin_unlock(&child->spin_mu);
+
+  // Interrupt the parent, which should be blocked in the reference-wait loop.
+  KEXPECT_EQ(0, proc_kill(parent, SIGUSR1));
+
+  // The parent should exit.
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.parent_wait_done, 1000));
+  KEXPECT_EQ(parent, proc_waitpid(parent, NULL, 0));
+  KEXPECT_EQ(-EINTR, args.wait_result);
+
+  // When we put the child, it should be cleaned up by process 0.
+  proc_put(child);
+}
+
+static void wait_reference_held_test(void) {
+  KTEST_BEGIN("waitpid() tries to collect zombie with a pending reference");
+  do_wait_reference_held_test(false);
+
+  KTEST_BEGIN("waitpid() tries to collect zombie with a pending reference (proc_put_locked())");
+  do_wait_reference_held_test(true);
+
+  KTEST_BEGIN("waitpid() tries to collect zombie with a pending reference (loop interrupted with signal)");
+  wait_reference_held_interrupted_test();
+}
+
+// TODO(aoates): add a variant of the above where multiple threads in the parent
+// are calling waitpid() simultaneously.)
+
 void do_wait_test(void* arg) {
   basic_waitpid_test();
   interruptable_waitpid_test();
   wait_for_specific_pid_test();
   wait_for_pgroup_test();
   wait_guid_test();
+  wait_multithread_test();
+  wait_reference_held_test();
 }
 
 void do_wait_test_outer(void* arg) {

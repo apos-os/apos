@@ -25,6 +25,7 @@
 #include "memory/vm_area.h"
 #include "proc/exit.h"
 #include "proc/group.h"
+#include "proc/kthread-queue.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "proc/load/load.h"
@@ -36,6 +37,7 @@
 #include "proc/signal/signal.h"
 #include "proc/spinlock.h"
 #include "proc/user.h"
+#include "test/test_point.h"
 
 #define PROC_DEFAULT_UMASK 022
 
@@ -48,6 +50,7 @@ static process_t g_first_process;
 
 // Global lock that protects the process table, process groups, and sessions.
 kspinlock_t g_proc_table_lock = KSPINLOCK_NORMAL_INIT_STATIC;
+kthread_queue_t g_proc_table_q;
 
 // vm_area_t's representing the regions mapped for the kernel binary, and the
 // physically-mapped region, respectively.  They will be put in
@@ -76,6 +79,8 @@ static void proc_init_process(process_t* p) NO_THREAD_SAFETY_ANALYSIS {
   pmutex_init(&p->mu);
   p->spin_mu = KSPINLOCK_NORMAL_INIT;
   p->refcount = REFCOUNT_INIT;
+  refcount_inc(&p->refcount);  // For the process table.
+  refcount_inc(&p->refcount);  // For the process threads.
   p->guid = 0;
   p->id = -1;
   p->state = PROC_INVALID;
@@ -142,18 +147,12 @@ process_t* proc_alloc(void) {
 }
 
 void proc_destroy(process_t* process) {
-  kspin_lock(&process->spin_mu);
-  KASSERT(refcount_get(&process->refcount) == 0);
+  kspin_destructor(&process->spin_mu);
+  KASSERT(refcount_get(&process->refcount) == 1);
   KASSERT(process->state == PROC_INVALID);
   KASSERT(list_empty(&process->threads));
   KASSERT(process->page_directory == 0x0);
   KASSERT(process->id > 0 && process->id < PROC_MAX_PROCS);
-  kspin_unlock(&process->spin_mu);
-
-  kspin_lock(&g_proc_table_lock);
-  KASSERT(g_proc_table[process->id] == process);
-  g_proc_table[process->id] = NULL;
-  kspin_unlock(&g_proc_table_lock);
 
   process->id = -1;
   kfree(process);
@@ -162,6 +161,7 @@ void proc_destroy(process_t* process) {
 void proc_init_stage1(void) NO_THREAD_SAFETY_ANALYSIS {
   KASSERT(g_proc_init_stage == 0);
   kspin_constructor(&g_proc_table_lock);
+  kthread_queue_init(&g_proc_table_q);
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
     g_proc_table[i] = 0x0;
 
@@ -265,9 +265,20 @@ process_t* proc_get_ref(kpid_t id) {
   }
 }
 
+const int kProcPutNotifyRefcount = 2;
+
 void proc_put(process_t* proc) {
-  if (refcount_dec(&proc->refcount) == 0) {
-    proc_destroy(proc);
+  KASSERT_DBG(!kspin_is_held(&g_proc_table_lock));
+  if (refcount_dec(&proc->refcount) == kProcPutNotifyRefcount) {
+    kspin_lock(&g_proc_table_lock);
+    scheduler_wake_all(&g_proc_table_q);
+    kspin_unlock(&g_proc_table_lock);
+  }
+}
+
+void proc_put_locked(process_t* proc) {
+  if (refcount_dec(&proc->refcount) == kProcPutNotifyRefcount) {
+    scheduler_wake_all(&g_proc_table_q);
   }
 }
 
@@ -362,7 +373,7 @@ process_t* proc_get_and_lock_parent(void) NO_THREAD_SAFETY_ANALYSIS {
   process_t* const child = proc_current();
   // We must always lock in parent->child order --- however, the process's
   // parent can change.  The process hierarchy is guaranteed to be a DAG
-  // (unless, say, vnodes), so we have a simpler retry loop.
+  // (unlike, say, vnodes), so we have a simpler retry loop.
   //
   // In practice processes are only every reparented to the root node, but this
   // logic is general.
@@ -370,8 +381,11 @@ process_t* proc_get_and_lock_parent(void) NO_THREAD_SAFETY_ANALYSIS {
     // First read the parent.
     pmutex_lock(&child->mu);
     process_t* parent = child->parent;
+    KASSERT(parent != NULL);
     refcount_inc(&parent->refcount);
     pmutex_unlock(&child->mu);
+
+    test_point_run("proc:exit_get_parent_loop");
 
     // We have a refcount on the parent, so now we can relock in order.
     pmutex_lock(&parent->mu);
@@ -379,9 +393,11 @@ process_t* proc_get_and_lock_parent(void) NO_THREAD_SAFETY_ANALYSIS {
     if (child->parent == parent) {
       return parent;
     }
+    KASSERT(child->parent != NULL);
     KASSERT(child->parent->id == 0);  // Should only be reparented to root proc.
     pmutex_unlock(&child->mu);
     pmutex_unlock(&parent->mu);
+    proc_put(parent);
   }
   die("unreachable");
 }

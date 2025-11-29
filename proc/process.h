@@ -133,6 +133,9 @@ typedef struct process {
   // Resource limits.
   struct apos_rlimit limits[APOS_RLIMIT_NUM_RESOURCES] GUARDED_BY(&mu);
 
+  // In the steady state, a process has three standing refs on it: one for the
+  // global proc table, one for its parent, and one for itself (released by the
+  // last running thread on exit).
   refcount_t refcount;
 } process_t;
 
@@ -167,7 +170,8 @@ process_t* proc_get_locked(kpid_t id) REQUIRES(g_proc_table_lock);
 // proc_put() on it later.
 process_t* proc_get_ref(kpid_t id) EXCLUDES(g_proc_table_lock);
 
-void proc_put(process_t* proc);
+void proc_put(process_t* proc) EXCLUDES(g_proc_table_lock);
+void proc_put_locked(process_t* proc) REQUIRES(g_proc_table_lock);
 
 // Spawn a new thread associated with the current process.  The new thread
 // _must_ either return from the called function, or call proc_thread_exit(),

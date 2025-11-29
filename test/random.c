@@ -13,21 +13,29 @@
 // limitations under the License.
 #include "test/random.h"
 
+#include <limits.h>
+
 #include "common/atomic.h"
 #include "common/hash.h"
 #include "common/kassert.h"
 
 static atomic32_t g_testrand_val = ATOMIC32_INIT(12345);
 
-uint32_t test_rand(void) {
+int test_rand(void) {
   while (true) {
     uint32_t cval = atomic_load_relaxed(&g_testrand_val);
     uint32_t next = fnv_hash(cval);
     KASSERT(cval != 0);
     if (atomic_cmp_xchg_relaxed_weak(&g_testrand_val, &cval, next)) {
-      return next;
+      return (int)(next % INT_MAX);
     }
   }
+}
+
+int test_rand_range(int min, int max) {
+  KASSERT_DBG(max >= min);
+  int scale = max - min + 1;
+  return min + (test_rand() % scale);
 }
 
 void test_rand_seed(uint32_t seed) {

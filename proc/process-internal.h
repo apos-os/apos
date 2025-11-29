@@ -35,4 +35,7 @@ void proc_set_current(process_t* process);
 // Cancel the existing alarm, if any, for the process (internal proc helper).
 void proc_alarm_cancel(process_t* proc) REQUIRES(proc->spin_mu);
 
+extern kthread_queue_t g_proc_table_q GUARDED_BY(&g_proc_table_lock);
+extern process_t* g_proc_table[PROC_MAX_PROCS] GUARDED_BY(g_proc_table_lock);
+
 #endif

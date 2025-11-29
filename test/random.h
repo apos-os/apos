@@ -17,8 +17,10 @@
 
 #include <stdint.h>
 
-// A mediocre global pseudo-random number generator that tests can use.
-uint32_t test_rand(void);
+// A mediocre global pseudo-random number generator that tests can use.  Returns
+// only positive integers.
+int test_rand(void);
+int test_rand_range(int min, int max);
 void test_rand_seed(uint32_t seed);
 
 #endif

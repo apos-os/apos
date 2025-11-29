@@ -66,7 +66,7 @@ void proc_exit(int status) {
 }
 
 void proc_finish_exit(void) {
-  process_t* const p = proc_current();
+  process_t* p = proc_current();
   KASSERT(p->id != 0);
 
   // Phase 1: do things that require other locks (signalling) and
@@ -122,9 +122,15 @@ void proc_finish_exit(void) {
   // process is still in a consistent state, but has no children or other
   // references to clean up.
 
-  // Start with state protected only by the mutex.
-  pmutex_lock(&p->mu);
+  // Go ahead and find our parent and lock it as well.  We must do this before
+  // transitioning into ZOMBIE, so that the parent can only observe us in ZOMBIE
+  // once we've finished cleaning up here.
+  process_t* parent = proc_get_and_lock_parent();
+  pmutex_assert_is_held(&parent->mu);
+  pmutex_assert_is_held(&p->mu);
+  KASSERT_DBG(p->parent == parent);
 
+  // Start with state protected only by the mutex.
   // Close all open fds.
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
     if (p->fds[i].file >= 0) {
@@ -158,14 +164,13 @@ void proc_finish_exit(void) {
   me->process = NULL;
 
   p->state = PROC_ZOMBIE;
-
   kspin_unlock(&p->spin_mu);
-  pmutex_unlock(&p->mu);
 
-  // Phase 3: we must now signal our parent. This requires some locking fun.
-  process_t* parent = proc_get_and_lock_parent();
-  pmutex_assert_is_held(&p->mu);
-  pmutex_assert_is_held(&parent->mu);
+  // Phase 3: we must now signal our parent
+  pmutex_unlock(&p->mu);
+  proc_put(p);
+  p = NULL;
+  // NOTE: from here on out, we could be cleaned up by the parent at any point.
 
   // Send SIGCHLD to the parent.
   KASSERT(proc_force_signal(parent, SIGCHLD) == 0);
@@ -173,7 +178,6 @@ void proc_finish_exit(void) {
   // Wake up parent if it's wait()'ing.
   scheduler_wake_all(&parent->wait_queue);
 
-  pmutex_unlock(&p->mu);
   pmutex_unlock(&parent->mu);
   proc_put(parent);
 

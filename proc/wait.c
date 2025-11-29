@@ -17,6 +17,7 @@
 #include "arch/memory/page_map.h"
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "common/refcount.h"
 #include "memory/vm.h"
 #include "proc/group.h"
 #include "proc/kthread.h"
@@ -147,21 +148,41 @@ static kpid_t finish_waitpid(process_t* p, process_t* zombie, int* exit_status,
 
   KASSERT(zombie->state == PROC_ZOMBIE);
 
-  list_remove(&p->children_list, &zombie->children_link);
-  zombie->parent = NULL;
-
-  // Remove it from the process group list.
-  proc_group_remove(proc_group_get(zombie->pgroup), zombie);
-
-  // Must unlock in this order.
+  // We have a proper zombie.  Wait until we have the last remaining reference,
+  // then remove it from the process table.  This ensures that other threads can
+  // only observe a process in a valid state, not partially torn-down.
   kspin_unlock(&zombie->spin_mu);
+
+  // Wait until we're the only remaining reference.
+  // Note: p->mu is still held.
+  // Note: this can theoretically be starved indefinitely if other threads
+  // continue to take refs on the child from the global table.  However, waiting
+  // first (rather than removing first) ensures that anyone who holds a
+  // reference on a proc also will see that proc in the table.
+  while (refcount_get(&zombie->refcount) > 2) {
+    int result = scheduler_wait_on_splocked(&g_proc_table_q, -1, &g_proc_table_lock);
+    if (result == SWAIT_INTERRUPTED) {
+      kspin_unlock(&g_proc_table_lock);
+      pmutex_unlock(&p->mu);
+      return -EINTR;
+    }
+    KASSERT_DBG(result == SWAIT_DONE);
+  }
+  // We are the only remaining reference.  Remove from the pgroup and process
+  // table, and no one else will be able to find it.
+  KASSERT(refcount_dec(&zombie->refcount) == 1);
+  proc_group_remove(proc_group_get(zombie->pgroup), zombie);
+  KASSERT(g_proc_table[zombie->id] == zombie);
+  g_proc_table[zombie->id] = NULL;
   kspin_unlock(&g_proc_table_lock);
 
-  // TODO(aoates): make it possible to unlock spinlocks in a different order
-  // than they were locked, so we can unlock only g_proc_table_lock here.
-
-  // Re-lock the zombie to finish tearing it down.
+  // We now hold the only reference to the child.  Locking is not required, but
+  // doing it for the static analysis.
+  pmutex_lock(&zombie->mu);
   kspin_lock(&zombie->spin_mu);
+
+  list_remove(&p->children_list, &zombie->children_link);
+  zombie->parent = NULL;
 
   // Tear down the child's address space.
   // Make a copy of the VM areas, then destroy them with the spinlock released.
@@ -177,6 +198,7 @@ static kpid_t finish_waitpid(process_t* p, process_t* zombie, int* exit_status,
     *exit_status = zombie->exit_status;
   }
   kspin_unlock(&zombie->spin_mu);
+  pmutex_unlock(&zombie->mu);
   pmutex_unlock(&p->mu);
 
   // Destroy all VM areas.
@@ -189,7 +211,7 @@ static kpid_t finish_waitpid(process_t* p, process_t* zombie, int* exit_status,
 
   kpid_t zombie_pid = zombie->id;
 
-  proc_put(zombie);  // Will destroy if no other references.
+  proc_destroy(zombie);
   return zombie_pid;
 }
 
