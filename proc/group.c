@@ -61,28 +61,18 @@ int setpgid(kpid_t pid, kpid_t pgid) {
     return -ESRCH;
   }
 
-  process_t* parent = proc_get_and_lock_parent(proc);
-  pmutex_assert_is_held(&parent->mu);
-  if (proc != proc_current() && parent != proc_current()) {
+  pmutex_lock(&proc->mu);  // Locks, and prevents re-parenting.
+  if (proc != proc_current() && proc->parent != proc_current()) {
     pmutex_unlock(&proc->mu);
-    pmutex_unlock(&parent->mu);
     proc_put(proc);
-    proc_put(parent);
     return -ESRCH;
   }
 
-  if (parent == proc_current() && proc->execed) {
+  if (proc->parent == proc_current() && proc->execed) {
     pmutex_unlock(&proc->mu);
-    pmutex_unlock(&parent->mu);
     proc_put(proc);
-    proc_put(parent);
     return -EACCES;
   }
-
-  // Done with parent checks.
-  pmutex_unlock(&parent->mu);
-  proc_put(parent);
-  parent = NULL;
 
   kspin_lock(&g_proc_table_lock);
   proc_group_t* cur_pgroup = proc_group_get(proc->pgroup);
