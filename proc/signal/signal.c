@@ -688,8 +688,10 @@ void proc_do_dispatch_actions(dispatch_action_t action) {
     // It's safe to do this racily with the actual stop/continue handling ---
     // worst case scenario a parent thread already claimed us in waitpid(), and
     // this will be harmlessly spurious.
-    process_t* const parent = proc_get_and_lock_parent(proc);
+    process_t* const parent = proc_get_and_lock_parent();
+    pmutex_assert_is_held(&proc->mu);
     pmutex_assert_is_held(&parent->mu);
+    KASSERT_DBG(proc->parent == parent);
     scheduler_wake_all(&parent->wait_queue);
     pmutex_unlock(&proc->mu);
     pmutex_unlock(&parent->mu);

@@ -163,7 +163,8 @@ void proc_finish_exit(void) {
   pmutex_unlock(&p->mu);
 
   // Phase 3: we must now signal our parent. This requires some locking fun.
-  process_t* parent = proc_get_and_lock_parent(p);
+  process_t* parent = proc_get_and_lock_parent();
+  pmutex_assert_is_held(&p->mu);
   pmutex_assert_is_held(&parent->mu);
 
   // Send SIGCHLD to the parent.

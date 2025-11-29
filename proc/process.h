@@ -185,13 +185,15 @@ void proc_thread_exit(void* x) __attribute__((noreturn));
 // Returns the state of the process.
 proc_state_t proc_state(kpid_t pid);
 
-// Helper to lock both a process and its parent.  Returns the process's parent,
-// with both the parent and the process itself locked.  The caller MUST use the
-// returned parent, not one read earlier, as the process could be reparented
-// during this call.
+// Helper to lock both the current process and its parent.  Returns the current
+// process's parent, with both the parent and the process itself locked.  The
+// caller MUST use the returned parent, not one read earlier, as the process
+// could be reparented during this call.
 //
 // Returns a reference on the parent that must be proc_put() by the caller.
-process_t* proc_get_and_lock_parent(process_t* child) ACQUIRE(child->mu);
+// ACQUIRE(proc_current()->mu)
+// ACQUIRE(proc_current()->parent->mu)
+process_t* proc_get_and_lock_parent(void);
 
 // Implementations.
 

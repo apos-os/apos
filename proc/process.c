@@ -358,8 +358,8 @@ void proc_thread_exit(void* x) {
   die("unreachable");
 }
 
-process_t* proc_get_and_lock_parent(process_t* child)
-    NO_THREAD_SAFETY_ANALYSIS {
+process_t* proc_get_and_lock_parent(void) NO_THREAD_SAFETY_ANALYSIS {
+  process_t* const child = proc_current();
   // We must always lock in parent->child order --- however, the process's
   // parent can change.  The process hierarchy is guaranteed to be a DAG
   // (unless, say, vnodes), so we have a simpler retry loop.
