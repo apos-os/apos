@@ -553,6 +553,84 @@ static void wait_reference_held_interrupted_test(void) {
   proc_put(child);
 }
 
+static void* wait_ref_test_parent_wait_thread(void* arg) {
+  notification_t* done = (notification_t*)arg;
+  int status;
+  int result = proc_waitpid(-1, &status, 0);
+  ntfn_notify(done);
+  return (void*)(intptr_t)result;;
+}
+
+static void wait_ref_test_parent_multiwait(void* arg) {
+  wait_ref_args_t* args = (wait_ref_args_t*)arg;
+  const int kNumWaiters = 5;
+  args->child = proc_fork(&wait_ref_test_child, arg);
+  KEXPECT_GE(args->child, 0);
+
+  kthread_t threads[kNumWaiters];
+  notification_t waiters_done[kNumWaiters];
+  for (int i = 0; i < kNumWaiters; ++i) {
+    ntfn_init(&waiters_done[i]);
+    KEXPECT_EQ(0,
+               proc_thread_create(&threads[i], wait_ref_test_parent_wait_thread,
+                                  &waiters_done[i]));
+  }
+  // Wait for one of them to finish.
+  int finished = -1;
+  while (finished < 0) {
+    for (int i = 0; i < kNumWaiters; ++i) {
+      if (ntfn_has_been_notified(&waiters_done[i])) {
+        finished = i;
+        break;
+      }
+      if (finished < 0) {
+        ksleep(10);
+      }
+    }
+  }
+
+  // The other threads should have been woken but now return ECHILD.
+  for (int i = 0; i < kNumWaiters; ++i) {
+    int result = (intptr_t)kthread_join(threads[i]);
+    if (i == finished) {
+      KEXPECT_EQ(args->child, result);
+    } else {
+      KEXPECT_EQ(-ECHILD, result);
+    }
+  }
+  ntfn_notify(&args->parent_wait_done);
+  proc_exit(0);
+}
+
+static void wait_reference_held_multiwait_test(void) {
+  wait_ref_args_t args;
+  ntfn_init(&args.child_started);
+  ntfn_init(&args.child_can_exit);
+  ntfn_init(&args.parent_wait_done);
+  kpid_t parent = proc_fork(&wait_ref_test_parent_multiwait, &args);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.child_started, 1000));
+
+  process_t* child = proc_get_ref(args.child);  // Take a ref.
+  ntfn_notify(&args.child_can_exit);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.parent_wait_done, 20));
+  kspin_lock(&child->spin_mu);
+  KEXPECT_EQ(PROC_ZOMBIE, child->state);
+  kspin_unlock(&child->spin_mu);
+
+  // For fun, try setpgid on the child (it should fail).
+  KEXPECT_EQ(-ESRCH, setpgid(args.child, args.child));
+
+  // Get another ref with the parent in its wait loop.
+  proc_put(child);
+  KEXPECT_EQ(child, proc_get_ref(args.child));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.parent_wait_done, 20));
+
+  // Put the second ref, now the wait should finish.
+  proc_put(child);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.parent_wait_done, 1000));
+  KEXPECT_EQ(parent, proc_waitpid(parent, NULL, 0));
+}
+
 static void wait_reference_held_test(void) {
   KTEST_BEGIN("waitpid() tries to collect zombie with a pending reference");
   do_wait_reference_held_test(false);
@@ -562,10 +640,10 @@ static void wait_reference_held_test(void) {
 
   KTEST_BEGIN("waitpid() tries to collect zombie with a pending reference (loop interrupted with signal)");
   wait_reference_held_interrupted_test();
-}
 
-// TODO(aoates): add a variant of the above where multiple threads in the parent
-// are calling waitpid() simultaneously.)
+  KTEST_BEGIN("waitpid() tries to collect zombie with a pending reference (multiple threads wait)");
+  wait_reference_held_multiwait_test();
+}
 
 void do_wait_test(void* arg) {
   basic_waitpid_test();
