@@ -27,6 +27,7 @@
 #include "proc/user.h"
 #include "proc/wait.h"
 #include "test/ktest.h"
+#include "test/proc_test_util.h"
 #include "vfs/pipe.h"
 #include "vfs/vfs.h"
 
@@ -399,7 +400,11 @@ static void signal_allowed_tests(void) NO_THREAD_SAFETY_ANALYSIS {
 // Child process that sleeps then exits, to let us test if signals were
 // delivered or not.
 static void signal_child_func(void* arg) {
-  ksleep(10);
+  if (arg) {
+    KASSERT(ntfn_await_with_timeout((notification_t*)arg, 1000));
+  } else {
+    ksleep(10);
+  }
   proc_exit(is_signal_pending(proc_current(), SIGAPOSTEST));
 }
 
@@ -430,7 +435,7 @@ static void signal_setuid_then_kill_func(void* arg) {
 static void signal_permission_test(void) {
   KTEST_BEGIN("proc_kill(): root can signal any process");
 
-  int child_pid = proc_fork(&signal_child_func, (void*)100);
+  int child_pid = proc_fork(&signal_child_func, NULL);
   KEXPECT_GE(child_pid, 0);
 
   process_t* child = proc_get(child_pid);
@@ -454,10 +459,11 @@ static void signal_permission_test(void) {
 // Helper that sets up a process group with several processes.  |okA| and |okB|
 // will be set to pids in the new group that can receive signals from the
 // current process; |bad| will be set to a pid in the current group that cannot.
-static void create_process_group(kpid_t* okA, kpid_t* okB, kpid_t* bad) {
-  *okA = proc_fork(&signal_child_func, 0x0);
-  *okB = proc_fork(&signal_child_func, 0x0);
-  *bad = proc_fork(&signal_child_func, 0x0);
+static void create_process_group(kpid_t* okA, kpid_t* okB, kpid_t* bad,
+                                 notification_t* child_blocker) {
+  *okA = proc_fork(&signal_child_func, child_blocker);
+  *okB = proc_fork(&signal_child_func, child_blocker);
+  *bad = proc_fork(&signal_child_func, child_blocker);
 
   KEXPECT_EQ(0, setpgid(*okA, *okA));
   KEXPECT_EQ(0, setpgid(*okB, *okA));
@@ -469,10 +475,18 @@ static void create_process_group(kpid_t* okA, kpid_t* okB, kpid_t* bad) {
   kspin_unlock(&g_proc_table_lock);
 }
 
-// Create a process group then send SIGKILL to it.  |arg| is a bitfield.  If bit
-// 1 is set, then the current process is included in the process group (and
-// expected to receive the SIGKILL as well).  If bit 2 is set, then the signal
-// is sent to pgid 0 (i.e. the current process group).
+static void zombie_setpgid(void* arg) {
+  KEXPECT_EQ(0, setpgid(0, (intptr_t)arg));
+}
+
+// Create a process group then send SIGKILL to it.  |arg| is a bitfield with the
+// following meaning:
+//  Bit 1: the current process is included in the process group (and
+//    expected to receive the SIGKILL as well).
+//  Bit 2: the signal is sent to pgid 0 (i.e. the current process group).
+//  Bit 3: a zombie process is included in the process group
+//  Bit 4: the zombie process should be an uber-zombie
+//  Bit 5: use proc_force_signal_group() rather than proc_kill()
 static void create_group_then_kill(void* arg) {
   unsigned int flags = (intptr_t)arg;
 
@@ -480,19 +494,36 @@ static void create_group_then_kill(void* arg) {
   KEXPECT_EQ(0, setuid(500));
 
   kpid_t okA, okB, bad;
-  create_process_group(&okA, &okB, &bad);
+  notification_t child_blocker;
+  ntfn_init(&child_blocker);
+  create_process_group(&okA, &okB, &bad, &child_blocker);
+  ptu_zombie_t* ptu_zombie = NULL;
+  if (flags & 0x4) {
+    ptu_zombie = ptu_zombie_create((flags & 0x8), zombie_setpgid,
+                                   (void*)(intptr_t)okA);
+  } else {
+    KASSERT(!(flags & 0x8));
+  }
 
   if (flags & 0x1) {
     KEXPECT_EQ(0, setpgid(0, okA));
   }
 
-  if (flags & 0x2) {
+  bool use_force = (flags & 0x10);
+  if (use_force) {
+    kspin_lock(&g_proc_table_lock);
+    proc_group_t* pgroup = proc_group_get(okA);
+    KEXPECT_EQ(0, proc_force_signal_group_locked(pgroup, SIGAPOSTEST));
+    kspin_unlock(&g_proc_table_lock);
+  } else if (flags & 0x2) {
     KEXPECT_EQ(0, proc_kill(0, SIGAPOSTEST));
     KEXPECT_EQ(0, proc_kill(0, APOS_SIGNULL));  // Try SIGNULL too, for kicks.
   } else {
     KEXPECT_EQ(0, proc_kill(-okA, SIGAPOSTEST));
     KEXPECT_EQ(0, proc_kill(-okA, APOS_SIGNULL));  // Try SIGNULL too, for kicks
   }
+
+  ntfn_notify(&child_blocker);
 
   // We should have received the signal if we're in the group.
   int got_signal = is_signal_pending(proc_current(), SIGAPOSTEST);
@@ -508,11 +539,16 @@ static void create_group_then_kill(void* arg) {
     int status;
     int child = proc_wait(&status);
     KEXPECT_GE(child, 0);
-    if (child == okA || child == okB) {
+    if (child == okA || child == okB || use_force) {
       KEXPECT_EQ(1, status);
     } else {
       KEXPECT_EQ(0, status);
     }
+  }
+
+  if (ptu_zombie) {
+    // Don't check the zombies, just clean them up.
+    ptu_zombie_cleanup(ptu_zombie);
   }
 }
 
@@ -522,7 +558,7 @@ static void cannot_signal_any_process_in_group(void* arg) {
   KEXPECT_EQ(0, setuid(500));
 
   kpid_t okA, okB, bad;
-  create_process_group(&okA, &okB, &bad);
+  create_process_group(&okA, &okB, &bad, NULL);
 
   KEXPECT_EQ(0, setpgid(bad, bad));
 
@@ -557,6 +593,26 @@ static void signal_send_to_pgroup_test(void) {
 
   KTEST_BEGIN("proc_kill(): pid == 0 sends to current process group");
   child = proc_fork(&create_group_then_kill, (void*)0x3);
+  KEXPECT_EQ(child, proc_wait(0x0));
+
+  KTEST_BEGIN("proc_kill(): send to process group including ZOMBIE");
+  child = proc_fork(&create_group_then_kill, (void*)0x4);
+  KEXPECT_EQ(child, proc_wait(0x0));
+
+  KTEST_BEGIN("proc_kill(): send to process group including uber-ZOMBIE");
+  child = proc_fork(&create_group_then_kill, (void*)0xc);
+  KEXPECT_EQ(child, proc_wait(0x0));
+
+  KTEST_BEGIN("proc_force_signal_group(): sends to process group");
+  child = proc_fork(&create_group_then_kill, (void*)0x10);
+  KEXPECT_EQ(child, proc_wait(0x0));
+
+  KTEST_BEGIN("proc_force_signal_group(): send to process group including ZOMBIE");
+  child = proc_fork(&create_group_then_kill, (void*)0x14);
+  KEXPECT_EQ(child, proc_wait(0x0));
+
+  KTEST_BEGIN("proc_force_signal_group(): send to process group including uber-ZOMBIE");
+  child = proc_fork(&create_group_then_kill, (void*)0x1c);
   KEXPECT_EQ(child, proc_wait(0x0));
 
   child = proc_fork(&cannot_signal_any_process_in_group, 0x0);

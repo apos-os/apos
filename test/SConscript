@@ -56,6 +56,7 @@ srcs = [
   'poll_test.c',
   'proc_group_test.c',
   'proc_thread_test.c',
+  'proc_test_util.c',
   'ramdisk_test.c',
   'ramfs_test.c',
   'random.c',

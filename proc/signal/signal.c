@@ -253,8 +253,6 @@ int proc_force_signal_group_locked(const proc_group_t* pgroup, int sig) {
       if (result == 0) {
         result = proc_force_signal(group_procs[i], sig);
       }
-      // TODO(aoates): add tests for this path with zombies (and all other
-      // places we call proc_get()/proc_put()).
       proc_put_locked(group_procs[i]);
     }
     kfree(group_procs);
