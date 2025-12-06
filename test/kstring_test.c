@@ -475,6 +475,104 @@ static void kstrlcat_test(void) {
   KEXPECT_STREQ("abc1234AB", buf);
 }
 
+static void kstrstr_test(void) {
+  KTEST_BEGIN("kstrstr() - empty needle returns haystack");
+  const char* s1 = "hello world";
+  KEXPECT_EQ(s1, kstrstr(s1, ""));
+  const char* s1a = "";
+  KEXPECT_EQ(s1a, kstrstr(s1a, ""));
+
+  KTEST_BEGIN("kstrstr() - needle not found returns NULL");
+  KEXPECT_EQ((const char*)NULL, kstrstr("hello", "xyz"));
+  KEXPECT_EQ((const char*)NULL, kstrstr("abc", "abcd"));
+  KEXPECT_EQ((const char*)NULL, kstrstr("", "abc"));
+  KEXPECT_EQ((const char*)NULL, kstrstr("short", "longer string"));
+
+  KTEST_BEGIN("kstrstr() - exact match");
+  const char* s2 = "test";
+  KEXPECT_EQ(s2, kstrstr(s2, "test"));
+  const char* s2a = "abc";
+  KEXPECT_EQ(s2a, kstrstr(s2a, "abc"));
+
+  KTEST_BEGIN("kstrstr() - needle at beginning");
+  const char* s3 = "hello world";
+  KEXPECT_EQ(s3, kstrstr(s3, "hello"));
+  KEXPECT_EQ(s3, kstrstr(s3, "h"));
+
+  KTEST_BEGIN("kstrstr() - needle at end");
+  const char* s4 = "hello world";
+  KEXPECT_EQ(s4 + 6, kstrstr(s4, "world"));
+  KEXPECT_EQ(s4 + 10, kstrstr(s4, "d"));
+
+  KTEST_BEGIN("kstrstr() - needle in middle");
+  const char* s5 = "abcdefgh";
+  KEXPECT_EQ(s5 + 2, kstrstr(s5, "cde"));
+  KEXPECT_EQ(s5 + 4, kstrstr(s5, "efgh"));
+
+  KTEST_BEGIN("kstrstr() - first occurrence when multiple matches");
+  const char* s6 = "ababcabab";
+  KEXPECT_EQ(s6, kstrstr(s6, "ab"));
+  KEXPECT_EQ(s6 + 2, kstrstr(s6, "abc"));
+  const char* s7 = "testtest";
+  KEXPECT_EQ(s7, kstrstr(s7, "test"));
+
+  KTEST_BEGIN("kstrstr() - single character needle");
+  const char* s8 = "abcdef";
+  KEXPECT_EQ(s8, kstrstr(s8, "a"));
+  KEXPECT_EQ(s8 + 2, kstrstr(s8, "c"));
+  KEXPECT_EQ(s8 + 5, kstrstr(s8, "f"));
+
+  KTEST_BEGIN("kstrstr() - case sensitive");
+  KEXPECT_EQ((const char*)NULL, kstrstr("Hello", "hello"));
+  KEXPECT_EQ((const char*)NULL, kstrstr("WORLD", "world"));
+  const char* s9 = "Hello";
+  KEXPECT_EQ(s9, kstrstr(s9, "Hello"));
+
+  KTEST_BEGIN("kstrstr() - NULL inputs");
+  KEXPECT_EQ((const char*)NULL, kstrstr(NULL, "test"));
+  KEXPECT_EQ((const char*)NULL, kstrstr("test", NULL));
+  KEXPECT_EQ((const char*)NULL, kstrstr(NULL, NULL));
+
+  KTEST_BEGIN("kstrstr() - needle exactly at end of haystack");
+  const char* s10 = "hello";
+  KEXPECT_EQ(s10 + 3, kstrstr(s10, "lo"));
+  const char* s11 = "abcdef";
+  KEXPECT_EQ(s11 + 3, kstrstr(s11, "def"));
+  KEXPECT_EQ(s11 + 5, kstrstr(s11, "f"));
+
+  KTEST_BEGIN("kstrstr() - partial needle match at end (should return NULL)");
+  // Haystack ends with prefix of needle, but not full needle.
+  KEXPECT_EQ((const char*)NULL, kstrstr("hello", "oops"));
+  KEXPECT_EQ((const char*)NULL, kstrstr("test", "sting"));
+  KEXPECT_EQ((const char*)NULL, kstrstr("abc", "cab"));
+  KEXPECT_EQ((const char*)NULL, kstrstr("world", "lds"));
+
+  KTEST_BEGIN("kstrstr() - needle longer than haystack");
+  KEXPECT_EQ((const char*)NULL, kstrstr("hi", "hello"));
+  KEXPECT_EQ((const char*)NULL, kstrstr("x", "xyz"));
+  KEXPECT_EQ((const char*)NULL, kstrstr("ab", "abcd"));
+
+  KTEST_BEGIN("kstrstr() - repeated characters edge cases");
+  const char* s12 = "aaaa";
+  KEXPECT_EQ(s12, kstrstr(s12, "aa"));
+  KEXPECT_EQ(s12, kstrstr(s12, "aaa"));
+  KEXPECT_EQ(s12, kstrstr(s12, "aaaa"));
+  KEXPECT_EQ((const char*)NULL, kstrstr(s12, "aaaaa"));
+  const char* s13 = "aaab";
+  KEXPECT_EQ(s13, kstrstr(s13, "aa"));
+  KEXPECT_EQ(s13 + 2, kstrstr(s13, "ab"));
+  KEXPECT_EQ(s13 + 1, kstrstr(s13, "aab"));  // "aaab" contains "aab" at position 1.
+  const char* s13a = "abaa";
+  KEXPECT_EQ((const char*)NULL, kstrstr(s13a, "aab"));  // No "aab" in "abaa".
+
+  KTEST_BEGIN("kstrstr() - overlapping matches (returns first)");
+  const char* s14 = "ababab";
+  KEXPECT_EQ(s14, kstrstr(s14, "abab"));
+  const char* s15 = "aaaaaa";
+  KEXPECT_EQ(s15, kstrstr(s15, "aa"));
+  KEXPECT_EQ(s15, kstrstr(s15, "aaa"));
+}
+
 void kstring_test(void) {
   KTEST_SUITE_BEGIN("kstring");
 
@@ -487,5 +585,6 @@ void kstring_test(void) {
   kstring_testF();
   kstring_prefix_test();
   kstrlcat_test();
+  kstrstr_test();
   kfree(buf);
 }

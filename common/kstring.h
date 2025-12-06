@@ -60,6 +60,7 @@ unsigned long katou_hex(const char* s);
 const char* kstrchr(const char* s, int c);
 const char* kstrrchr(const char* s, int c);
 const char* kstrchrnul(const char* s, int c);
+const char* kstrstr(const char* haystack, const char* needle);
 
 static inline int kisdigit(int c) {
   return c >= '0' && c <= '9';

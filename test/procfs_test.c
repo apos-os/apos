@@ -30,27 +30,6 @@
 #include "vfs/vfs.h"
 
 // ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
-
-// TODO(aoates): move this to a common location and add tests.
-static const char* kstrstr(const char* haystack, const char* needle) {
-  if (!haystack || !needle) return NULL;
-  int needle_len = kstrlen(needle);
-  int haystack_len = kstrlen(haystack);
-
-  if (needle_len == 0) return haystack;
-  if (needle_len > haystack_len) return NULL;
-
-  for (int i = 0; i <= haystack_len - needle_len; i++) {
-    if (kstrncmp(&haystack[i], needle, needle_len) == 0) {
-      return &haystack[i];
-    }
-  }
-  return NULL;
-}
-
-// ============================================================================
 // PART 1: GLOBAL PROCFS TESTS (not tied to specific processes).
 // ============================================================================
 
