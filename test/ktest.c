@@ -16,6 +16,7 @@
 
 #include "common/config.h"
 #include "common/errno.h"
+#include "common/kassert.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
 #include "common/klog.h"
@@ -123,6 +124,7 @@ void KTEST_SUITE_BEGIN(const char* name) {
 }
 
 void KTEST_BEGIN(const char* name) {
+  KASSERT(num_suites > 0);
   finish_test();  // Finish the previous test, if running.
   current_test_name = name;
   current_trace[0] = '\0';

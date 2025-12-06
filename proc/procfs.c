@@ -197,10 +197,16 @@ static int cwd_readlink(fs_t* fs, void* arg, int vnode, void* buf, int buflen) {
   process_t* const proc = proc_get_ref(pid);
   if (!proc) return -EINVAL;
 
+  // TODO(aoates): handle buflen properly
   char* cwd = kmalloc(VFS_MAX_PATH_LENGTH);
+  int result = 0;
   pmutex_lock(&proc->mu);
-  int result = vfs_get_vnode_dir_path(proc->cwd, cwd, VFS_MAX_PATH_LENGTH);
-  if (result >= 0) kstrncpy(buf, cwd, result);
+  if (proc->cwd) {
+    result = vfs_get_vnode_dir_path(proc->cwd, cwd, VFS_MAX_PATH_LENGTH);
+    if (result >= 0) kstrncpy(buf, cwd, result);
+  } else {
+    result = -EIO;
+  }
   pmutex_unlock(&proc->mu);
 
   proc_put(proc);

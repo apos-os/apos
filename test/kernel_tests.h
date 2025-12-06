@@ -78,6 +78,7 @@ void net_base_test(void);
 void net_echo_test(void);
 void arena_test(void);
 void atomic_test(void);
+void procfs_test(void);
 
 #if ENABLE_NVME
 void nvme_test(void);
