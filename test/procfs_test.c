@@ -335,12 +335,37 @@ static void test_procfs_normal_process(void) {
 
   kfree(expected_status);
 
+  // Open some fds to test after the child exits.
+  char path[100];
+  ksprintf(path, "/proc/%d", child_pid);
+  int dir_fd = vfs_open(path, VFS_O_RDONLY | VFS_O_DIRECTORY);
+  KEXPECT_GE(dir_fd, 0);
+  ksprintf(path, "/proc/%d/status", child_pid);
+  int status_fd = vfs_open(path, VFS_O_RDONLY);
+  KEXPECT_GE(status_fd, 0);
+  ksprintf(path, "/proc/%d/vm", child_pid);
+  int vm_fd = vfs_open(path, VFS_O_RDONLY);
+  KEXPECT_GE(vm_fd, 0);
+
   // Let child exit.
   ntfn_notify(&args.can_exit);
 
   int status;
   KEXPECT_EQ(child_pid, proc_waitpid(child_pid, &status, 0));
 
+  // Make sure we get errors (not crashes or data) when we read from the
+  // still-open file descriptors.
+  KEXPECT_EQ(-EIO, vfs_read(status_fd, path, 100));
+  KEXPECT_EQ(-EIO, vfs_read(vm_fd, path, 100));
+  // getdents doesn't actually look at the process, so it will succeed.
+  kdirent_t dirent;
+  KEXPECT_EQ(0, vfs_getdents(dir_fd, &dirent, sizeof(dirent)));
+
+  // TODO(aoates): write a test that verifies a race on cwd.
+
+  KEXPECT_EQ(0, vfs_close(dir_fd));
+  KEXPECT_EQ(0, vfs_close(status_fd));
+  KEXPECT_EQ(0, vfs_close(vm_fd));
   KEXPECT_EQ(0, vfs_rmdir("/_procfs_test_cwd/x"));
   KEXPECT_EQ(0, vfs_rmdir("/_procfs_test_cwd"));
 }

@@ -98,7 +98,7 @@ static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   const kpid_t pid = proc_vnode_to_pid(vnode);
   if (pid < 0 || pid >= PROC_MAX_PROCS) return -EINVAL;
   process_t* const proc = proc_get_ref(pid);
-  if (!proc) return -EINVAL;
+  if (!proc) return -EIO;
 
   char* tbuf = kmalloc(1024);
 
@@ -128,7 +128,7 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   const kpid_t pid = proc_vnode_to_pid(vnode);
   if (pid < 0 || pid >= PROC_MAX_PROCS) return -EINVAL;
   process_t* const proc = proc_get_ref(pid);
-  if (!proc) return -EINVAL;
+  if (!proc) return -EIO;
 
   char* cwd = kmalloc(VFS_MAX_PATH_LENGTH);
   pmutex_lock(&proc->mu);
@@ -195,7 +195,7 @@ static int cwd_readlink(fs_t* fs, void* arg, int vnode, void* buf, int buflen) {
   if (pid < 0 || pid >= PROC_MAX_PROCS) return -EINVAL;
 
   process_t* const proc = proc_get_ref(pid);
-  if (!proc) return -EINVAL;
+  if (!proc) return -EIO;
 
   // TODO(aoates): handle buflen properly
   char* cwd = kmalloc(VFS_MAX_PATH_LENGTH);
