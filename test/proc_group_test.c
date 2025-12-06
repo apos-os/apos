@@ -26,6 +26,7 @@
 #include "proc/user.h"
 #include "proc/wait.h"
 #include "test/ktest.h"
+#include "test/proc_test_util.h"
 
 static void basic_getgpid_test(void) {
   KTEST_BEGIN("getpgid() basic test");
@@ -286,6 +287,19 @@ static void setpgid_zombie_test(void* arg) {
   KEXPECT_EQ(0, group_contains(group, child));
   KEXPECT_EQ(1, group_contains(child, child));
   KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+
+
+  KTEST_BEGIN("setgpid() on uber-zombie child (process leader)");
+  ptu_zombie_t* ptu_zombie = ptu_zombie_create(true, NULL, NULL);
+  child = ptu_zombie->zombie;
+  KEXPECT_TRUE(wait_for_zombie(child));
+  KEXPECT_EQ(-ESRCH, setpgid(child, child));  // Because we're not the parent...
+  KEXPECT_EQ(getpgid(0), getpgid(child));
+  KEXPECT_EQ(0, group_contains(proc_current()->id, child));
+  KEXPECT_EQ(0, group_contains(group, child));
+  KEXPECT_EQ(0, group_contains(child, child));
+  KEXPECT_EQ(1, group_contains(getpgid(0), child));
+  ptu_zombie_cleanup(ptu_zombie);
 
 
   KTEST_BEGIN("setgpid() on zombie child (not process leader)");

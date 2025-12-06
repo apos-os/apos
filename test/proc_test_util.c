@@ -22,7 +22,9 @@
 static void ptu_zombie_child(void* arg) {
   ptu_zombie_t* zombie = (ptu_zombie_t*)arg;
   ntfn_notify(&zombie->child_started);
-  zombie->func(zombie->func_arg);
+  if (zombie->func) {
+    zombie->func(zombie->func_arg);
+  }
 }
 
 static void ptu_zombie_parent(void* arg) {

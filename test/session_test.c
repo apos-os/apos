@@ -31,6 +31,7 @@
 #include "proc/wait.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
+#include "test/proc_test_util.h"
 #include "user/include/apos/termios.h"
 #include "vfs/vfs.h"
 
@@ -261,6 +262,16 @@ static void do_session_test(void* arg) {
   KEXPECT_EQ(proc_current()->id, get_pgroup_session(child));
 
   KEXPECT_EQ(child, proc_wait(NULL));
+
+  KTEST_BEGIN("proc_getsid(): ZOMBIE process");
+  ptu_zombie_t* ptu_zombie = ptu_zombie_create(false, NULL, NULL);
+  KEXPECT_EQ(proc_getsid(0), proc_getsid(ptu_zombie->zombie));
+  ptu_zombie_cleanup(ptu_zombie);
+
+  KTEST_BEGIN("proc_getsid(): uber-ZOMBIE process");
+  ptu_zombie = ptu_zombie_create(true, NULL, NULL);
+  KEXPECT_EQ(proc_getsid(0), proc_getsid(ptu_zombie->zombie));
+  ptu_zombie_cleanup(ptu_zombie);
 
   // TODO(aoates): test reusing an process group ID, and that the session is
   // updated nonetheless.

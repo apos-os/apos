@@ -631,13 +631,25 @@ static void send_all_allowed_func(void* arg) {
   proc_exit(is_signal_pending(proc_current(), SIGAPOSTEST));
 }
 
+static void zombie_setruid(void* arg) {
+  kspin_lock(&g_proc_table_lock);
+  proc_current()->ruid = (intptr_t)arg;
+  kspin_unlock(&g_proc_table_lock);
+}
+
 static void signal_send_to_all_allowed_test(void) {
   KTEST_BEGIN("proc_kill(): pid == -1 sends to all allowed processes");
 
   int children[4];
+  notification_t children_can_exit;
+  ntfn_init(&children_can_exit);
   for (int i = 0; i < 3; ++i) {
-    children[i] = proc_fork(&signal_child_func, 0x0);
+    children[i] = proc_fork(&signal_child_func, &children_can_exit);
   }
+
+  ptu_zombie_t* zombies[2];
+  zombies[0] = ptu_zombie_create(false, &zombie_setruid, (void*)800);
+  zombies[1] = ptu_zombie_create(true, &zombie_setruid, (void*)800);
 
   // Make children 1 and 3 killable by child 4.
   kspin_lock(&g_proc_table_lock);
@@ -646,6 +658,8 @@ static void signal_send_to_all_allowed_test(void) {
   proc_get_locked(children[2])->ruid = 800;
   kspin_unlock(&g_proc_table_lock);
   children[3] = proc_fork(&send_all_allowed_func, (void*)800);
+
+  ntfn_notify(&children_can_exit);
 
   int statuses[4];
   for (int i = 0; i < 4; ++i) {
@@ -662,6 +676,8 @@ static void signal_send_to_all_allowed_test(void) {
   KEXPECT_EQ(0, statuses[1]);
   KEXPECT_EQ(1, statuses[2]);
   KEXPECT_EQ(1, statuses[3]);
+  ptu_zombie_cleanup(zombies[0]);
+  ptu_zombie_cleanup(zombies[1]);
 
   KTEST_BEGIN("proc_kill(): pid == -1 skips processes 0 and 1");
   int child = proc_fork(&send_all_allowed_func, (void*)0);
@@ -1345,6 +1361,17 @@ static void zombie_test(void) {
   int status;
   KEXPECT_EQ(child, proc_wait(&status));
   KEXPECT_EQ(1, WIFEXITED(status));
+
+
+  KTEST_BEGIN("kill(): sending a signal to an uber-zombie process");
+  ptu_zombie_t* ptu_zombie = ptu_zombie_create(true, NULL, NULL);
+  child = ptu_zombie->zombie;
+  KEXPECT_EQ(proc_state(child), PROC_ZOMBIE);
+
+  KEXPECT_EQ(0, proc_kill(child, SIGUSR1));
+  KEXPECT_EQ(0, proc_kill(child, SIGTERM));
+  KEXPECT_EQ(0, proc_force_signal(proc_get(child), SIGUSR2));
+  ptu_zombie_cleanup(ptu_zombie);
 }
 
 typedef struct {
