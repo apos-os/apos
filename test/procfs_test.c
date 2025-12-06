@@ -18,7 +18,6 @@
 #include "common/kprintf.h"
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
-#include "proc/exit.h"
 #include "proc/fork.h"
 #include "proc/notification.h"
 #include "proc/process.h"
@@ -296,8 +295,8 @@ typedef struct {
 
 static void normal_child_func(void* arg) {
   normal_child_args_t* args = (normal_child_args_t*)arg;
-  ntfn_notify(&args->ready);
   KEXPECT_EQ(0, vfs_chdir("/_procfs_test_cwd/x"));
+  ntfn_notify(&args->ready);
   ntfn_await(&args->can_exit);
 }
 
