@@ -19,4 +19,5 @@ COMMON_LIB_PATH = '#/$BUILD_CFG_DIR/os/common'
 user_env.Program('aposh', ['aposh.c'], LIBS=['common'], LIBPATH=COMMON_LIB_PATH)
 user_env.Program('getty', ['getty.c'], LIBS=['common'], LIBPATH=COMMON_LIB_PATH)
 user_env.Program('init', ['init.c'], LIBS=['common'], LIBPATH=COMMON_LIB_PATH)
+user_env.Program('ktest', ['ktest.c'])
 user_env.Program('login', ['login.c'], LIBS=['common'], LIBPATH=COMMON_LIB_PATH)
