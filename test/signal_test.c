@@ -1264,6 +1264,7 @@ static void sigsuspend_test(void) {
 
   KEXPECT_EQ(0, sem_wait(&g_sem));
   KEXPECT_EQ(PROC_RUNNING, proc_state(child));
+  thread = get_proc_thread(proc_get(child));
   kthread_lock_proc_spin(thread);
   KEXPECT_EQ(mask2, thread->signal_mask);
   kthread_unlock_proc_spin(thread);
