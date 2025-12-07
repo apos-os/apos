@@ -303,6 +303,7 @@ static void test_procfs_normal_process(void) {
   kspin_lock(&g_proc_table_lock);
   kpid_t child_pgroup = child_proc->pgroup;
   kspin_unlock(&g_proc_table_lock);
+  bin_arch_t user_arch = child_proc->user_arch;
   proc_put(child_proc);
 
   // Build expected status contents.
@@ -317,9 +318,9 @@ static void test_procfs_normal_process(void) {
            "suid/sgid:     0     0\n"
            "pgroup: %d\n"
            "exec'ed: 0\n"
-           "user_arch: 0\n"
+           "user_arch: %d\n"
            "children:\n",
-           child_pid, parent_pid, child_pgroup);
+           child_pid, parent_pid, child_pgroup, (int)user_arch);
 
   procfs_expected_state_t expected = {
     .pid = child_pid,
@@ -384,6 +385,7 @@ static void test_procfs_zombie_process(void) {
   kspin_lock(&g_proc_table_lock);
   kpid_t zombie_pgroup = zombie_proc->pgroup;
   kspin_unlock(&g_proc_table_lock);
+  bin_arch_t user_arch = zombie_proc->user_arch;
   proc_put(zombie_proc);
 
   // Build expected status contents for zombie.
@@ -399,9 +401,9 @@ static void test_procfs_zombie_process(void) {
            "suid/sgid:     0     0\n"
            "pgroup: %d\n"
            "exec'ed: 0\n"
-           "user_arch: 0\n"
+           "user_arch: %d\n"
            "children:\n",
-           zombie_pid, parent_pid, zombie_pgroup);
+           zombie_pid, parent_pid, zombie_pgroup, user_arch);
 
   procfs_expected_state_t expected = {
     .pid = zombie_pid,
@@ -432,6 +434,7 @@ static void test_procfs_uber_zombie_process(void) {
   kspin_lock(&g_proc_table_lock);
   kpid_t zombie_pgroup = zombie_proc->pgroup;
   kspin_unlock(&g_proc_table_lock);
+  bin_arch_t user_arch = zombie_proc->user_arch;
   proc_put(zombie_proc);
 
   // Build expected status contents for uber-zombie.
@@ -446,9 +449,9 @@ static void test_procfs_uber_zombie_process(void) {
            "suid/sgid:     0     0\n"
            "pgroup: %d\n"
            "exec'ed: 0\n"
-           "user_arch: 0\n"
+           "user_arch: %d\n"
            "children:\n",
-           zombie_pid, parent_pid, zombie_pgroup);
+           zombie_pid, parent_pid, zombie_pgroup, user_arch);
 
   procfs_expected_state_t expected = {
     .pid = zombie_pid,
