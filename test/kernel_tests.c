@@ -234,19 +234,19 @@ static void do_test_cmd(void* arg) {
 }
 
 // Convert each test name into the corresponding test entry, or return an error.
-static int find_tests(const char** names, int len, const test_entry_t** tests) {
+static int find_tests(const apos_ktest_t* names, int len, const test_entry_t** tests) {
   for (int i= 0; i < len; ++i) {
     const test_entry_t* e = &TESTS[0];
     while (e->name != 0x0) {
-      if (kstrcmp(names[i], e->name) == 0) {
-        klogf("running test '%s'...\n", names[i]);
+      if (kstrncmp(names[i].name, e->name, KTEST_NAME_LEN) == 0) {
+        klogf("running test '%s'...\n", names[i].name);
         tests[i] = e;
         break;
       }
       e++;
     }
     if (e->name == NULL) {
-      klogf("error: unknown test '%s'\n", names[i]);
+      klogf("error: unknown test '%s'\n", names[i].name);
       return -EINVAL;
     }
   }
@@ -254,10 +254,14 @@ static int find_tests(const char** names, int len, const test_entry_t** tests) {
   return 0;
 }
 
-int kernel_run_ktests(const char** names, int len) {
+int kernel_run_ktests(const apos_ktest_t* tests_in, size_t num) {
   if (!proc_is_superuser(proc_current())) {
     klogf("Cannot run kernel tests as non-superuser\n");
     return -EPERM;
+  }
+  if (num > 20) {
+    klogf("Requested tests above maximum limit\n");
+    return -EINVAL;
   }
 
   // Ignore SIGUSR1 to prevent us from being killed by the signal tests.
@@ -270,8 +274,8 @@ int kernel_run_ktests(const char** names, int len) {
     return -1;
   }
 
-  const test_entry_t** tests = kmalloc(sizeof(test_entry_t*) * len);
-  int result = find_tests(names, len, tests);
+  const test_entry_t** tests = kmalloc(sizeof(test_entry_t*) * num);
+  int result = find_tests(tests_in, num, tests);
   if (result) {
     kfree(tests);
     klogf("Cannot run tests: %s\n", errorname(-result));
@@ -279,7 +283,7 @@ int kernel_run_ktests(const char** names, int len) {
   }
 
   test_cmd_args_t args;
-  args.num_entries = len;
+  args.num_entries = num;
   args.entry = tests;
 
   bool profiling_enabled = should_enable_profiling();
@@ -303,5 +307,11 @@ int kernel_run_ktests(const char** names, int len) {
 }
 
 int kernel_run_ktest(const char* name) {
-  return kernel_run_ktests(&name, 1);
+  apos_ktest_t test;
+  if (kstrlen(name) >= KTEST_NAME_LEN) {
+    klogf("ktest name too long: %s\n", name);
+    return -EINVAL;
+  }
+  kstrncpy(test.name, name, KTEST_NAME_LEN);
+  return kernel_run_ktests(&test, 1);
 }

@@ -17,6 +17,7 @@
 #define APOO_ALL_TESTS_H
 
 #include "common/config.h"
+#include "user/include/apos/ktest.h"
 
 void interrupt_clobber_test(void);
 void interrupt_save_test(void);
@@ -93,9 +94,9 @@ void tsan_test(void);
 #endif
 
 // Takes a list of test names to run.
-int kernel_run_ktests(const char** names, int len);
+int kernel_run_ktests(const apos_ktest_t* tests, size_t len);
 
-// Legacy interface for syscall.
+// Legacy interface for deprecated syscall.
 int kernel_run_ktest(const char* names);
 
 #endif

@@ -24,6 +24,7 @@ HEADERS = [
   'apos/dev.h',
   'apos/errors.h',
   'apos/futex.h',
+  'apos/ktest.h',
   'apos/mmap.h',
   'apos/net/socket/inet.h',
   'apos/net/socket/socket.h',

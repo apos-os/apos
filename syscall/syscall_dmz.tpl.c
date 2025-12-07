@@ -2831,6 +2831,38 @@ cleanup:
   return result;
 }
 
+int kernel_run_ktests(const apos_ktest_t* tests, size_t num);
+int SYSCALL_DMZ_apos_run_ktests(const apos_ktest_t* tests, size_t num) {
+  const apos_ktest_t* KERNEL_tests = 0x0;
+
+  if ((size_t)(num * sizeof(apos_ktest_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
+
+  KERNEL_tests = (const apos_ktest_t*)kmalloc(num * sizeof(apos_ktest_t));
+
+  if (!KERNEL_tests) {
+    if (KERNEL_tests) kfree((void*)KERNEL_tests);
+
+    return -ENOMEM;
+  }
+
+  int result;
+  result = syscall_copy_from_user(tests, (void*)KERNEL_tests,
+                                  num * sizeof(apos_ktest_t));
+  if (result) goto cleanup;
+
+  result = kernel_run_ktests(KERNEL_tests, num);
+
+  // TODO(aoates): this should only copy the written bytes, not the full kernel
+  // buffer (e.g. in a read() syscall).
+
+  goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
+
+cleanup:
+  if (KERNEL_tests) kfree((void*)KERNEL_tests);
+
+  return result;
+}
+
 int proc_thread_create_user(apos_uthread_id_t* id, void* stack, void* entry);
 int SYSCALL_DMZ_apos_thread_create(apos_uthread_id_t* id, void* stack,
                                    void* entry) {

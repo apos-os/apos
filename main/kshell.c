@@ -143,9 +143,17 @@ static void test_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
+  const int num_tests = argc - 1;
+  apos_ktest_t* tests = kmalloc(sizeof(apos_ktest_t) * num_tests);
+  for (int i = 0; i < num_tests; ++i) {
+    kmemset(tests[i].name, 0, KTEST_NAME_LEN);
+    kstrncpy(tests[i].name, argv[1 + i], KTEST_NAME_LEN - 1);
+  }
+
   perftrace_enable();
-  kernel_run_ktests((const char**)(argv + 1), argc - 1);
+  kernel_run_ktests(tests, num_tests);
   perftrace_disable();
+  kfree(tests);
 }
 
 #endif  // ENABLE_TESTS

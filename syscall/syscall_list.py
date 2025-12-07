@@ -560,8 +560,15 @@ AddSyscall('sendto', 86, 'net_sendto', 'net/socket/socket.h',
 AddSyscall('apos_klog', 87, 'klog_wrapper', 'syscall/wrappers.h',
            '', 'int', ['const char*:msg:s'], can_fail=False)
 
+# Deprecated.
 AddSyscall('apos_run_ktest', 88, 'kernel_run_ktest', 'test/kernel_tests.h',
     '', 'int', ['const char*:name:s'])
+
+AddSyscall('apos_run_ktests', 104, 'kernel_run_ktests', 'test/kernel_tests.h',
+           '<apos/ktest.h>', 'int', [
+               'const apos_ktest_t*:tests:br:num * sizeof(apos_ktest_t)',
+               'size_t:num:u'
+           ])
 
 AddSyscall('apos_thread_create', 89, 'proc_thread_create_user',
            'proc/user_thread.h', 'apos/thread.h', 'int',

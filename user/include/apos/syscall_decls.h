@@ -16,6 +16,7 @@
 #ifndef APOO_USER_SYSCALLS_DECLS_H
 #define APOO_USER_SYSCALLS_DECLS_H
 
+#include <apos/ktest.h>
 #include <apos/sleep.h>
 #include <apos/syscall_decls.h>
 #include <apos/test.h>
@@ -108,6 +109,7 @@ ssize_t sendto(int socket, const void* buf, size_t len, int flags,
                const struct sockaddr* dest_addr, socklen_t dest_len);
 int apos_klog(const char* msg);
 int apos_run_ktest(const char* name);
+int apos_run_ktests(const apos_ktest_t* tests, size_t num);
 int apos_thread_create(apos_uthread_id_t* id, void* stack, void* entry);
 int apos_thread_exit(void);
 int sigwait(const ksigset_t* sigmask, int* sig);

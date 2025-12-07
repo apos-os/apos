@@ -172,6 +172,9 @@ _Static_assert(sizeof(struct sockaddr*) <= sizeof(long),
 _Static_assert(
     sizeof(socklen_t*) <= sizeof(long),
     "invalid argument type: socklen_t* (sizeof(socklen_t*) > sizeof(long))");
+_Static_assert(sizeof(const apos_ktest_t*) <= sizeof(long),
+               "invalid argument type: const apos_ktest_t* (sizeof(const "
+               "apos_ktest_t*) > sizeof(long))");
 _Static_assert(sizeof(apos_uthread_id_t*) <= sizeof(long),
                "invalid argument type: apos_uthread_id_t* "
                "(sizeof(apos_uthread_id_t*) > sizeof(long))");
@@ -306,6 +309,7 @@ ssize_t SYSCALL_DMZ_sendto(int socket, const void* buf, size_t len, int flags,
                            socklen_t dest_len);
 int SYSCALL_DMZ_apos_klog(const char* msg);
 int SYSCALL_DMZ_apos_run_ktest(const char* name);
+int SYSCALL_DMZ_apos_run_ktests(const apos_ktest_t* tests, size_t num);
 int SYSCALL_DMZ_apos_thread_create(apos_uthread_id_t* id, void* stack,
                                    void* entry);
 int SYSCALL_DMZ_apos_thread_exit(void);
@@ -678,6 +682,10 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
 
     case SYS_APOS_RUN_KTEST:
       return SYSCALL_DMZ_apos_run_ktest((const char*)arg1);
+
+    case SYS_APOS_RUN_KTESTS:
+      return SYSCALL_DMZ_apos_run_ktests((const apos_ktest_t*)arg1,
+                                         (size_t)arg2);
 
     case SYS_APOS_THREAD_CREATE:
       return SYSCALL_DMZ_apos_thread_create((apos_uthread_id_t*)arg1,
