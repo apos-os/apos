@@ -37,6 +37,9 @@ struct fs {
 
   // TODO(aoates): how does allocating the root inode/vnode work?
 
+  // Unmount the filesystem.
+  void (*unmount_fs)(struct fs* fs);
+
   // Destroy the (unmounted) filesystem.
   void (*destroy_fs)(struct fs* fs);
 

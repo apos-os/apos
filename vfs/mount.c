@@ -224,6 +224,9 @@ static int vfs_unmount_fs_locked(const char* path, fs_t** fs_out) {
   kmutex_unlock(&mount_point->mutex);
   VFS_PUT_AND_CLEAR(mount_point);
 
+  if ((*fs_out)->unmount_fs) {
+    (*fs_out)->unmount_fs(*fs_out);
+  }
   return 0;
 }
 
@@ -244,6 +247,9 @@ int vfs_mount(const char* source, const char* mount_path, const char* type,
 
   result = vfs_mount_fs(mount_path, fs);
   if (result) {
+    if (fs->unmount_fs) {
+      fs->unmount_fs(fs);
+    }
     fs->destroy_fs(fs);
     return result;
   }

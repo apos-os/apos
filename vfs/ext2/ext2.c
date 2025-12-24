@@ -67,9 +67,17 @@ int ext2_mount(fs_t* fs, apos_dev_t dev) {
   ext2_set_ops(fs);
   kstrcpy(fs->fstype, "ext2");
 
-  // TODO
+  // TODO(aoates): write metadata back to the superblock indicating mounted.
+  // Also, check that metadata on mounting and warn if it wasn't unmounted.
   ext2fs->mounted = 1;
   return 0;
+}
+
+void ext2_unmount_fs(fs_t* fs) {
+  // TODO(aoates): write back metadata indicating clean unmount.
+  ext2fs_t* ext2fs = (ext2fs_t*)fs;
+  KASSERT(ext2fs->mounted);
+  ext2fs->mounted = 0;
 }
 
 int ext2_create_path(const char* source, unsigned long flags, const void* data,

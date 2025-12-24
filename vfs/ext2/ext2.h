@@ -29,6 +29,7 @@ void ext2_destroy_fs(fs_t* fs);
 // Mount an ext2fs created with ext2_create_fs() on the given device.  Returns 0
 // on success.
 int ext2_mount(fs_t* fs, apos_dev_t dev);
+void ext2_unmount_fs(fs_t* fs);
 
 // Create an ext2 filesystem from the given path, which should be a block
 // device.  Returns -error on failure.
