@@ -21,14 +21,14 @@
 #include "vfs/fs.h"
 
 // Initialize a new ext2fs and return it.  The ext2fs is NOT mounted.
-fs_t* ext2_create_fs(void);
+fs_t* ext2_create_fs(apos_dev_t dev);
 
 // Destroy an ext2fs.  The ext2fs must NOT be mounted.
 void ext2_destroy_fs(fs_t* fs);
 
 // Mount an ext2fs created with ext2_create_fs() on the given device.  Returns 0
 // on success.
-int ext2_mount(fs_t* fs, apos_dev_t dev);
+int ext2_mount(fs_t* fs);
 void ext2_unmount_fs(fs_t* fs);
 
 // Create an ext2 filesystem from the given path, which should be a block

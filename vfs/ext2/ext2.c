@@ -26,14 +26,20 @@
 #include "vfs/fs.h"
 #include "vfs/vfs.h"
 
-fs_t* ext2_create_fs(void) {
+fs_t* ext2_create_fs(apos_dev_t dev) {
   ext2fs_t* fs = kmalloc(sizeof(ext2fs_t));
   kmemset(fs, 0, sizeof(ext2fs_t));
   vfs_fs_init(&fs->fs);
 
+  ext2_set_ops(&fs->fs);
+  kstrcpy(fs->fs.fstype, "ext2");
+
   fs->mounted = 0;
   fs->unhealthy = 0;
   kmutex_init(&fs->mu);
+
+  fs->fs.dev = dev;
+  fs->obj = dev_get_block_memobj(dev);
   return (fs_t*)fs;
 }
 
@@ -46,14 +52,12 @@ void ext2_destroy_fs(fs_t* fs) {
   kfree(ext2fs);
 }
 
-int ext2_mount(fs_t* fs, apos_dev_t dev) {
+int ext2_mount(fs_t* fs) {
   ext2fs_t* ext2fs = (ext2fs_t*)fs;
   if (ext2fs->mounted) {
     return -EINVAL;
   }
 
-  ext2fs->fs.dev = dev;
-  ext2fs->obj = dev_get_block_memobj(dev);
   int result = ext2_read_superblock(ext2fs);
   if (result) {
     return result;
@@ -63,9 +67,6 @@ int ext2_mount(fs_t* fs, apos_dev_t dev) {
   if (result) {
     return result;
   }
-
-  ext2_set_ops(fs);
-  kstrcpy(fs->fstype, "ext2");
 
   // TODO(aoates): write metadata back to the superblock indicating mounted.
   // Also, check that metadata on mounting and warn if it wasn't unmounted.
@@ -90,8 +91,8 @@ int ext2_create_path(const char* source, unsigned long flags, const void* data,
     return -ENOTSUP;
   }
 
-  *fs_out = ext2_create_fs();
-  result = ext2_mount(*fs_out, stat.st_rdev);
+  *fs_out = ext2_create_fs(stat.st_rdev);
+  result = ext2_mount(*fs_out);
   if (result) {
     ext2_destroy_fs(*fs_out);
     return result;

@@ -161,13 +161,14 @@ void vfs_init(void) {
 
 #if ENABLE_EXT2
   // First try to mount every block device as an ext2 fs.
-  fs_t* ext2fs = ext2_create_fs();
+  fs_t* ext2fs = NULL;
   int success = 0;
   for (int bd_major = 0; bd_major <= DEVICE_MAX_MAJOR; ++bd_major) {
     for (int bd_minor = 0; bd_minor <= DEVICE_MAX_MINOR; ++bd_minor) {
       const apos_dev_t dev = kmakedev(bd_major, bd_minor);
       if (dev_get_block(dev)) {
-        const int result = ext2_mount(ext2fs, dev);
+        ext2fs = ext2_create_fs(dev);
+        const int result = ext2_mount(ext2fs);
         if (result == 0) {
           KLOG(INFO, "Found ext2 FS on device %d.%d\n", kmajor(dev),
                kminor(dev));
@@ -175,13 +176,13 @@ void vfs_init(void) {
           success = 1;
           break;
         }
+        ext2_destroy_fs(ext2fs);
       }
     }
   }
 
   if (!success) {
     KLOG(INFO, "Didn't find any mountable filesystems; mounting ramfs as /\n");
-    ext2_destroy_fs(ext2fs);
   }
 #endif  // ENABLE_EXT2
 
