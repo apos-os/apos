@@ -21,6 +21,7 @@ srcs = [
   'dev.c',
   'ld.c',
   'qemu-profiler.c',
+  'static_block_dev.c',
   'termios.c',
   'tty.c',
   'tty_util.c',
