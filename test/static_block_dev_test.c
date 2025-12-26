@@ -46,7 +46,11 @@ void static_block_dev_test(void) {
   };
   const int TOTAL_BLOCKS = 10;
 
-  stblk_dev_t* st = stblk_create(data, map, 8, TOTAL_BLOCKS);
+  const stblk_spec_t kSpec = {.block_data = data,
+                              .block_map = map,
+                              .block_map_len = 8,
+                              .total_blocks = TOTAL_BLOCKS};
+  stblk_dev_t* st = stblk_create(&kSpec);
   block_dev_t* dev = &st->dev;
 
   KTEST_BEGIN("stblk: verify device properties");

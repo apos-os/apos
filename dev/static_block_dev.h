@@ -45,17 +45,26 @@ typedef struct {
   htbl_t blocks;
 } stblk_dev_t;
 
+// Spec for a static blockdev.
+typedef struct {
+  //  An array of single-block data chunks, one for each unique block of data
+  //  present in the overall image.
+  const stblk_data_single_t* block_data;
+
+  // An array of int pairs.  block_map[i] is the index of a block in the image,
+  // and block_map[i + 1] is the index of that data in |block_data|.  Any blocks
+  // not included will be zeroed.
+  const int* block_map;
+
+  //  The number of ints in |block_map|.
+  int block_map_len;
+
+  //  The total number of blocks in the image.
+  int total_blocks;
+} stblk_spec_t;
+
 // Creates a static block device from the given data.
-//  * |block_data| is an array of single-block data chunks, one for each unique
-//    block of data present in the overall image.
-//  * |block_map| is an array of int pairs.  block_map[i] is the index of a
-//    block in the image, and block_map[i + 1] is the index of that data in
-//    |block_data|.  Any blocks not included will be zeroed.
-//  * |block_map_len| is the number of ints in |block_map|.
-//  * |total_blocks| is the total number of blocks in the image.
-stblk_dev_t* stblk_create(const stblk_data_single_t* block_data,
-                          const int* block_map, int block_map_len,
-                          int total_blocks);
+stblk_dev_t* stblk_create(const stblk_spec_t* spec);
 
 void stblk_destroy(stblk_dev_t* st);
 

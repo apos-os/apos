@@ -41,24 +41,22 @@ static int stblk_write(struct block_dev* dev, size_t offset, const void* buf,
   return -ENXIO;
 }
 
-stblk_dev_t* stblk_create(const stblk_data_single_t* block_data,
-                          const int* block_map, int block_map_len,
-                          int total_blocks) {
+stblk_dev_t* stblk_create(const stblk_spec_t* s) {
   stblk_dev_t* st = KMALLOC(stblk_dev_t);
-  st->dev.sectors = total_blocks;
+  st->dev.sectors = s->total_blocks;
   st->dev.sector_size = STATIC_BLOCK_BLKSZ;
   st->dev.dev_data = st;
   st->dev.read = &stblk_read;
   st->dev.write = &stblk_write;
 
-  st->block_data = block_data;
-  htbl_init(&st->blocks, block_map_len);  // Initialize for a 50% load factor.
+  st->block_data = s->block_data;
+  htbl_init(&st->blocks, s->block_map_len);  // Initialize for a 50% load factor.
 
-  KASSERT(block_map_len % 2 == 0);
-  for (int i = 0; i < block_map_len / 2; ++i) {
-    int blk_idx = block_map[i * 2];
-    int blk_data_idx = block_map[i * 2 + 1];
-    htbl_put(&st->blocks, blk_idx, (void*)&block_data[blk_data_idx]);
+  KASSERT(s->block_map_len % 2 == 0);
+  for (int i = 0; i < s->block_map_len / 2; ++i) {
+    int blk_idx = s->block_map[i * 2];
+    int blk_data_idx = s->block_map[i * 2 + 1];
+    htbl_put(&st->blocks, blk_idx, (void*)&s->block_data[blk_data_idx]);
   }
 
   return st;
