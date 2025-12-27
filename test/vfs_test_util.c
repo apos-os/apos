@@ -14,7 +14,9 @@
 
 #include "test/vfs_test_util.h"
 
+#include "common/errno.h"
 #include "common/kassert.h"
+#include "common/kprintf.h"
 #include "test/ktest.h"
 #include "vfs/vfs.h"
 
@@ -46,6 +48,22 @@ void create_file(const char* path, const char* mode) {
   } while (fd == -EINJECTEDFAULT);
   KEXPECT_GE(fd, 0);
   vfs_close(fd);
+}
+
+const char* read_file(const char* path, char* buf, size_t buflen) {
+  int fd = vfs_open(path, VFS_O_RDONLY);
+  if (fd < 0) {
+    ksnprintf(buf, buflen, "<open() failed: %s>", errorname(-fd));
+    return buf;
+  }
+  int read = vfs_read(fd, buf, buflen - 1);
+  if (read < 0) {
+    ksnprintf(buf, buflen, "<read() failed: %s>", errorname(-read));
+    return buf;
+  }
+  buf[read] = '\0';
+  KASSERT(0 == vfs_close(fd));
+  return buf;
 }
 
 int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {

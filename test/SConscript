@@ -89,7 +89,7 @@ srcs = [
 if env['NVME']:
   srcs.append('nvme_test.c')
 
-subdirs = ['dtb_testdata']
+subdirs = ['dtb_testdata', 'ext2']
 
 if FindFile(os.path.join(env['ARCH'], 'SConscript'), '.') is not None:
   subdirs.append(env['ARCH'])

@@ -16,6 +16,7 @@
 #include "common/hashtable.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "dev/dev.h"
 #include "memory/kmalloc.h"
 #include "user/include/apos/errors.h"
 
@@ -58,11 +59,14 @@ stblk_dev_t* stblk_create(const stblk_spec_t* s) {
     int blk_data_idx = s->block_map[i * 2 + 1];
     htbl_put(&st->blocks, blk_idx, (void*)&s->block_data[blk_data_idx]);
   }
+  st->dev_id = kmakedev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
+  KASSERT(0 == dev_register_block(&st->dev, &st->dev_id));
 
   return st;
 }
 
 void stblk_destroy(stblk_dev_t* st) {
+  KASSERT(0 == dev_unregister_block(st->dev_id));
   htbl_cleanup(&st->blocks);
   kfree(st);
 }

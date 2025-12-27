@@ -25,6 +25,11 @@ kmode_t str_to_mode(const char* mode_str);
 // Create the given file with the given mode.
 void create_file(const char* path, const char* mode);
 
+// Read up to n bytes from the given file into the buffer and return the string.
+// Null-terminates the buffer no matter what, so this can be easily used in
+// KEXPECT_STREQ() calls.
+const char* read_file(const char* path, char* buf, size_t buflen);
+
 // Helper method that verifies that the given file can be created (then unlinks
 // it).
 static void EXPECT_CAN_CREATE_FILE(const char* path) {

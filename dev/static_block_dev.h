@@ -21,6 +21,7 @@
 
 #include "common/hashtable.h"
 #include "dev/block_dev.h"
+#include "user/include/apos/dev.h"
 
 // Static block size.  128 is picked as a happy medium that minimizes the total
 // bytes needed to store an empty ext2 filesystem image.  It also aligns with
@@ -35,6 +36,7 @@ typedef struct {
 typedef struct {
   // Block device that can be used to reference this.
   block_dev_t dev;
+  apos_dev_t dev_id;
 
   // Unique data block contents.  Zero-indexed, and not owned by the static
   // block device.  Generally this is data compiled into the kernel.

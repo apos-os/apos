@@ -94,6 +94,10 @@ void rsv64_user_test(void);
 void tsan_test(void);
 #endif
 
+#if ENABLE_EXT2
+void ext2_test(void);
+#endif
+
 // Takes a list of test names to run.
 int kernel_run_ktests(const apos_ktest_t* tests, size_t len);
 

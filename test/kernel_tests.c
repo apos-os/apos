@@ -125,6 +125,10 @@ static const test_entry_t TESTS[] = {
   { "rsv_user", &rsv64_user_test, 1 },
 #endif
 
+#if ENABLE_EXT2
+  { "ext2", &ext2_test, 1 },
+#endif
+
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },
   { 0, 0, 0},
