@@ -92,11 +92,5 @@ int ext2_create_path(const char* source, unsigned long flags, const void* data,
   }
 
   *fs_out = ext2_create_fs(stat.st_rdev);
-  result = ext2_mount(*fs_out);
-  if (result) {
-    ext2_destroy_fs(*fs_out);
-    return result;
-  }
-
   return 0;
 }

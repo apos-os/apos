@@ -1173,6 +1173,7 @@ static int make_inode(ext2fs_t* fs, uint32_t parent_inode, uint16_t mode,
 }
 
 void ext2_set_ops(fs_t* fs) {
+  fs->mount_fs = &ext2_mount;
   fs->unmount_fs = &ext2_unmount_fs;
   fs->destroy_fs = &ext2_destroy_fs;
   fs->alloc_vnode = &ext2_alloc_vnode;

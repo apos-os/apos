@@ -44,12 +44,19 @@ static int vfs_mount_fs_locked(const char* path, fs_t* fs) {
 
   // TODO(aoates): check if its empty.
 
+  result = fs->mount_fs(fs);
+  if (result) {
+    VFS_PUT_AND_CLEAR(mount_point);
+    return result;
+  }
+
   // Find a free filesystem slot.
   int fs_idx;
   for (fs_idx = 0; fs_idx < VFS_MAX_FILESYSTEMS; ++fs_idx) {
     if (!g_fs_table[fs_idx].fs) break;
   }
   if (fs_idx >= VFS_MAX_FILESYSTEMS) {
+    fs->unmount_fs(fs);
     VFS_PUT_AND_CLEAR(mount_point);
     return -ENOMEM;
   }
@@ -224,9 +231,7 @@ static int vfs_unmount_fs_locked(const char* path, fs_t** fs_out) {
   kmutex_unlock(&mount_point->mutex);
   VFS_PUT_AND_CLEAR(mount_point);
 
-  if ((*fs_out)->unmount_fs) {
-    (*fs_out)->unmount_fs(*fs_out);
-  }
+  (*fs_out)->unmount_fs(*fs_out);
   return 0;
 }
 
@@ -247,9 +252,6 @@ int vfs_mount(const char* source, const char* mount_path, const char* type,
 
   result = vfs_mount_fs(mount_path, fs);
   if (result) {
-    if (fs->unmount_fs) {
-      fs->unmount_fs(fs);
-    }
     fs->destroy_fs(fs);
     return result;
   }

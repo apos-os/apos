@@ -237,6 +237,8 @@ static void create_directory_entries(int parent_num, cbfs_inode_t* dir) {
   }
 }
 
+static int cbfs_mount(fs_t* fs);
+static void cbfs_unmount(fs_t* fs);
 static vnode_t* cbfs_alloc_vnode(struct fs* fs);
 static int cbfs_get_root(struct fs* fs);
 static int cbfs_get_vnode(vnode_t* vnode);
@@ -266,6 +268,8 @@ fs_t* cbfs_create(const char* type, cbfs_lookup_t lookup_cb,
   vfs_fs_init(&f->fs);
 
   kstrcpy(f->fs.fstype, type);
+  f->fs.mount_fs = &cbfs_mount;
+  f->fs.unmount_fs = &cbfs_unmount;
   f->fs.destroy_fs = &cbfs_free;
   f->fs.alloc_vnode = &cbfs_alloc_vnode;
   f->fs.get_root = &cbfs_get_root;
@@ -316,6 +320,12 @@ static void inode_cleanup_func(void* arg, htbl_key_t key, void* value) {
   if (value != &cfs->root)
     kfree(value);
 }
+
+static int cbfs_mount(fs_t* fs) {
+  return 0;
+}
+
+static void cbfs_unmount(fs_t* fs) {}
 
 void cbfs_free(fs_t* fs) {
   cbfs_t* cfs = fs_to_cbfs(fs);

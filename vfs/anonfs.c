@@ -52,6 +52,12 @@ typedef struct {
   kino_t next_inode;
 } anonfs_t;
 
+static int anonfs_mount(fs_t* fs) {
+  return 0;
+}
+
+static void anonfs_unmount(fs_t* fs) {}
+
 void anonfs_destroy(fs_t* fs) {
   kfree(fs);
 }
@@ -68,6 +74,8 @@ fs_t* anonfs_create(vnode_type_t type) {
   kmutex_init(&fs->mu);
   fs->next_inode = 0;
 
+  fs->fs.mount_fs = &anonfs_mount;
+  fs->fs.unmount_fs = &anonfs_unmount;
   fs->fs.destroy_fs = &anonfs_destroy;
   fs->fs.alloc_vnode = &anonfs_alloc_vnode;
   fs->fs.get_root = &anonfs_get_root;

@@ -30,6 +30,8 @@ int ramfs_create_path(const char* source, unsigned long flags, const void* data,
 
 // Destroy the ramfs, which must be unmounted.
 void ramfs_destroy_fs(fs_t* fs);
+int ramfs_mount_fs(fs_t* fs);
+void ramfs_unmount_fs(fs_t* fs);
 
 // Enable and disable artificial blocking for the ramfs.  If enabled, every call
 // that's allowed to block will do so by calling scheduler_yield.  Useful for

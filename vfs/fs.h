@@ -37,7 +37,14 @@ struct fs {
 
   // TODO(aoates): how does allocating the root inode/vnode work?
 
-  // Unmount the filesystem.
+  // Mount and unmount the filesystem.  The actual mounting is handled in the
+  // VFS code --- this should do basic initialization of the filesystem, read
+  // fs-level metadata, etc.
+  //
+  // mount_fs can fail, but unmount_fs cannot.  If mount_fs returns 0, then
+  // later unmount_fs will be called (once all users of the fs are done), and it
+  // must be able to handle any state the filesystem has gotten into.
+  int (*mount_fs)(struct fs* fs);
   void (*unmount_fs)(struct fs* fs);
 
   // Destroy the (unmounted) filesystem.

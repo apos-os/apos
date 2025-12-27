@@ -64,6 +64,7 @@ struct ramfs {
 
   // Protects small state (enable_blocking, fault_percent, random);
   kspinlock_t spinlock;
+  bool mounted;
 
   // For each inode number, we just store a ramfs_inode_t directly.  We don't
   // use all the fields of the vnode_t, though.
@@ -245,6 +246,8 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   f->spinlock = KSPINLOCK_NORMAL_INIT;
 
   kstrcpy(f->fs.fstype, "ramfs");
+  f->fs.mount_fs = &ramfs_mount_fs;
+  f->fs.unmount_fs = &ramfs_unmount_fs;
   f->fs.destroy_fs = &ramfs_destroy_fs;
   f->fs.alloc_vnode = &ramfs_alloc_vnode;
   f->fs.get_root = &ramfs_get_root;
@@ -303,9 +306,27 @@ int ramfs_create_path(const char* source, unsigned long flags, const void* data,
   return 0;
 }
 
+int ramfs_mount_fs(fs_t* fs) {
+  ramfs_t* ramfs = (ramfs_t*)fs;
+  kspin_destructor(&g_vnode_cache_lock);
+  KASSERT(!ramfs->mounted);
+  KASSERT(ramfs->fs.open_vnodes == 0);
+  ramfs->mounted = true;
+  return 0;
+}
+
+void ramfs_unmount_fs(fs_t* fs) {
+  ramfs_t* ramfs = (ramfs_t*)fs;
+  kspin_destructor(&g_vnode_cache_lock);
+  KASSERT(ramfs->mounted);
+  KASSERT(ramfs->fs.open_vnodes == 0);
+  ramfs->mounted = false;
+}
+
 void ramfs_destroy_fs(fs_t* fs) {
   ramfs_t* ramfs = (ramfs_t*)fs;
   kspin_destructor(&g_vnode_cache_lock);
+  KASSERT(ramfs->mounted == false);
   KASSERT(ramfs->fs.open_vnodes == 0);
   for (int i = 0; i < RAMFS_MAX_INODES; ++i) {
     if (ramfs->inodes[i].data)
