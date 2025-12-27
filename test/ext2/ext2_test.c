@@ -67,7 +67,7 @@ static void do_basic_ext2_test(const stblk_spec_t* spec) {
 }
 
 static void mount_failure_test(void) {
-  KTEST_BEGIN("ext2: mount failure");
+  KTEST_BEGIN("ext2: mount failure (generic)");
   // Create fake block dev.
   stblk_dev_t* bd = stblk_create(&kExt2TestImg_bs1024);
   KEXPECT_NE(bd, NULL);
@@ -90,6 +90,61 @@ static void mount_failure_test(void) {
   stblk_destroy(bd);
 }
 
+static void mount_failure_test2(void) {
+  KTEST_BEGIN("ext2: mount failure (bad superblock)");
+  stblk_spec_t bad_spec = {
+    .block_data = kExt2TestImg_BlockData,
+    .block_map = NULL,
+    .block_map_len = 0,
+    .total_blocks = 1024,
+  };
+  // Create fake block dev.
+  stblk_dev_t* bd = stblk_create(&bad_spec);
+  KEXPECT_NE(bd, NULL);
+  KEXPECT_EQ(0, vfs_mknod(EXT2_TEST_DEV, VFS_S_IFBLK, bd->dev_id));
+
+  // Ext2 mount should fail.
+  KEXPECT_EQ(0, vfs_mkdir(EXT2_TEST_DIR, VFS_S_IRWXU));
+  KEXPECT_EQ(-EINVAL, vfs_mount(EXT2_TEST_DEV, EXT2_TEST_DIR, "ext2", 0, NULL, 0));
+
+  // Cleanup.
+  KEXPECT_EQ(-EINVAL, vfs_unmount(EXT2_TEST_DIR, 0));
+  KEXPECT_EQ(0, vfs_rmdir(EXT2_TEST_DIR));
+  KEXPECT_EQ(0, vfs_unlink(EXT2_TEST_DEV));
+  // TODO(aoates): proper LCM of block devices and make crap like this
+  // unnecessary.)
+  block_cache_free_all(dev_get_block_memobj(bd->dev_id));
+  stblk_destroy(bd);
+}
+
+static void mount_failure_test3(void) {
+  KTEST_BEGIN("ext2: mount failure (bad block groups)");
+  // TODO(aoates): add test for when the root inode can't be retrieved.
+  stblk_spec_t bad_spec = kExt2TestImg_bs4096;
+  // Make sure we can read the superblock, but not the block group data.
+  bad_spec.total_blocks = 4096 / STATIC_BLOCK_BLKSZ;
+
+  // Create fake block dev.
+  stblk_dev_t* bd = stblk_create(&bad_spec);
+  KEXPECT_NE(bd, NULL);
+  KEXPECT_EQ(0, vfs_mknod(EXT2_TEST_DEV, VFS_S_IFBLK, bd->dev_id));
+
+  // Ext2 mount should fail.
+  KEXPECT_EQ(0, vfs_mkdir(EXT2_TEST_DIR, VFS_S_IRWXU));
+  // ERANGE is plumbed up from an error generated in the block dev memobj code
+  // when we try and get an out-of-range block number.
+  KEXPECT_EQ(-ERANGE, vfs_mount(EXT2_TEST_DEV, EXT2_TEST_DIR, "ext2", 0, NULL, 0));
+
+  // Cleanup.
+  KEXPECT_EQ(-EINVAL, vfs_unmount(EXT2_TEST_DIR, 0));
+  KEXPECT_EQ(0, vfs_rmdir(EXT2_TEST_DIR));
+  KEXPECT_EQ(0, vfs_unlink(EXT2_TEST_DEV));
+  // TODO(aoates): proper LCM of block devices and make crap like this
+  // unnecessary.)
+  block_cache_free_all(dev_get_block_memobj(bd->dev_id));
+  stblk_destroy(bd);
+}
+
 static void do_ext2_test(void* arg) {
   KTEST_BEGIN("ext2: basic ext2 (block_size=1024)");
   do_basic_ext2_test(&kExt2TestImg_bs1024);
@@ -101,6 +156,8 @@ static void do_ext2_test(void* arg) {
   do_basic_ext2_test(&kExt2TestImg_bs4096);
 
   mount_failure_test();
+  mount_failure_test2();
+  mount_failure_test3();
 }
 
 void ext2_test(void) {

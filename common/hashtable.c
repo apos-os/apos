@@ -17,11 +17,13 @@
 #include "common/kassert.h"
 #include "common/hash.h"
 #include "common/hashtable.h"
+#include "common/math.h"
 #include "memory/kmalloc.h"
 #include "proc/preemption_hook.h"
 
 #define GROW_THRESHOLD 0.75
 #define GROW_RATIO 2
+#define MIN_BUCKETS 1
 
 #if PREEMPTION_INDUCE_LEVEL_HTBL > 0
 # define preempt() sched_preempt_me(PREEMPTION_INDUCE_LEVEL_HTBL)
@@ -87,6 +89,7 @@ void htbl_init(htbl_t* tbl, int buckets) {
 }
 
 void htbl_init_alloc(htbl_t* tbl, int buckets, const allocator_t* alloc) {
+  buckets = max(buckets, MIN_BUCKETS);
   tbl->alloc = alloc;
   tbl->buckets = (htbl_entry_t**)alloc_alloc(
       tbl->alloc, sizeof(htbl_entry_t*) * buckets, sizeof(void*));
