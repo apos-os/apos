@@ -17,7 +17,9 @@
 
 #include <stdint.h>
 
+#ifdef __APOS_BUILDING_KERNEL__
 #include "common/types.h"
+#endif
 
 #define min(a, b) \
  ({ typeof (a) _a = (a); \

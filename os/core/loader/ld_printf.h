@@ -1,4 +1,4 @@
-// Copyright 2014 Andrew Oates.  All Rights Reserved.
+// Copyright 2025 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_KPRINTF_H
-#define APOO_KPRINTF_H
+#ifndef APOO_OS_CORE_LOADER_LD_PRINTF_H
+#define APOO_OS_CORE_LOADER_LD_PRINTF_H
 
-#include <stdarg.h>
-#include <stddef.h>
+#include "common/kprintf.h"  // IWYU pragma: export
 
-int ksprintf(char* str, const char* fmt, ...)
-    __attribute__((format(printf, 2, 3)));
-int ksnprintf(char* str, size_t size, const char* fmt, ...)
-    __attribute__((format(printf, 3, 4)));
-int kvsnprintf(char* str, size_t size, const char* fmt, va_list args);
+// Similar to printf() --- prints the given formatted string to stdout.
+int ld_printf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 
 #endif

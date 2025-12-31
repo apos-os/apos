@@ -21,3 +21,5 @@ user_env.Program('getty', ['getty.c'], LIBS=['common'], LIBPATH=COMMON_LIB_PATH)
 user_env.Program('init', ['init.c'], LIBS=['common'], LIBPATH=COMMON_LIB_PATH)
 user_env.Program('ktest', ['ktest.c'])
 user_env.Program('login', ['login.c'], LIBS=['common'], LIBPATH=COMMON_LIB_PATH)
+
+SConscript(['loader/SConscript'])

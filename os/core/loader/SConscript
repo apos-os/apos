@@ -1,0 +1,40 @@
+# Copyright 2025 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+Import('user_env')
+
+env = user_env.Clone()
+env.Append(CFLAGS=['-fPIE'])
+env.Append(LINKFLAGS=['-nostdlib'])
+
+# We want the binary linked such that it can be trivially relocated by the
+# kernel, without requiring any dynamic linking itself (as that is what it will
+# do).  In theory -static-pie should do what we want --- however that doesn't
+# work in our apos cross toolchain.  This is the expanded definition of that
+# flag.  See gcc commit b20e59f49b51b7baf05e1b727be5da947e617496.
+#
+# This results in an ET_DYN ELF file with position-independent code but no
+# dynamic dependencies.  Note that this doesn't work properly with libc/newlib
+# (currently, at least) --- but that's OK, since we don't want to link libc into
+# this anyway.
+env.Append(LINKFLAGS=['-Wl,-static,-pie,--no-dynamic-linker,-ztext'])
+
+env.Program('loader', [
+             'ld_printf.c',
+             'ld_string.c',
+             'loader.c',
+             'syscalls.c',
+            ],
+            LIBS=['apos_syscall'],
+            LIBPATH='#/$BUILD_CFG_DIR/user')

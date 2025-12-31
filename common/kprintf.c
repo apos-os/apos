@@ -13,12 +13,19 @@
 // limitations under the License.
 
 #include <stdarg.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
+#include "common/kprintf.h"
+
+// Non-kernel users of this code need to handle defining dependent functions
+// and types themselves before including.
+#ifdef __APOS_BUILDING_KERNEL__
 #include "common/kassert.h"
 #include "common/klog.h"
-#include "common/kprintf.h"
 #include "common/kstring.h"
+#endif
 
 // A single printf component in the format string.
 typedef struct {

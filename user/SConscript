@@ -24,6 +24,9 @@ if env['USER_DUMMY_LIB']:
       ])
   SConscript('header_tests/SConscript')
 
+if env['USER_OS']:
+  user_env.StaticLibrary('apos_syscall', ['archs/${ARCH}/syscall.s'])
+
 env.Tpl('syscall_stubs.tpl')
 env.Tpl('newlib_syscall_stubs.tpl')
 
