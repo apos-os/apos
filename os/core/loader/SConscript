@@ -31,6 +31,8 @@ env.Append(LINKFLAGS=['-nostdlib'])
 env.Append(LINKFLAGS=['-Wl,-static,-pie,--no-dynamic-linker,-ztext'])
 
 env.Program('loader', [
+             'ld_alloc.c',
+             'ld_assert.c',
              'ld_printf.c',
              'ld_string.c',
              'loader.c',
