@@ -15,13 +15,21 @@
 import os
 import re
 
+# Run 'scons configure ...' to write values to bulid-config.conf.  If there are
+# configuration values you want to persist without having to specify them on
+# every 'scons configure ...' run, put them manually into
+# 'build-config-system.conf'.
+#
+# Note: values in build-config-system will always override those provided with
+# scons configure.
 CONFIG_CACHE_FILE = 'build-config.conf'
+SYSCONFIG_CACHE_FILE = 'build-config-system.conf'
 
 # If the user didn't request 'configure', read the cached config values.
 if 'configure' in COMMAND_LINE_TARGETS:
   vars = Variables()
 else:
-  vars = Variables(CONFIG_CACHE_FILE)
+  vars = Variables([CONFIG_CACHE_FILE, SYSCONFIG_CACHE_FILE])
 
 vars.Add(EnumVariable('ARCH', 'architecture to target', None,
                       ['i586', 'x86_64', 'riscv64']))
