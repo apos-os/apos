@@ -36,10 +36,13 @@ vars.Add(EnumVariable('ARCH', 'architecture to target', None,
 vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
 vars.Add('TOOL_PREFIX', 'prefix of build tools', None)
-vars.Add('HEADER_INSTALL_PREFIX', 'where to install userspace headers', '')
 vars.Add(BoolVariable('CLANG', 'whether to compile with clang', False))
 vars.Add('KSHELL_INITIAL_COMMAND',
   'command to automatically run when kshell starts', '')
+
+# System configuration options that are likely to be mostly static.
+vars.Add('HEADER_INSTALL_PREFIX', 'where to install userspace headers', '')
+vars.Add('GTEST_ROOT', 'root of googletest package (contains lib/ and include/)', '')
 
 # List of modules that can be enabled/disabled.  All are enabled by default,
 # unless unsupported by the current architecture.
@@ -183,6 +186,18 @@ native_env = base_env.Clone()
 native_env['OBJPREFIX'] = 'native-'
 native_env['LIBPREFIX'] = 'native-'
 native_env.Append(CPPDEFINES='APOS_NATIVE_TARGET=1')
+native_env.Append(CXXFLAGS=['-std=c++20'])
+
+def BuildGtestProgram(env, target, srcs, **kw):
+  # GTEST_ROOT must be set
+  assert(env['GTEST_ROOT'] != '')
+  env.Program(target,
+              srcs,
+              LIBS=['gtest', 'gtest_main'],
+              LIBPATH=os.path.join(env['GTEST_ROOT'], 'lib'),
+              CPPPATH=os.path.join(env['GTEST_ROOT'], 'include'))
+
+native_env.AddMethod(BuildGtestProgram, 'GtestProgram')
 
 def AposAddSources(env, srcs, subdirs, **kwargs):
   """Helper for subdirectories."""
