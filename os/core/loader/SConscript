@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-Import('user_env')
+Import('user_env native_env')
 
 env = user_env.Clone()
 env.Append(CFLAGS=['-fPIE'])
@@ -31,6 +31,7 @@ env.Append(LINKFLAGS=['-nostdlib'])
 env.Append(LINKFLAGS=['-Wl,-static,-pie,--no-dynamic-linker,-ztext'])
 
 env.Program('loader', [
+             'gnu_hash.c',
              'ld_alloc.c',
              'ld_assert.c',
              'ld_printf.c',
@@ -40,3 +41,5 @@ env.Program('loader', [
             ],
             LIBS=['apos_syscall'],
             LIBPATH='#/$BUILD_CFG_DIR/user')
+
+native_env.GtestProgram('gnu_hash_test', ['gnu_hash_test.cc', 'gnu_hash.c'])

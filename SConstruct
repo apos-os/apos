@@ -195,7 +195,8 @@ def BuildGtestProgram(env, target, srcs, **kw):
               srcs,
               LIBS=['gtest', 'gtest_main'],
               LIBPATH=os.path.join(env['GTEST_ROOT'], 'lib'),
-              CPPPATH=os.path.join(env['GTEST_ROOT'], 'include'))
+              CPPPATH=env['CPPPATH'] +
+              [os.path.join(env['GTEST_ROOT'], 'include')])
 
 native_env.AddMethod(BuildGtestProgram, 'GtestProgram')
 
