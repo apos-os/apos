@@ -29,6 +29,7 @@ typedef uint64_t Elf64_Off;
 typedef uint16_t Elf64_Half;
 typedef uint32_t Elf64_Word;
 typedef uint64_t Elf64_Xword;
+typedef int64_t Elf64_Sxword;
 
 // Number of bytes in the ELF header e_ident array.
 #define EI_NIDENT 16
@@ -161,5 +162,35 @@ _Static_assert(sizeof(Elf64_Phdr) == 56, "malformed Elf64_Phdr");
 #define PF_X 0x1
 #define PF_W 0x2
 #define PF_R 0x4
+
+// Dynamic section entries.
+typedef struct {
+  Elf32_Sword d_tag;
+  union {
+    Elf32_Word d_val;
+    Elf32_Addr d_ptr;
+  } d_un;
+} Elf32_Dyn;
+
+typedef struct {
+  Elf64_Sxword d_tag;
+  union {
+    Elf64_Xword d_val;
+    Elf64_Addr d_ptr;
+  } d_un;
+} Elf64_Dyn;
+
+#define DT_NULL 0
+#define DT_HASH 4
+#define DT_STRTAB 5
+#define DT_SYMTAB 6
+#define DT_RELA 7
+#define DT_RELASZ 8
+#define DT_RELAENT 9
+#define DT_STRSZ 10
+#define DT_SYMENT 11
+#define DT_DEBUG 21
+#define DT_LOOS 0x6000000d
+#define DT_HIOS 0x6ffff000
 
 #endif
