@@ -27,7 +27,7 @@ SYSCONFIG_CACHE_FILE = 'build-config-system.conf'
 
 # If the user didn't request 'configure', read the cached config values.
 if 'configure' in COMMAND_LINE_TARGETS:
-  vars = Variables()
+  vars = Variables(SYSCONFIG_CACHE_FILE)
 else:
   vars = Variables([CONFIG_CACHE_FILE, SYSCONFIG_CACHE_FILE])
 
@@ -186,17 +186,20 @@ native_env = base_env.Clone()
 native_env['OBJPREFIX'] = 'native-'
 native_env['LIBPREFIX'] = 'native-'
 native_env.Append(CPPDEFINES='APOS_NATIVE_TARGET=1')
-native_env.Append(CXXFLAGS=['-std=c++20'])
+native_env.Append(CXXFLAGS=['-std=c++20', '-g'])
 
 def BuildGtestProgram(env, target, srcs, **kw):
-  # GTEST_ROOT must be set
-  assert(env['GTEST_ROOT'] != '')
+  if env['GTEST_ROOT']:
+    extra_libpath = [os.path.join(env['GTEST_ROOT'], 'lib')]
+    extra_cpppath = [os.path.join(env['GTEST_ROOT'], 'include')]
+  else:
+    extra_libpath = extra_cpppath = []
+
   env.Program(target,
               srcs,
               LIBS=['gtest', 'gtest_main'],
-              LIBPATH=os.path.join(env['GTEST_ROOT'], 'lib'),
-              CPPPATH=env['CPPPATH'] +
-              [os.path.join(env['GTEST_ROOT'], 'include')])
+              LIBPATH=extra_libpath,
+              CPPPATH=env['CPPPATH'] + extra_cpppath)
 
 native_env.AddMethod(BuildGtestProgram, 'GtestProgram')
 
