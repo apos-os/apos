@@ -54,6 +54,7 @@ FEATURES_DEFAULT_ENABLED = [
   'TERM_COLOR',
   'USB',
   'USER_DUMMY_LIB',
+  'USER_DYNAMIC_LOADER',
   'USER_OS',
   'USER_TESTS',
   'KMALLOC_HEAP_PROFILE',
@@ -177,6 +178,9 @@ env.Append(CPPPATH = ['#/archs/$ARCH', '#/archs/common', '#/$BUILD_CFG_DIR'])
 # Environment for userspace targets.
 user_env = target_env.Clone()
 user_env.Append(CPPDEFINES='ENABLE_TERM_COLOR=%d' % user_env['TERM_COLOR'])
+# Explicitly request static linking to avoid dynamically linking against libc.so
+# if it exists.  Once dynamic linking is fully supported, this can be removed.
+user_env.Append(LINKFLAGS = ['-Wl,-static'])
 if user_env['CLANG']:
   user_env.Append(CFLAGS =
       ['-isystem', '$HEADER_INSTALL_PREFIX/include'])
