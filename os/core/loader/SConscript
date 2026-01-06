@@ -42,4 +42,13 @@ env.Program('loader', [
             LIBS=['apos_syscall'],
             LIBPATH='#/$BUILD_CFG_DIR/user')
 
+ROOT = '#/os/core/loader/testdata'
+# Create a test shared library that can be used for tests.
+user_env.Command(
+    f'{ROOT}/gnu_hash_lib.so', ['testdata/gnu_hash_lib.c'],
+    '${TOOL_PREFIX}gcc -o $TARGET -shared -Wl,--hash-style=gnu $SOURCE')
+user_env.Command(f'{ROOT}/gnu_hash_lib.so.cdata',
+                 f'{ROOT}/gnu_hash_lib.so',
+                 'xxd -i -n kGnuHashLibRaw $SOURCE $TARGET')
+
 native_env.GtestProgram('gnu_hash_test', ['gnu_hash_test.cc', 'gnu_hash.c'])

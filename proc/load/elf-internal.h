@@ -190,7 +190,26 @@ typedef struct {
 #define DT_STRSZ 10
 #define DT_SYMENT 11
 #define DT_DEBUG 21
+#define DT_GNU_HASH 0x6ffffef5
 #define DT_LOOS 0x6000000d
 #define DT_HIOS 0x6ffff000
+
+typedef struct {
+  Elf32_Word st_name;
+  Elf32_Addr st_value;
+  Elf32_Word st_size;
+  unsigned char st_info;
+  unsigned char st_other;
+  Elf32_Half st_shndx;
+} Elf32_Sym;
+
+typedef struct {
+  Elf64_Word st_name;
+  unsigned char st_info;
+  unsigned char st_other;
+  Elf64_Half st_shndx;
+  Elf64_Addr st_value;
+  Elf64_Xword st_size;
+} Elf64_Sym;
 
 #endif
