@@ -15,3 +15,8 @@ If:
   PathMatch: archs/riscv64/.*
 CompileFlags:
   CompilationDatabase: build-scons/latest-riscv64
+---
+If:
+  PathMatch: os/.*/.*_test\.cc
+CompileFlags:
+  Add: [-target, arm64-apple-darwin]
