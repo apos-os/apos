@@ -19,6 +19,7 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "memory/mmap.h"
+#include "user/include/apos/auxvec.h"
 
 #define KLOG(...) klogfm(KL_PROC, __VA_ARGS__)
 
@@ -29,12 +30,13 @@ typedef uint32_t addr_32_t;
 #undef NUM_BITS
 
 int arch_prep_exec(const load_binary_t* bin, char* const argv[],
-                   char* const envp[], user_context_t* ctx) {
+                   char* const envp[], const apos_auxv_t* auxv,
+                   user_context_t* ctx) {
   KASSERT(arch_binary_supported(bin));
 
   switch (bin->arch) {
     case BIN_X86_32:
-      return x86_prep_exec_32(bin, argv, envp, ctx);
+      return x86_prep_exec_32(bin, argv, envp, auxv, ctx);
     default:
       KLOG(FATAL, "unsupported architecture: %d\n", bin->arch);
   }

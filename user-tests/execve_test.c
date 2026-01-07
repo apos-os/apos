@@ -19,10 +19,12 @@
 
 #include "ktest.h"
 #include "all_tests.h"
+#include "user/include/apos/auxvec.h"
 
 #define EXEC_PROGRAM "/bin/ls"
 #define SELF_PROGRAM "/bin/all_tests"
 #define EXECVE_HELPER "execve_test_helper"
+#define AUXV_TEST_PROGRAM "/bin/auxv_test"
 
 static int do_execve(const char* path, char* const* argv, char* const* envp) {
   int result = execve(path, argv, envp);
@@ -181,12 +183,38 @@ static void cloexec_test(void) {
   KEXPECT_EQ(0, close(15));
 }
 
+const apos_auxv_t* apos_auxv_get_raw(void);
+static void auxv_test(void) {
+  KTEST_BEGIN("execve(): auxvec data passed correctly");
+  bool auxv_seen[AUXVEC_MAX + 1];
+  uint64_t auxv_vals[AUXVEC_MAX + 1];
+  memset(&auxv_seen, 0, sizeof(auxv_seen));
+  memset(&auxv_vals, 0, sizeof(auxv_vals));
+
+  const apos_auxv_t* auxv = apos_auxv_get_raw();
+  for (; auxv->a_type != AUXVEC_NULL; ++auxv) {
+    KEXPECT_LE(auxv->a_type, AUXVEC_MAX);
+    if (auxv->a_type > AUXVEC_MAX) continue;
+
+    KEXPECT_FALSE(auxv_seen[auxv->a_type]);  // Should only see each once.
+    auxv_vals[auxv->a_type] = auxv->a_val + ((uint64_t)auxv->a_val_hi << 32);
+    auxv_seen[auxv->a_type] = true;
+  }
+  KEXPECT_TRUE(auxv_seen[AUXVEC_BASE]);
+  KEXPECT_TRUE(auxv_seen[AUXVEC_PAGESZ]);
+  KEXPECT_EQ(0, auxv_vals[AUXVEC_BASE]);
+  KEXPECT_EQ(0, apos_auxval_get(AUXVEC_BASE));
+  KEXPECT_EQ(4096, auxv_vals[AUXVEC_PAGESZ]);
+  KEXPECT_EQ(4096, apos_auxval_get(AUXVEC_PAGESZ));
+}
+
 void execve_test(void) {
   KTEST_SUITE_BEGIN("execve() test");
 
   basic_execve_test();
   execve_args_test();
   cloexec_test();
+  auxv_test();
   // TODO(aoates): test envp functionality.
   // TODO(aoates): test too-large argv and envp tables.
 }

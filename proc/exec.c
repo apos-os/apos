@@ -30,10 +30,27 @@
 #include "proc/pmutex.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
+#include "user/include/apos/auxvec.h"
 #include "vfs/vfs.h"
 #include "vfs/vfs_internal.h"
 
 #define KLOG(...) klogfm(KL_PROC, __VA_ARGS__)
+
+static void setup_auxv(apos_auxv_t* auxv, const load_binary_t* binary) {
+  int i = 0;
+  auxv[i].a_type = AUXVEC_PAGESZ;
+  auxv[i].a_val = PAGE_SIZE;
+  auxv[i].a_val_hi = 0;
+
+  i++;
+  auxv[i].a_type = AUXVEC_BASE;
+  auxv[i].a_val = 0;  // TODO(aoates): set this for binaries loaded above 0.
+  auxv[i].a_val_hi = 0;
+
+  i++;
+  auxv[i].a_type = AUXVEC_NULL;
+  auxv[i].a_val = auxv[i].a_val_hi = 0xffffffff;
+}
 
 int do_execve(const char* path, char* const argv[], char* const envp[],
               void (*cleanup)(const char* path,
@@ -127,8 +144,11 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
   proc_current()->sgid = proc_current()->egid;
   kspin_unlock(&g_proc_table_lock);
 
+  apos_auxv_t auxv[AUXVEC_MAX + 1];
+  kmemset(auxv, 0, sizeof(auxv));
+  setup_auxv(auxv, binary);
   user_context_t ctx;
-  result = arch_prep_exec(binary, argv, envp, &ctx);
+  result = arch_prep_exec(binary, argv, envp, auxv, &ctx);
   if (result) {
     kfree(binary);
     return result;

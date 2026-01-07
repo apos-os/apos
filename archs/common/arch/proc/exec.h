@@ -18,6 +18,7 @@
 
 #include "proc/load/load.h"
 #include "arch/proc/user_context.h"
+#include "user/include/apos/auxvec.h"
 
 // Returns true if the current architecture can run the given binary.
 bool arch_binary_supported(const load_binary_t* bin);
@@ -28,6 +29,7 @@ bool arch_binary_supported(const load_binary_t* bin);
 //
 // Returns -error on failure.
 int arch_prep_exec(const load_binary_t* bin, char* const argv[],
-                   char* const envp[], user_context_t* ctx);
+                   char* const envp[], const apos_auxv_t* auxv,
+                   user_context_t* ctx);
 
 #endif
