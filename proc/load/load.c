@@ -66,45 +66,6 @@ int load_binary(int fd, load_binary_t** binary_out) {
   return 0;
 }
 
-void load_pagify_region(const load_region_t* orig_region,
-                        load_region_t* region0,
-                        load_region_t* region1,
-                        load_region_t* region2) {
-  KASSERT(orig_region->file_offset % PAGE_SIZE ==
-          orig_region->vaddr % PAGE_SIZE);
-  const addr_t adj_vaddr = addr2page(orig_region->vaddr);
-  const addr_t adj_offset = addr2page(orig_region->file_offset);
-  const addr_t adj_file_length =
-      (orig_region->file_offset % PAGE_SIZE) + orig_region->file_len;
-  const addr_t adj_mem_length =
-      (orig_region->file_offset % PAGE_SIZE) + orig_region->mem_len;
-  KASSERT_DBG(adj_mem_length >= adj_file_length);
-
-  region0->prot = region1->prot = region2->prot = orig_region->prot;
-
-  // Split into up to 3 regions: the file region, the file/memory region, and
-  // the memory-only region.
-  region0->file_offset = adj_offset;
-  region0->vaddr = adj_vaddr;
-  region0->file_len = region0->mem_len = addr2page(adj_file_length);
-
-  region1->file_offset = adj_offset + region0->file_len;
-  region1->vaddr = adj_vaddr + region0->mem_len;
-  region1->file_len = adj_file_length % PAGE_SIZE;
-  region1->mem_len =
-      min((addr_t)PAGE_SIZE, adj_mem_length - addr2page(adj_file_length));
-
-  KASSERT_DBG(region0->mem_len + region1->mem_len >= adj_file_length);
-  region2->file_offset = 0;  // Unused.
-  region2->file_len = 0;  // Memory only.
-  region2->vaddr = next_page(region1->vaddr + region1->mem_len);
-  if (region0->mem_len + region1->mem_len > adj_mem_length) {
-    region2->mem_len = 0;
-  } else {
-    region2->mem_len = adj_mem_length - region0->mem_len - region1->mem_len;
-  }
-}
-
 int load_map_binary(int fd, const load_binary_t* binary) {
   // Create a mapping for each region.
   for (int reg = 0; reg < binary->num_regions; ++reg) {

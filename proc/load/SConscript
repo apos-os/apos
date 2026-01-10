@@ -17,6 +17,7 @@ Import('env AposAddSources')
 srcs = [
   'elf.c',
   'elf64.c',
+  'load-internal.c',
   'load.c',
 ]
 
