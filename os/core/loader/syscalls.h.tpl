@@ -26,7 +26,7 @@
 // Manual wrappers around the syscalls used by the loader code, since it doesn't
 // link against newlib/libc.  Unlike the stdlib variants, these return -error
 // rather than setting errno.
-{% for syscall in SYSCALLS if syscall.name in ld_syscall_list.ld_syscalls %}
+{% for syscall in SYSCALLS if syscall.native().name in ld_syscall_list.ld_syscalls %}
 {{ common.syscall_decl(syscall.native(), 'ld_') }};
 {% endfor %}
 

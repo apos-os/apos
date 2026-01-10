@@ -19,25 +19,53 @@
 #include "os/core/loader/ld_assert.h"
 #include "os/core/loader/ld_printf.h"
 #include "os/core/loader/ld_string.h"
+#include "os/core/loader/map.h"
 #include "os/core/loader/syscalls.h"
 #include "proc/load/elf-internal.h"
 #include "proc/load/elf-riscv.h"
 #include "user/include/apos/auxvec.h"
 
+unsigned long apos_auxval_get(unsigned long type);
+
 static const char kTestString[] = "Test String";
 static const char* kTestStringPtr = kTestString;
 
-int main(int argc, char *argv[], char *envp[]) {
+typedef void (*start_ptr_type)(char* argv[], char* envp[],
+                               const apos_auxv_t* auxv);
+
+void ld_main(int argc, char *argv[], char *envp[], const apos_auxv_t* auxv) {
   int val = 0;
-  ld_printf("Running loader.\n");
-  ld_printf("  Args (argc = %d):\n", argc);
+  LOG(2, "Running loader.\n");
+  LOG(2, "  Args (argc = %d):\n", argc);
   for (int i = 0; i < argc; ++i) {
-    ld_printf("    argv[%d] = '%s'\n", i, argv[i]);
+    LOG(2, "    argv[%d] = '%s'\n", i, argv[i]);
   }
-  ld_printf("  Current stack ptr is %p\n", &val);
-  ld_printf("  Address of main() is %p\n", &main);
-  ld_printf("  __builtin_return_address(0): %p\n", __builtin_return_address(0));
-  ld_printf("  kTestString: '%s'\n", kTestStringPtr);
+  LOG(2, "  Current stack ptr is %p\n", &val);
+  LOG(2, "  Address of main() is %p\n", &ld_main);
+  LOG(2, "  __builtin_return_address(0): %p\n", __builtin_return_address(0));
+  LOG(2, "  kTestString: '%s'\n", kTestStringPtr);
+
+  // Load and execute the main binary.
+  int exec_fd = apos_auxval_get(AUXVEC_EXEC_FD);
+  KASSERT(exec_fd >= 0 && exec_fd < 20000);
+  load_binary_t* exec_bin = NULL;
+  int result = elf64_load(exec_fd, &exec_bin);
+  if (result) {
+    LOG(0, "Error: unable to load exec fd as ELF64\n");
+    ld_exit(1);
+  }
+
+  result = load_map_binary(exec_fd, exec_bin);
+  if (result) {
+    LOG(0, "Error: unable to load executable\n");
+    ld_exit(1);
+  }
+
+  // Jump to the entry point; we should never return.
+  LOG(1, "Jumping to user executable entry at %p\n", (void*)exec_bin->entry);
+  start_ptr_type start = (start_ptr_type)exec_bin->entry;
+  (*start)(argv, envp, auxv);
+
   ld_exit(0);
 }
 
@@ -228,6 +256,10 @@ void _start(char** argv, char** envp, const apos_auxv_t* auxv) {
   const uintptr_t base_addr = apos_auxval_get(AUXVEC_BASE);
   relocate_me(base_addr);
 
-  int exit_code = main(argc, argv, envp);
-  ld_exit(exit_code);
+  KASSERT(PAGE_SIZE == apos_auxval_get(AUXVEC_PAGESZ));
+
+  ld_main(argc, argv, envp, auxv);
+  // Should never get here.
+  LOG(0, "Error: ld shouldn't return from ld_main\n");
+  ld_exit(1);
 }

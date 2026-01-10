@@ -18,8 +18,11 @@
 
 #include <stdbool.h>
 
-#include "common/attributes.h"
+#ifdef __APOS_BUILDING_KERNEL__
 #include "common/types.h"
+#endif
+
+#include "common/attributes.h"
 #include "memory/flags.h"
 
 // Architecture of a binary.  A particular kernel architecture may support

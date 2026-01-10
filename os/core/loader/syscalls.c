@@ -54,9 +54,30 @@ ssize_t ld_write(int fd, const void* buf, size_t count) {
   return result;
 }
 
+apos_off_t ld_lseek(int fd, apos_off_t offset, int whence) {
+  apos_off_t result;
+  do {
+    result =
+        do_syscall(SYS_LSEEK, (long)fd, (long)offset, (long)whence, 0, 0, 0);
+
+  } while (result == -EINTR_RESTART);
+  return result;
+}
+
 int ld_exit(int status) {
   int result;
   result = do_syscall(SYS_EXIT, (long)status, 0, 0, 0, 0, 0);
 
+  return result;
+}
+
+int ld_mmap(void* addr_inout, size_t length, int prot, int flags, int fd,
+            apos_off_t offset) {
+  int result;
+  do {
+    result = do_syscall(SYS_MMAP, (long)addr_inout, (long)length, (long)prot,
+                        (long)flags, (long)fd, (long)offset);
+
+  } while (result == -EINTR_RESTART);
   return result;
 }

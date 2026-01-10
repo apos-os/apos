@@ -20,4 +20,6 @@
   'write',
   'read',
   'exit',
+  'lseek',
+  'mmap',
 ] %}

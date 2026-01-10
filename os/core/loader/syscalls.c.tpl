@@ -24,7 +24,7 @@
 {% import "os/core/loader/syscall_list.tpl" as ld_syscall_list %}
 
 {# Generate the LD stubs only for the functions we care about. -#}
-{% for syscall in SYSCALLS if syscall.name in ld_syscall_list.ld_syscalls %}
+{% for syscall in SYSCALLS if syscall.native().name in ld_syscall_list.ld_syscalls %}
 {% set syscall = syscall.native() %}
 {{ common.syscall_decl(syscall, 'ld_') }} {
   {{ common.syscall_impl_body(syscall) }}

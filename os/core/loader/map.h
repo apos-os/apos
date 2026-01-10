@@ -12,16 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_OS_CORE_LOADER_ELF64_H
-#define APOO_OS_CORE_LOADER_ELF64_H
+#ifndef APOO_OS_CORE_LOADER_MAP_H
+#define APOO_OS_CORE_LOADER_MAP_H
 
-#include "proc/load/elf-internal.h"
 #include "os/core/loader/load-binary.h"
 
-// Checks the validity of an Elf64_Ehdr.  Returns 0 if it's valid (i.e., we can
-// load the file with that header).
-int elf64_check_header(const Elf64_Ehdr* header);
+#define PAGE_SIZE 4096  // TODO(aoates): learn this dynamically.
 
-int elf64_load(int fd, load_binary_t** binary_out);
+// mmap the given binary in.
+int load_map_binary(int fd, const load_binary_t* binary);
 
 #endif

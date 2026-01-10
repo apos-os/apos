@@ -34,7 +34,7 @@
 #define KMAP_FAILED ((void*)0)
 
 // Export POSIX names for user code.
-#if !__APOS_BUILDING_KERNEL__
+#ifndef __APOS_BUILDING_KERNEL__
 # define PROT_NONE KPROT_NONE
 # define PROT_READ KPROT_READ
 # define PROT_WRITE KPROT_WRITE

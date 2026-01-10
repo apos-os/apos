@@ -11,17 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Userspace wrapper around the kernel's load.h.
+#ifndef APOO_OS_CORE_LOADER_LOAD_BINARY_H
+#define APOO_OS_CORE_LOADER_LOAD_BINARY_H
 
-#ifndef APOO_OS_CORE_LOADER_ELF64_H
-#define APOO_OS_CORE_LOADER_ELF64_H
+#include <stdint.h>
 
-#include "proc/load/elf-internal.h"
-#include "os/core/loader/load-binary.h"
-
-// Checks the validity of an Elf64_Ehdr.  Returns 0 if it's valid (i.e., we can
-// load the file with that header).
-int elf64_check_header(const Elf64_Ehdr* header);
-
-int elf64_load(int fd, load_binary_t** binary_out);
+typedef uint64_t addr_t;
+#include "proc/load/load.h"  // IWYU pragma: export
 
 #endif
