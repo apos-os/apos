@@ -17,13 +17,17 @@
 
 #include <sys/types.h>
 
+{# Declarations of syscalls for ld usage -#}
+{# PY_IMPORT syscall/syscall_list.py -#}
+{% import "syscall/common_macros.tpl" as common %}
+{% import "os/core/loader/syscall_list.tpl" as ld_syscall_list %}
+
+{# Generate declarations for each syscall needed in ld -#}
 // Manual wrappers around the syscalls used by the loader code, since it doesn't
 // link against newlib/libc.  Unlike the stdlib variants, these return -error
 // rather than setting errno.
-int ld_open(const char* path, int flags, apos_mode_t mode);
-int ld_close(int fd);
-ssize_t ld_read(int fd, void* buf, size_t count);
-ssize_t ld_write(int fd, const void* buf, size_t count);
-int ld_exit(int status);
+{% for syscall in SYSCALLS if syscall.name in ld_syscall_list.ld_syscalls %}
+{{ common.syscall_decl(syscall.native(), 'ld_') }};
+{% endfor %}
 
 #endif

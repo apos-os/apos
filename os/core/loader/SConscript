@@ -30,6 +30,9 @@ env.Append(LINKFLAGS=['-nostdlib'])
 # this anyway.
 env.Append(LINKFLAGS=['-Wl,-static,-pie,--no-dynamic-linker,-ztext'])
 
+env.Tpl('#/os/core/loader/syscalls.h', 'syscalls.h.tpl')
+syscalls_c = env.TplSource('#/os/core/loader/syscalls.c', 'syscalls.c.tpl')
+
 env.Program('loader', [
              'gnu_hash.c',
              'ld_alloc.c',
@@ -37,7 +40,7 @@ env.Program('loader', [
              'ld_printf.c',
              'ld_string.c',
              'loader.c',
-             'syscalls.c',
+             syscalls_c,
             ],
             LIBS=['apos_syscall'],
             LIBPATH='#/$BUILD_CFG_DIR/user')

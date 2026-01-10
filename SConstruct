@@ -141,6 +141,47 @@ if base_env['DEBUG']:
 # though, from SConscript.
 base_env.Tool('compilation_db')
 
+# Define jinja template builders in all envs.
+def tpl_scanner_func(node, env, paths, arg=None):
+  """Depedency scanner for .tpl files."""
+  text = node.get_text_contents()
+  deps = []
+  for _, path in re.findall(r'{%[^}]*(import|include)\s*"([^"]*)"', text):
+    deps.append(path)
+  for path in re.findall(r'PY_IMPORT\s*(\S*)', text):
+    deps.append(path)
+  return env.File(deps)
+
+def filter_tpl(nodes):
+  """Return the nodes in the list that are .tpl files, for recursive dependency
+  scanning."""
+  return [n for n in nodes if n.path.endswith('.tpl')]
+
+tpl_scanner = Scanner(function=tpl_scanner_func, skeys=['.tpl'],
+    recursive=filter_tpl)
+
+tpl_bld = Builder(
+    action = 'APOS_ARCH=$ARCH util/tpl_gen.py $SOURCE | clang-format > $TARGET',
+    suffix = '.tpl.c',
+    src_suffix = '.tpl',
+    source_scanner=tpl_scanner)
+
+# Variant/wrapper of the Tpl builder that causes the source file to be generated
+# in the source tree (e.g. so it can be checked in).
+# N.B.(aoates): this causes SCons to not mirror the (generated) source file over
+# to the build directory if duplicating is enabled.  I don't think it matters.
+def tpl_source_build(env, target, source):
+  # Creates the source code File object to be generated (in the source tree).
+  tpl = env.Tpl(target, source)
+  # Creates the object file, setting the target explicitly to the source file
+  # with the appropriate suffix so that it's generated in the build directory,
+  # _not_ the source directory (unlike the source file).
+  obj = env.Object(target=source + '$OBJSUFFIX', source=tpl)
+  return [obj]
+
+base_env.Append(BUILDERS = {'Tpl': tpl_bld})
+base_env.AddMethod(tpl_source_build, 'TplSource')
+
 # target_env is for targets built for the APOS target (kernel and user code).
 target_env = base_env.Clone()
 
@@ -240,47 +281,8 @@ def phys_object(env, source):
   return [env.Object(source, OBJSUFFIX='.PHYS.o',
     CPPDEFINES=['$CPPDEFINES', '_MULTILINK_SUFFIX=_PHYS'])]
 
-def tpl_scanner_func(node, env, paths, arg=None):
-  """Depedency scanner for .tpl files."""
-  text = node.get_text_contents()
-  deps = []
-  for _, path in re.findall(r'{%[^}]*(import|include)\s*"([^"]*)"', text):
-    deps.append(path)
-  for path in re.findall(r'PY_IMPORT\s*(\S*)', text):
-    deps.append(path)
-  return env.File(deps)
-
-def filter_tpl(nodes):
-  """Return the nodes in the list that are .tpl files, for recursive dependency
-  scanning."""
-  return [n for n in nodes if n.path.endswith('.tpl')]
-
-tpl_scanner = Scanner(function=tpl_scanner_func, skeys=['.tpl'],
-    recursive=filter_tpl)
-
-tpl_bld = Builder(
-    action = 'APOS_ARCH=$ARCH util/tpl_gen.py $SOURCE | clang-format > $TARGET',
-    suffix = '.tpl.c',
-    src_suffix = '.tpl',
-    source_scanner=tpl_scanner)
-
-# Variant/wrapper of the Tpl builder that causes the source file to be generated
-# in the source tree (e.g. so it can be checked in).
-# N.B.(aoates): this causes SCons to not mirror the (generated) source file over
-# to the build directory if duplicating is enabled.  I don't think it matters.
-def tpl_source_build(env, target, source):
-  # Creates the source code File object to be generated (in the source tree).
-  tpl = env.Tpl(target, source)
-  # Creates the object file, setting the target explicitly to the source file
-  # with the appropriate suffix so that it's generated in the build directory,
-  # _not_ the source directory (unlike the source file).
-  obj = env.Object(target=source + '$OBJSUFFIX', source=tpl)
-  return [obj]
-
-env.Append(BUILDERS = {'Tpl': tpl_bld})
 env.AddMethod(phys_object, 'PhysObject')
 env.AddMethod(kernel_program, 'Kernel')
-env.AddMethod(tpl_source_build, 'TplSource')
 
 Export('env user_env native_env AposAddSources DisableFeature')
 

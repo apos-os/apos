@@ -13,28 +13,10 @@
 // limitations under the License.
 //
 // Manual wrappers for the syscalls we need, since we don't link libc/newlib.
-#include "os/core/loader/syscalls.h"
-
 #include <apos/syscall.h>
 #include <apos/syscalls.h>
 
-ssize_t ld_read(int fd, void* buf, size_t count) {
-  ssize_t result;
-  do {
-    result = do_syscall(SYS_READ, (long)fd, (long)buf, (long)count, 0, 0, 0);
-
-  } while (result == -EINTR_RESTART);
-  return result;
-}
-
-ssize_t ld_write(int fd, const void* buf, size_t count) {
-  ssize_t result;
-  do {
-    result = do_syscall(SYS_WRITE, (long)fd, (long)buf, (long)count, 0, 0, 0);
-
-  } while (result == -EINTR_RESTART);
-  return result;
-}
+#include "os/core/loader/syscalls.h"
 
 int ld_open(const char* path, int flags, apos_mode_t mode) {
   int result;
@@ -49,6 +31,24 @@ int ld_close(int fd) {
   int result;
   do {
     result = do_syscall(SYS_CLOSE, (long)fd, 0, 0, 0, 0, 0);
+
+  } while (result == -EINTR_RESTART);
+  return result;
+}
+
+ssize_t ld_read(int fd, void* buf, size_t count) {
+  ssize_t result;
+  do {
+    result = do_syscall(SYS_READ, (long)fd, (long)buf, (long)count, 0, 0, 0);
+
+  } while (result == -EINTR_RESTART);
+  return result;
+}
+
+ssize_t ld_write(int fd, const void* buf, size_t count) {
+  ssize_t result;
+  do {
+    result = do_syscall(SYS_WRITE, (long)fd, (long)buf, (long)count, 0, 0, 0);
 
   } while (result == -EINTR_RESTART);
   return result;
