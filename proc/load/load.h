@@ -67,6 +67,8 @@ typedef struct {
   int prot;
 } load_region_t;
 
+#define LOADBIN_INTERP_LEN 100
+
 // A set of mappings corresponding to a single loadable binary.
 //
 // The mappings do not have to start and end on page boundaries, but they must
@@ -75,6 +77,7 @@ typedef struct {
   bin_arch_t arch;  // The architecture of the binary.
   addr_t entry;  // The binary's entry point, or 0x0 if none.
   addr_t base_addr;
+  char interp[LOADBIN_INTERP_LEN];
   int num_regions;  // How many regions to load;
   load_region_t regions[];  // num_regions load_region_ts.
 } load_binary_t;

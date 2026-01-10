@@ -17,14 +17,15 @@
 #include "common/dynamic-config.h"
 #include "common/errno.h"
 #include "common/kassert.h"
-#include "common/math.h"
 #include "common/kstring.h"
+#include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/mmap.h"
 #include "memory/vm_page_fault.h"
 #include "proc/load/elf.h"
 #include "proc/load/load.h"
 #include "proc/load/load-internal.h"
+#include "vfs/vfs.h"
 
 static load_module_t g_modules[] = {
   { &elf_is_loadable, &elf_load },
@@ -58,6 +59,39 @@ int load_binary(int fd, exec_info_t* exec, load_binary_t** binary_out) {
 
   // TODO(aoates): verify the loaded binary (i.e. to make sure all the mappings
   // are valid, don't overlap, etc).
+
+  // If the binary requests an interpreter, try to open and load it.
+  if (binary->interp[0] != '\0') {
+    KASSERT(kstrnlen(binary->interp, LOADBIN_INTERP_LEN) != LOADBIN_INTERP_LEN);
+    klogfm(KL_PROC, DEBUG, "exec: binary requests interpreter '%s'\n",
+           binary->interp);
+
+    int interp_fd =
+        vfs_open(binary->interp, VFS_O_RDONLY | VFS_O_INTERNAL_EXEC);
+    if (interp_fd < 0) {
+      klogfm(KL_PROC, INFO, "exec: unable to open interp '%s': %s\n",
+             binary->interp, errorname(-interp_fd));
+      return interp_fd;
+    }
+
+    load_binary_t* interp_bin = NULL;
+    result = read_binary(interp_fd, &interp_bin);
+    if (result) {
+      klogfm(KL_PROC, INFO, "exec: unable to load interp '%s': %s\n",
+             binary->interp, errorname(-result));
+      vfs_close(interp_fd);
+      return result;
+    }
+
+    // If we successfully loaded the interpreter, run it instead.
+    KASSERT(interp_bin != NULL);
+    kfree(binary);
+    binary = *binary_out = exec->load_bin = interp_bin;
+    // Dup the FD just in case someone is holding onto it.
+    exec->exec_fd = vfs_dup(fd);
+    exec->load_fd = interp_fd;
+    vfs_close(fd);
+  }
 
   // Relocate the binary if necessary.
   KASSERT(binary->base_addr % PAGE_SIZE == 0);
