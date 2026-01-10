@@ -34,6 +34,7 @@ env.Tpl('#/os/core/loader/syscalls.h', 'syscalls.h.tpl')
 syscalls_c = env.TplSource('#/os/core/loader/syscalls.c', 'syscalls.c.tpl')
 
 env.Program('loader', [
+             'elf64.c',
              'gnu_hash.c',
              'ld_alloc.c',
              'ld_assert.c',

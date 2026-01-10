@@ -20,4 +20,13 @@
 // Similar to printf() --- prints the given formatted string to stdout.
 int ld_printf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 
+int ld_log_level(void);
+// Log at a particular debug level.
+#define LOG(_level, _fmt, ...)      \
+  do {                              \
+    if (ld_log_level() >= _level) { \
+      ld_printf(_fmt, __VA_ARGS__); \
+    }                               \
+  } while (0)
+
 #endif
