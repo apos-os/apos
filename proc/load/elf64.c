@@ -23,10 +23,6 @@
 
 #define KLOG(...) klogfm(KL_PROC, __VA_ARGS__)
 
-// TODO(aoates): pick an appropriate dynamic loading address rather than
-// hard-coding.
-#define DYNOBJ_MEM_OFFSET 0x120000000
-
 // Attempt to read exactly count bytes.  Read until we get there, or hit EOF.
 // Returns 0 if we read exactly count bytes, error if otherwise.
 static int elf64_read_bytes(int fd, void* buf, unsigned int count) {
@@ -173,10 +169,6 @@ static int elf64_create_load_binary(int fd, const Elf64_Ehdr* header,
       return result;
     }
     bin->interp[LOADBIN_INTERP_LEN - 1] = '\0';  // Just in case, truncate it.
-  }
-
-  if (header->e_type == ET_DYN) {
-    bin->base_addr = (addr_t)DYNOBJ_MEM_OFFSET;
   }
 
   return 0;

@@ -18,6 +18,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/mmap.h"
@@ -43,6 +44,14 @@ static int read_binary(int fd, load_binary_t** binary_out) {
     }
   }
   return -ENOEXEC;
+}
+
+static addr_t max_addr(const load_binary_t* bin) {
+  addr_t addr = 0;
+  for (int i = 0; i < bin->num_regions; ++i) {
+    addr = max(addr, bin->regions[i].vaddr + bin->regions[i].mem_len);
+  }
+  return next_page(addr);
 }
 
 int load_binary(int fd, exec_info_t* exec, load_binary_t** binary_out) {
@@ -85,6 +94,12 @@ int load_binary(int fd, exec_info_t* exec, load_binary_t** binary_out) {
 
     // If we successfully loaded the interpreter, run it instead.
     KASSERT(interp_bin != NULL);
+    // Load the interpreter above the requested executable, AND at a high
+    // address (for the hell of it).
+    interp_bin->base_addr = max(max_addr(binary), (addr_t)0x200000);
+    klogfm(KL_PROC, DEBUG,
+           "exec: loading interp binary %s at 0x%" PRIxADDR "\n",
+           binary->interp, interp_bin->base_addr);
     kfree(binary);
     binary = *binary_out = exec->load_bin = interp_bin;
     // Dup the FD just in case someone is holding onto it.
