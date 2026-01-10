@@ -44,7 +44,7 @@ static int read_binary(int fd, load_binary_t** binary_out) {
   return -ENOEXEC;
 }
 
-int load_binary(int fd, load_binary_t** binary_out) {
+int load_binary(int fd, exec_info_t* exec, load_binary_t** binary_out) {
   int result = read_binary(fd, binary_out);
   if (result) {
     return result;
@@ -52,6 +52,9 @@ int load_binary(int fd, load_binary_t** binary_out) {
 
   KASSERT(*binary_out != NULL);
   load_binary_t* binary = *binary_out;
+  exec->exec_fd = -1;
+  exec->load_fd = fd;
+  exec->load_bin = binary;
 
   // TODO(aoates): verify the loaded binary (i.e. to make sure all the mappings
   // are valid, don't overlap, etc).

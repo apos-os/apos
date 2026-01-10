@@ -30,7 +30,8 @@ typedef struct {
 #define AUXVEC_NULL 0
 #define AUXVEC_PAGESZ 1
 #define AUXVEC_BASE 2
-#define AUXVEC_MAX 2
+#define AUXVEC_EXEC_FD 3
+#define AUXVEC_MAX 3
 
 // Userspace utilities for accessing auxvec data.
 unsigned long apos_auxval_get(unsigned long type);

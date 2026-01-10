@@ -79,11 +79,23 @@ typedef struct {
   load_region_t regions[];  // num_regions load_region_ts.
 } load_binary_t;
 
+// Information about an ongoing execution attempt.
+typedef struct {
+  // The fd that must be loaded.
+  int load_fd;
+
+  // The fd that should be executed, if different than |load_fd|.
+  int exec_fd;
+
+  // The binary that must be loaded.
+  load_binary_t* load_bin;
+} exec_info_t;
+
 // Attempt to load a binary from the given fd.  Allocates a load_binary_t in
 // binary_out if successful (and returns 0).
 //
 // If successful, the caller MUST kfree(*binary_out) when it's done with it.
-int load_binary(int fd, load_binary_t** binary_out);
+int load_binary(int fd, exec_info_t* exec, load_binary_t** binary_out);
 
 // Attempt to map the given binary into the current address space.
 //

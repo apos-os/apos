@@ -36,7 +36,7 @@
 
 #define KLOG(...) klogfm(KL_PROC, __VA_ARGS__)
 
-static void setup_auxv(apos_auxv_t* auxv, const load_binary_t* binary) {
+static void setup_auxv(apos_auxv_t* auxv, const exec_info_t* exec) {
   int i = 0;
   auxv[i].a_type = AUXVEC_PAGESZ;
   auxv[i].a_val = PAGE_SIZE;
@@ -44,23 +44,29 @@ static void setup_auxv(apos_auxv_t* auxv, const load_binary_t* binary) {
 
   i++;
   auxv[i].a_type = AUXVEC_BASE;
-  auxv[i].a_val = binary->base_addr & 0xffffffff;
+  auxv[i].a_val = exec->load_bin->base_addr & 0xffffffff;
 #if ARCH_IS_64_BIT
-  auxv[i].a_val_hi = binary->base_addr >> 32;
+  auxv[i].a_val_hi = exec->load_bin->base_addr >> 32;
 #else
   auxv[i].a_val_hi = 0;
 #endif
 
   i++;
+  auxv[i].a_type = AUXVEC_EXEC_FD;
+  auxv[i].a_val = exec->exec_fd;
+  auxv[i].a_val_hi = 0;
+
+  i++;
   auxv[i].a_type = AUXVEC_NULL;
   auxv[i].a_val = auxv[i].a_val_hi = 0xffffffff;
+  KASSERT(i <= AUXVEC_MAX);
 }
 
 int do_execve(const char* path, char* const argv[], char* const envp[],
               void (*cleanup)(const char* path,
                               char* const argv[], char* const envp[],
                               void* arg), void* cleanup_arg) {
-  const int fd = vfs_open(path, VFS_O_RDONLY | VFS_O_INTERNAL_EXEC);
+  int fd = vfs_open(path, VFS_O_RDONLY | VFS_O_INTERNAL_EXEC);
   if (fd < 0) {
     KLOG(INFO, "exec error: couldn't open file '%s' for reading: %s\n", path,
          errorname(-fd));
@@ -69,7 +75,10 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
 
   // Load the binary.
   load_binary_t* binary = NULL;
-  int result = load_binary(fd, &binary);
+  exec_info_t execinfo;
+  int result = load_binary(fd, &execinfo, &binary);
+  fd = execinfo.load_fd;
+  // TODO(aoates): fix the FD leaks below.
   if (result) {
     KLOG(INFO, "exec error: couldn't load binary from file '%s': %s\n", path,
          errorname(-result));
@@ -150,7 +159,7 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
 
   apos_auxv_t auxv[AUXVEC_MAX + 1];
   kmemset(auxv, 0, sizeof(auxv));
-  setup_auxv(auxv, binary);
+  setup_auxv(auxv, &execinfo);
   user_context_t ctx;
   result = arch_prep_exec(binary, argv, envp, auxv, &ctx);
   if (result) {
