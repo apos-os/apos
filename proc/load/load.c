@@ -32,7 +32,8 @@ static load_module_t g_modules[] = {
   { NULL, NULL },
 };
 
-int load_binary(int fd, load_binary_t** binary_out) {
+static int read_binary(int fd, load_binary_t** binary_out) {
+  *binary_out = NULL;
   for (int module_idx = 0; g_modules[module_idx].is_loadable != NULL;
        ++module_idx) {
     int result = g_modules[module_idx].is_loadable(fd);
@@ -40,11 +41,29 @@ int load_binary(int fd, load_binary_t** binary_out) {
       return g_modules[module_idx].load(fd, binary_out);
     }
   }
+  return -ENOEXEC;
+}
+
+int load_binary(int fd, load_binary_t** binary_out) {
+  int result = read_binary(fd, binary_out);
+  if (result) {
+    return result;
+  }
+
+  KASSERT(*binary_out != NULL);
+  load_binary_t* binary = *binary_out;
 
   // TODO(aoates): verify the loaded binary (i.e. to make sure all the mappings
   // are valid, don't overlap, etc).
 
-  return -ENOEXEC;
+  // Relocate the binary if necessary.
+  KASSERT(binary->base_addr % PAGE_SIZE == 0);
+  for (int i = 0; i < binary->num_regions; ++i) {
+    binary->regions[i].vaddr += binary->base_addr;
+  }
+  binary->entry += binary->base_addr;
+
+  return 0;
 }
 
 void load_pagify_region(const load_region_t* orig_region,

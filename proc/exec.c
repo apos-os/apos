@@ -44,8 +44,12 @@ static void setup_auxv(apos_auxv_t* auxv, const load_binary_t* binary) {
 
   i++;
   auxv[i].a_type = AUXVEC_BASE;
-  auxv[i].a_val = 0;  // TODO(aoates): set this for binaries loaded above 0.
+  auxv[i].a_val = binary->base_addr & 0xffffffff;
+#if ARCH_IS_64_BIT
+  auxv[i].a_val_hi = binary->base_addr >> 32;
+#else
   auxv[i].a_val_hi = 0;
+#endif
 
   i++;
   auxv[i].a_type = AUXVEC_NULL;

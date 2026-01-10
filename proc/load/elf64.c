@@ -23,6 +23,10 @@
 
 #define KLOG(...) klogfm(KL_PROC, __VA_ARGS__)
 
+// TODO(aoates): pick an appropriate dynamic loading address rather than
+// hard-coding.
+#define DYNOBJ_MEM_OFFSET 0x120000000
+
 // Attempt to read exactly count bytes.  Read until we get there, or hit EOF.
 // Returns 0 if we read exactly count bytes, error if otherwise.
 static int elf64_read_bytes(int fd, void* buf, unsigned int count) {
@@ -63,8 +67,8 @@ static int elf64_check_header(const Elf64_Ehdr* header) {
     return -EINVAL;
   }
 
-  if (header->e_type != ET_EXEC) {
-    KLOG(INFO, "ELF type != ET_EXEC (%d)\n", header->e_type);
+  if (header->e_type != ET_EXEC && header->e_type != ET_DYN) {
+    KLOG(INFO, "ELF type != ET_EXEC/ET_DYN (%d)\n", header->e_type);
     return -EINVAL;
   }
 
@@ -105,6 +109,9 @@ static int elf64_read_phdrs(int fd, const Elf64_Ehdr* header, Elf64_Phdr* phdrs)
         phdrs[i].p_type != PT_LOAD &&
         phdrs[i].p_type != PT_NOTE &&
         phdrs[i].p_type != PT_GNU_STACK &&
+        phdrs[i].p_type != PT_DYNAMIC &&
+        phdrs[i].p_type != PT_PHDR &&
+        phdrs[i].p_type != PT_INTERP &&
         phdrs[i].p_type != PT_RISCV_ATTRIBUTES) {
       KLOG(INFO, "unsupported ELF program segment type 0x%x (segment %d)\n",
            phdrs[i].p_type, i);
@@ -133,6 +140,7 @@ static int elf64_create_load_binary(const Elf64_Ehdr* header,
   KASSERT_DBG(header->e_machine == EM_RISCV);
   bin->arch = BIN_RISCV_64;
   bin->entry = header->e_entry;
+  bin->base_addr = 0;
   bin->num_regions = num_regions;
   int region_number = 0;
   for (int i = 0; i < header->e_phnum; ++i) {
@@ -147,6 +155,10 @@ static int elf64_create_load_binary(const Elf64_Ehdr* header,
     if (phdrs[i].p_flags & PF_R) region->prot |= MEM_PROT_READ;
     if (phdrs[i].p_flags & PF_W) region->prot |= MEM_PROT_WRITE;
     if (phdrs[i].p_flags & PF_X) region->prot |= MEM_PROT_EXEC;
+  }
+
+  if (header->e_type == ET_DYN) {
+    bin->base_addr = (addr_t)DYNOBJ_MEM_OFFSET;
   }
 
   return 0;

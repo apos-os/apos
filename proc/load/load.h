@@ -74,6 +74,7 @@ typedef struct {
 typedef struct {
   bin_arch_t arch;  // The architecture of the binary.
   addr_t entry;  // The binary's entry point, or 0x0 if none.
+  addr_t base_addr;
   int num_regions;  // How many regions to load;
   load_region_t regions[];  // num_regions load_region_ts.
 } load_binary_t;
