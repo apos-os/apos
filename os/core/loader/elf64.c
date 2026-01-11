@@ -165,9 +165,17 @@ int elf64_load(int fd, load_binary_t** binary_out) {
   return result;
 }
 
-static const Elf64_Dyn* parse_phdrs(uint64_t base_addr,
-                                    const Elf64_Ehdr* ehdr) {
-  const Elf64_Phdr* phdrs = (const Elf64_Phdr*)(base_addr + ehdr->e_phoff);
+const Elf64_Dyn* elf64_find_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
+                                    elf64_map_type_t mapping) {
+  KASSERT(mapping == ELF_MAPPED_FILE || mapping == ELF_MAPPED_LOADED);
+  if (mapping == ELF_MAPPED_FILE) {
+    KASSERT(base_addr == (uint64_t)ehdr);
+  }
+  // No matter what, to read the program headers, use a file-based offset ---
+  // this assumes that the phdr table is mapped in memory linearly from the ELF
+  // header (which is trivially true if they're in the first page).
+  const Elf64_Phdr* phdrs =
+      (const Elf64_Phdr*)((uintptr_t)ehdr + ehdr->e_phoff);
   const Elf64_Phdr* dyn = NULL;
   for (int i = 0; i < ehdr->e_phnum; ++i) {
     switch (phdrs[i].p_type) {
@@ -204,17 +212,24 @@ static const Elf64_Dyn* parse_phdrs(uint64_t base_addr,
     ld_exit(1);
   }
   KASSERT(dyn->p_filesz % sizeof(Elf64_Dyn) == 0);
-  return (const Elf64_Dyn*)(base_addr + dyn->p_vaddr);
+  // Get an address for the DYNAMIC array based on mapping type.  If the file is
+  // directly mapped, use the file offset; otherwise, the vaddr.
+  if (mapping == ELF_MAPPED_FILE) {
+    return (const Elf64_Dyn*)((uint64_t)ehdr + dyn->p_offset);
+  } else {
+    return (const Elf64_Dyn*)(base_addr + dyn->p_vaddr);
+  }
 }
 
 int elf64_parse_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
-                        elf64_dyninfo_t* dyn) {
-  const Elf64_Dyn* dyns = parse_phdrs(base_addr, ehdr);
-  dyn->dyn_array = dyns;
+                        const Elf64_Dyn* dyns,
+                        elf64_dyninfo_t* dyninfo) {
+  KASSERT(dyns != NULL);
   uint64_t rela = 0;
   uint64_t relasz = 0;
   uint64_t relaent = 0;
-  kmemset(dyn, 0, sizeof(elf64_dyninfo_t));
+  kmemset(dyninfo, 0, sizeof(elf64_dyninfo_t));
+  dyninfo->dyn_array = dyns;
   for (size_t i = 0; dyns[i].d_tag != DT_NULL; ++i) {
     const Elf64_Dyn* dyn = &dyns[i];
     // TODO(aoates): use a table-based format for this.
@@ -253,8 +268,8 @@ int elf64_parse_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
     KASSERT(relasz % relaent == 0);
     KASSERT(relaent == sizeof(Elf64_Rela));
 
-    dyn->rela = (const Elf64_Rela*)(base_addr + rela);
-    dyn->rela_count = relasz / relaent;
+    dyninfo->rela = (const Elf64_Rela*)(base_addr + rela);
+    dyninfo->rela_count = relasz / relaent;
   }
   return 0;
 }

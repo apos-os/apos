@@ -33,7 +33,21 @@ typedef struct {
   size_t rela_count;
 } elf64_dyninfo_t;
 
+// Mode to read the file in.  This determines whether we look for data as a data
+// offset from the start of the file (if the whole file is mmap'd in), or if we
+// look for it at the appropriate vaddr (if the ELF file is already loaded).
+typedef enum {
+  ELF_MAPPED_FILE = 1,
+  ELF_MAPPED_LOADED = 2,
+} elf64_map_type_t;
+
+// Find the PT_DYNAMIC array in the given ELF image and return a memory address
+// that can be used to read it.
+const Elf64_Dyn* elf64_find_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
+                                    elf64_map_type_t mapping);
+
+// Parse the PT_DYNAMIC section into |dyninfo|.
 int elf64_parse_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
-                        elf64_dyninfo_t* dyn);
+                        const Elf64_Dyn* dyn_array, elf64_dyninfo_t* dyninfo);
 
 #endif

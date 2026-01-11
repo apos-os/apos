@@ -115,8 +115,11 @@ static void relocate_me(uintptr_t base_addr) {
   X(e_shstrndx, "%u");
 #undef X
 
+  const Elf64_Dyn* dyns =
+      elf64_find_dynamic(base_addr, ehdr, ELF_MAPPED_LOADED);
+  KASSERT(dyns != NULL);
   elf64_dyninfo_t dyn;
-  KASSERT(0 == elf64_parse_dynamic(base_addr, ehdr, &dyn));
+  KASSERT(0 == elf64_parse_dynamic(base_addr, ehdr, dyns, &dyn));
 
   do_relocate(base_addr, &dyn);
 }
