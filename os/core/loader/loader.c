@@ -69,106 +69,7 @@ void ld_main(int argc, char *argv[], char *envp[], const apos_auxv_t* auxv) {
   ld_exit(0);
 }
 
-typedef struct phdr_info {
-  const Elf64_Phdr* dynamic;
-} phdr_info_t;
-
-typedef struct dyninfo {
-  const Elf64_Rela* rela;
-  size_t rela_count;
-} dyninfo_t;
-
-static void parse_phdrs(uint64_t base_addr, const Elf64_Ehdr* ehdr,
-                        phdr_info_t* phdr_info) {
-  const Elf64_Phdr* phdrs = (const Elf64_Phdr*)(base_addr + ehdr->e_phoff);
-  phdr_info->dynamic = NULL;
-  for (int i = 0; i < ehdr->e_phnum; ++i) {
-    switch (phdrs[i].p_type) {
-      case PT_DYNAMIC:
-        phdr_info->dynamic = &phdrs[i];
-        continue;
-
-      case PT_NULL:
-      case PT_LOAD:
-      case PT_NOTE:
-      case PT_PHDR:
-      case PT_GNU_STACK:
-        // Ignore.
-        continue;
-
-      case PT_INTERP:
-      case PT_SHLIB:
-      case PT_LOPROC:
-      case PT_HIPROC:
-      case PT_RISCV_ATTRIBUTES:
-      default:
-        if (phdrs[i].p_type >= PT_LOPROC && phdrs[i].p_type < PT_HIPROC) {
-          continue;  // Ignore
-        }
-        ld_printf("Error: unsupported/invalid ELF phdr type found: %i\n",
-                  phdrs[i].p_type);
-        ld_exit(1);
-        break;
-    }
-  }
-  if (phdr_info->dynamic == NULL) {
-    ld_printf("Error: no DYNAMIC segment found\n");
-    ld_exit(1);
-  }
-}
-
-static void parse_dynamic(uint64_t base_addr, const Elf64_Phdr* dyn_phdr,
-                          dyninfo_t* dyn) {
-  const Elf64_Dyn* dyns = (const Elf64_Dyn*)(base_addr + dyn_phdr->p_offset);
-  KASSERT(dyn_phdr->p_filesz % sizeof(Elf64_Dyn) == 0);
-  uint64_t rela = 0;
-  uint64_t relasz = 0;
-  uint64_t relaent = 0;
-  kmemset(dyn, 0, sizeof(dyninfo_t));
-  for (size_t i = 0; i < dyn_phdr->p_filesz / sizeof(Elf64_Dyn); ++i) {
-    const Elf64_Dyn* dyn = &dyns[i];
-    // TODO(aoates): use a table-based format for this.
-    switch (dyn->d_tag) {
-      case DT_RELA:
-        rela = dyn->d_un.d_ptr;
-        break;
-
-      case DT_RELASZ:
-        relasz = dyn->d_un.d_val;
-        break;
-
-      case DT_RELAENT:
-        relaent = dyn->d_un.d_val;
-        break;
-
-      case DT_NULL:
-      case DT_HASH:
-      case DT_STRTAB:
-      case DT_SYMTAB:
-      case DT_STRSZ:
-      case DT_SYMENT:
-      case DT_DEBUG:
-        continue;
-
-      default:
-        if (dyn->d_tag >= DT_LOOS) {
-          continue;
-        }
-        ld_printf("Error: unknown ELF DYNAMIC tag %ld\n", dyn->d_tag);
-        ld_exit(1);
-    }
-  }
-  if (rela != 0) {
-    KASSERT(relasz > 0);
-    KASSERT(relasz % relaent == 0);
-    KASSERT(relaent == sizeof(Elf64_Rela));
-
-    dyn->rela = (const Elf64_Rela*)(base_addr + rela);
-    dyn->rela_count = relasz / relaent;
-  }
-}
-
-static void do_relocate(uint64_t base_addr, const dyninfo_t* dyn) {
+static void do_relocate(uint64_t base_addr, const elf64_dyninfo_t* dyn) {
   LOG(2, "Found %lu RELA relocations\n", dyn->rela_count);
   for (size_t i = 0; i < dyn->rela_count; ++i) {
     const Elf64_Rela* r = &dyn->rela[i];
@@ -214,11 +115,8 @@ static void relocate_me(uintptr_t base_addr) {
   X(e_shstrndx, "%u");
 #undef X
 
-  phdr_info_t phdr;
-  parse_phdrs(base_addr, ehdr, &phdr);
-
-  dyninfo_t dyn;
-  parse_dynamic(base_addr, phdr.dynamic, &dyn);
+  elf64_dyninfo_t dyn;
+  KASSERT(0 == elf64_parse_dynamic(base_addr, ehdr, &dyn));
 
   do_relocate(base_addr, &dyn);
 }

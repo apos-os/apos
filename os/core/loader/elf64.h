@@ -15,6 +15,8 @@
 #ifndef APOO_OS_CORE_LOADER_ELF64_H
 #define APOO_OS_CORE_LOADER_ELF64_H
 
+#include <stddef.h>
+
 #include "proc/load/elf-internal.h"
 #include "os/core/loader/load-binary.h"
 
@@ -23,5 +25,15 @@
 int elf64_check_header(const Elf64_Ehdr* header);
 
 int elf64_load(int fd, load_binary_t** binary_out);
+
+// Parsed info from the PT_DYNAMIC segment of an ELF file.
+typedef struct {
+  const Elf64_Dyn* dyn_array;  // All dynamic entries.
+  const Elf64_Rela* rela;
+  size_t rela_count;
+} elf64_dyninfo_t;
+
+int elf64_parse_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
+                        elf64_dyninfo_t* dyn);
 
 #endif

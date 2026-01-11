@@ -20,6 +20,7 @@
 #include "os/core/loader/ld_alloc.h"
 #include "os/core/loader/ld_assert.h"
 #include "os/core/loader/ld_printf.h"
+#include "os/core/loader/ld_string.h"
 #include "os/core/loader/load-binary.h"
 #include "os/core/loader/syscalls.h"
 
@@ -162,4 +163,98 @@ int elf64_load(int fd, load_binary_t** binary_out) {
   // Create a load_binary_t* from it.
   result = elf64_create_load_binary(&header, phdrs, binary_out);
   return result;
+}
+
+static const Elf64_Dyn* parse_phdrs(uint64_t base_addr,
+                                    const Elf64_Ehdr* ehdr) {
+  const Elf64_Phdr* phdrs = (const Elf64_Phdr*)(base_addr + ehdr->e_phoff);
+  const Elf64_Phdr* dyn = NULL;
+  for (int i = 0; i < ehdr->e_phnum; ++i) {
+    switch (phdrs[i].p_type) {
+      case PT_DYNAMIC:
+        dyn = &phdrs[i];
+        continue;
+
+      case PT_NULL:
+      case PT_LOAD:
+      case PT_NOTE:
+      case PT_PHDR:
+      case PT_GNU_STACK:
+        // Ignore.
+        continue;
+
+      case PT_INTERP:
+      case PT_SHLIB:
+      default:
+        if (phdrs[i].p_type >= PT_LOPROC && phdrs[i].p_type < PT_HIPROC) {
+          continue;  // Ignore
+        }
+        ld_printf("Error: unsupported/invalid ELF phdr type found: %i\n",
+                  phdrs[i].p_type);
+        ld_exit(1);
+        break;
+    }
+  }
+  if (dyn == NULL) {
+    // TODO(aoates): this shouldn't be an error.
+    // TODO(aoates): write an error code system for use in the loader so we
+    // don't print error messages all over the place.
+    // TODO(aoates): print error messages to stderr, not stdout.
+    ld_printf("Error: no DYNAMIC segment found\n");
+    ld_exit(1);
+  }
+  KASSERT(dyn->p_filesz % sizeof(Elf64_Dyn) == 0);
+  return (const Elf64_Dyn*)(base_addr + dyn->p_vaddr);
+}
+
+int elf64_parse_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
+                        elf64_dyninfo_t* dyn) {
+  const Elf64_Dyn* dyns = parse_phdrs(base_addr, ehdr);
+  dyn->dyn_array = dyns;
+  uint64_t rela = 0;
+  uint64_t relasz = 0;
+  uint64_t relaent = 0;
+  kmemset(dyn, 0, sizeof(elf64_dyninfo_t));
+  for (size_t i = 0; dyns[i].d_tag != DT_NULL; ++i) {
+    const Elf64_Dyn* dyn = &dyns[i];
+    // TODO(aoates): use a table-based format for this.
+    switch (dyn->d_tag) {
+      case DT_RELA:
+        rela = dyn->d_un.d_ptr;
+        break;
+
+      case DT_RELASZ:
+        relasz = dyn->d_un.d_val;
+        break;
+
+      case DT_RELAENT:
+        relaent = dyn->d_un.d_val;
+        break;
+
+      case DT_NULL:
+      case DT_HASH:
+      case DT_STRTAB:
+      case DT_SYMTAB:
+      case DT_STRSZ:
+      case DT_SYMENT:
+      case DT_DEBUG:
+        continue;
+
+      default:
+        if (dyn->d_tag >= DT_LOOS) {
+          continue;
+        }
+        ld_printf("Error: unknown ELF DYNAMIC tag %ld\n", dyn->d_tag);
+        ld_exit(1);
+    }
+  }
+  if (rela != 0) {
+    KASSERT(relasz > 0);
+    KASSERT(relasz % relaent == 0);
+    KASSERT(relaent == sizeof(Elf64_Rela));
+
+    dyn->rela = (const Elf64_Rela*)(base_addr + rela);
+    dyn->rela_count = relasz / relaent;
+  }
+  return 0;
 }
