@@ -15,6 +15,7 @@
 #ifndef APOO_OS_CORE_LOADER_SYSCALLS_H
 #define APOO_OS_CORE_LOADER_SYSCALLS_H
 
+#include <apos/vfs/stat.h>
 #include <sys/types.h>
 
 {# Declarations of syscalls for ld usage -#}

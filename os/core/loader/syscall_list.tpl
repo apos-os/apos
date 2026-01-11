@@ -22,4 +22,6 @@
   'exit',
   'lseek',
   'mmap',
+  'munmap',
+  'fstat',
 ] %}

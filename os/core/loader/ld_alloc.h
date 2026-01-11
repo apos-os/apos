@@ -21,4 +21,6 @@
 // TODO(aoates): enhance this so we can free most memory once loading is done.
 void* ld_alloc(size_t len);
 
+#define LD_ALLOC(type) ((type*)ld_alloc(sizeof(type)))
+
 #endif

@@ -40,6 +40,7 @@ env.Program('loader', [
              'ld_assert.c',
              'ld_printf.c',
              'ld_string.c',
+             'lib.c',
              'loader.c',
              'map.c',
              syscalls_c,

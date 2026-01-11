@@ -76,7 +76,7 @@ typedef struct {
 //
 // The mappings do not have to start and end on page boundaries, but they must
 // not overlap on the same page.
-typedef struct {
+typedef struct load_binary {
   bin_arch_t arch;  // The architecture of the binary.
   addr_t entry;  // The binary's entry point, or 0x0 if none.
   addr_t base_addr;

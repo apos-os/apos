@@ -188,10 +188,10 @@ const Elf64_Dyn* elf64_find_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
       case PT_NOTE:
       case PT_PHDR:
       case PT_GNU_STACK:
+      case PT_INTERP:
         // Ignore.
         continue;
 
-      case PT_INTERP:
       case PT_SHLIB:
       default:
         if (phdrs[i].p_type >= PT_LOPROC && phdrs[i].p_type < PT_HIPROC) {
@@ -228,6 +228,7 @@ int elf64_parse_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
   uint64_t rela = 0;
   uint64_t relasz = 0;
   uint64_t relaent = 0;
+  uint64_t soname = 0;
   kmemset(dyninfo, 0, sizeof(elf64_dyninfo_t));
   dyninfo->dyn_array = dyns;
   for (size_t i = 0; dyns[i].d_tag != DT_NULL; ++i) {
@@ -246,13 +247,32 @@ int elf64_parse_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
         relaent = dyn->d_un.d_val;
         break;
 
+      case DT_SONAME:
+        soname = dyn->d_un.d_val;
+        break;
+
+      case DT_STRTAB:
+        dyninfo->strtab = (const char*)(base_addr + dyn->d_un.d_ptr);
+        break;
+
       case DT_NULL:
       case DT_HASH:
-      case DT_STRTAB:
       case DT_SYMTAB:
       case DT_STRSZ:
       case DT_SYMENT:
       case DT_DEBUG:
+      case DT_NEEDED:
+      case DT_PLTGOT:
+      case DT_PLTRELSZ:
+      case DT_PLTREL:
+      case DT_JMPREL:
+        continue;
+
+      case DT_INIT_ARRAY:
+      case DT_FINI_ARRAY:
+      case DT_INIT_ARRAYSZ:
+      case DT_FINI_ARRAYSZ:
+        // TODO(aoates): support INIT/FINI properly)
         continue;
 
       default:
@@ -270,6 +290,10 @@ int elf64_parse_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
 
     dyninfo->rela = (const Elf64_Rela*)(base_addr + rela);
     dyninfo->rela_count = relasz / relaent;
+  }
+  if (soname != 0) {
+    KASSERT(dyninfo->strtab != NULL);
+    dyninfo->soname = (const char*)(dyninfo->strtab + soname);
   }
   return 0;
 }

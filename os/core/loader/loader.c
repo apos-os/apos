@@ -16,9 +16,11 @@
 #include <stdint.h>
 
 #include "os/core/loader/elf64.h"
+#include "os/core/loader/ld_alloc.h"
 #include "os/core/loader/ld_assert.h"
 #include "os/core/loader/ld_printf.h"
 #include "os/core/loader/ld_string.h"
+#include "os/core/loader/lib.h"
 #include "os/core/loader/map.h"
 #include "os/core/loader/syscalls.h"
 #include "proc/load/elf-internal.h"
@@ -32,6 +34,17 @@ static const char* kTestStringPtr = kTestString;
 
 typedef void (*start_ptr_type)(char* argv[], char* envp[],
                                const apos_auxv_t* auxv);
+
+static void log_libs(const ctx_t* ctx) {
+  const lib_t* clib = ctx->libs->next;
+  if (ld_log_level() < 1 || !clib) return;
+  ld_printf("Final shared object list:\n");
+  while (clib) {
+    ld_printf("  %s: %s\n", clib->so_name,
+              clib->path ? clib->path : "<not found>");
+    clib = clib->next;
+  }
+}
 
 void ld_main(int argc, char *argv[], char *envp[], const apos_auxv_t* auxv) {
   int val = 0;
@@ -58,6 +71,43 @@ void ld_main(int argc, char *argv[], char *envp[], const apos_auxv_t* auxv) {
   result = load_map_binary(exec_fd, exec_bin);
   if (result) {
     LOG(0, "Error: unable to load executable\n");
+    ld_exit(1);
+  }
+
+  ctx_t ctx;
+  ctx.libs = ctx.last_lib = LD_ALLOC(lib_t);
+  lib_t* lib = ctx.libs;
+  kmemset(lib, 0, sizeof(lib_t));
+  lib->state = LIB_LOADED;
+  lib->fd = exec_fd;
+  lib->bin = exec_bin;
+
+  // Assume/require that the first load region of the executable is mapping the
+  // start of the file.  I don't think this is strictly required, but seems to
+  // be the case in every ELF file I've looked at.
+  if (exec_bin->num_regions == 0 || exec_bin->regions[0].file_offset != 0) {
+    LOG(0, "Error: ELF file missing LOAD segment for start of file\n");
+    ld_exit(1);
+  }
+  lib->ehdr = (const Elf64_Ehdr*)exec_bin->regions[0].vaddr;
+  const Elf64_Dyn* dyns =
+      elf64_find_dynamic(exec_bin->base_addr, lib->ehdr, ELF_MAPPED_LOADED);
+  if (!dyns) {
+    // TODO(aoates): this should actually be fine.  Find a way to test it.
+    LOG(0, "Error: unable to find DYNAMIC section\n");
+    ld_exit(1);
+  }
+  result = elf64_parse_dynamic(0, lib->ehdr, dyns, &lib->dyn);
+  if (result) {
+    LOG(0, "Error: unable to parse DYNAMIC section\n");
+    ld_exit(1);
+  }
+
+  // Find all needed libraries.
+  result = find_libs(&ctx);
+  log_libs(&ctx);
+  if (result) {
+    LOG(0, "Error: unable to load all required libraries\n");
     ld_exit(1);
   }
 

@@ -29,6 +29,8 @@ int elf64_load(int fd, load_binary_t** binary_out);
 // Parsed info from the PT_DYNAMIC segment of an ELF file.
 typedef struct {
   const Elf64_Dyn* dyn_array;  // All dynamic entries.
+  const char* soname;
+  const char* strtab;
   const Elf64_Rela* rela;
   size_t rela_count;
 } elf64_dyninfo_t;

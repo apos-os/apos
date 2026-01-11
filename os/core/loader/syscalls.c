@@ -54,6 +54,15 @@ ssize_t ld_write(int fd, const void* buf, size_t count) {
   return result;
 }
 
+int ld_fstat(int fd, apos_stat_t* stat) {
+  int result;
+  do {
+    result = do_syscall(SYS_FSTAT, (long)fd, (long)stat, 0, 0, 0, 0);
+
+  } while (result == -EINTR_RESTART);
+  return result;
+}
+
 apos_off_t ld_lseek(int fd, apos_off_t offset, int whence) {
   apos_off_t result;
   do {
@@ -77,6 +86,15 @@ int ld_mmap(void* addr_inout, size_t length, int prot, int flags, int fd,
   do {
     result = do_syscall(SYS_MMAP, (long)addr_inout, (long)length, (long)prot,
                         (long)flags, (long)fd, (long)offset);
+
+  } while (result == -EINTR_RESTART);
+  return result;
+}
+
+int ld_munmap(void* addr, size_t length) {
+  int result;
+  do {
+    result = do_syscall(SYS_MUNMAP, (long)addr, (long)length, 0, 0, 0, 0);
 
   } while (result == -EINTR_RESTART);
   return result;
