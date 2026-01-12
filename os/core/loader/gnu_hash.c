@@ -54,71 +54,10 @@ uint32_t gnu_hash(const char* s) {
   return hash;
 }
 
-int gnu_hash_get_section(const void* elf, size_t len, gnu_hash_section_t* out) {
-  kmemset(out, 0, sizeof(gnu_hash_section_t));
-  const Elf64_Ehdr* ehdr = (Elf64_Ehdr*)elf;
-  KASSERT(ehdr->e_phoff < len);
-  KASSERT(ehdr->e_phoff + ehdr->e_phnum * ehdr->e_phentsize < len);
-  KASSERT(ehdr->e_phentsize == sizeof(Elf64_Phdr));
-
-  const Elf64_Phdr* phdrs = (const Elf64_Phdr*)(elf + ehdr->e_phoff);
-  const Elf64_Phdr* dyn_phdr = NULL;
-  for (int i = 0; i < ehdr->e_phnum; ++i) {
-    if (phdrs[i].p_type == PT_DYNAMIC) {
-      dyn_phdr = &phdrs[i];
-      break;
-    }
-  }
-  if (dyn_phdr == NULL) {
-    ld_printf("Error: no DYNAMIC segment found\n");
-    return 1;
-  }
-
-  // Check size of DYNAMIC section.
-  if (dyn_phdr->p_offset + dyn_phdr->p_filesz > len) {
-    ld_printf("Error: truncated DYNAMIC segment\n");
-    return 1;
-  }
-
-  // Find the appropriate dynamic sections.
-  const Elf64_Dyn* dyns = (const Elf64_Dyn*)(elf + dyn_phdr->p_offset);
-  KASSERT(dyn_phdr->p_filesz % sizeof(Elf64_Dyn) == 0);
-  for (size_t i = 0; i < dyn_phdr->p_filesz / sizeof(Elf64_Dyn); ++i) {
-    const Elf64_Dyn* dyn = &dyns[i];
-    switch (dyn->d_tag) {
-      case DT_SYMTAB:
-        out->symtab = elf + dyn->d_un.d_ptr;
-        break;
-
-      case DT_SYMENT:
-        KASSERT(dyn->d_un.d_val == sizeof(Elf64_Sym));
-        break;
-
-      case DT_STRTAB:
-        out->strtab = elf + dyn->d_un.d_ptr;
-        break;
-
-      case DT_STRSZ:
-        out->strsz = dyn->d_un.d_val;
-        break;
-
-      case DT_GNU_HASH:
-        out->gnu_hash = elf + dyn->d_un.d_ptr;
-        break;
-    }
-  }
-  if (!out->symtab || !out->strtab || !out->strsz || !out->gnu_hash) {
-    ld_printf("Error: missing required dynamic sections\n");
-    return 1;
-  }
-
-  return 0;
-}
-
-const Elf64_Sym* gnu_hash_lookup(const gnu_hash_section_t* gnu,
+const Elf64_Sym* gnu_hash_lookup(const elf64_dyninfo_t* dyn,
                                  const char* symbol, uint32_t sym_hash) {
   // First check the bloom filter.
-  const gnu_hash_header_t* hdr = gnu->gnu_hash;
+  const gnu_hash_header_t* hdr = dyn->gnu_hash;
 
   uint32_t sym_hash2 = sym_hash >> hdr->shift2;
   const size_t kBitsPerMaskWord = 8 * sizeof(uint64_t);
@@ -139,8 +78,8 @@ const Elf64_Sym* gnu_hash_lookup(const gnu_hash_section_t* gnu,
   while (1) {
     if ((*chain & ~1) == (sym_hash & ~1)) {
       // Hash match!  Let's check strings.
-      const Elf64_Sym* sym = &gnu->symtab[symidx];
-      const char* entry_name = gnu->strtab + sym->st_name;
+      const Elf64_Sym* sym = &dyn->symtab[symidx];
+      const char* entry_name = dyn->strtab + sym->st_name;
       if (kstrcmp(entry_name, symbol) == 0) {
         return sym;
       }

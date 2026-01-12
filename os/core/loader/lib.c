@@ -230,15 +230,6 @@ void load_libs(ctx_t* ctx) {
       ld_exit(1);
     }
 
-    // TODO(aoates): avoid the second scan here by having the GNU hash code take
-    // the parsed dyninfo --- or just have it use the dyninfo directly.
-    result = gnu_hash_get_section((void*)lib->bin->base_addr, UINT64_MAX,
-                                  &lib->gnuhash);
-    if (result) {
-      LOG(0, "Error: unable to read DT_GNU_HASH section from %s\n", lib->path);
-      ld_exit(1);
-    }
-
     lib->state = LIB_LOADED;
     lib = lib->next;
   }

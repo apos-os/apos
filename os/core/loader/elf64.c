@@ -23,6 +23,7 @@
 #include "os/core/loader/ld_string.h"
 #include "os/core/loader/load-binary.h"
 #include "os/core/loader/syscalls.h"
+#include "proc/load/elf-internal.h"
 
 // TODO(aoates): try and de-dup this with the kernel elf64 code.
 int elf64_check_header(const Elf64_Ehdr* header) {
@@ -271,9 +272,16 @@ int elf64_parse_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
         dyninfo->strtab = (const char*)(base_addr + dyn->d_un.d_ptr);
         break;
 
+      case DT_SYMTAB:
+        dyninfo->symtab = (const Elf64_Sym*)(base_addr + dyn->d_un.d_ptr);
+        break;
+
+      case DT_GNU_HASH:
+        dyninfo->gnu_hash = (const void*)(base_addr + dyn->d_un.d_ptr);
+        break;
+
       case DT_NULL:
       case DT_HASH:
-      case DT_SYMTAB:
       case DT_STRSZ:
       case DT_SYMENT:
       case DT_DEBUG:

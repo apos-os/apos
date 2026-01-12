@@ -38,8 +38,6 @@ typedef struct lib {
   const Elf64_Ehdr* ehdr;
   elf64_dyninfo_t dyn;
 
-  gnu_hash_section_t gnuhash;
-
   struct load_binary* bin;
   struct lib* next;  // The next library in global load order.
 } lib_t;

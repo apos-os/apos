@@ -13,8 +13,10 @@
 // limitations under the License.
 
 extern "C" {
+#include "os/core/loader/elf64.h"
 #include "os/core/loader/gnu_hash.h"
 #include "os/core/loader/testdata/gnu_hash_lib.so.cdata"
+#include "proc/load/elf-internal.h"
 }
 
 #include <gtest/gtest.h>
@@ -86,24 +88,65 @@ TEST(GnuHash, BasicHashes) {
   EXPECT_EQ(0x1a8ae1fb, gnu_hash("abelite"));
 }
 
-TEST(GnuHash, ParseTestdata) {
-  gnu_hash_section_t s;
-  EXPECT_EQ(0, gnu_hash_get_section(kGnuHashLib.data(),
-                                    kGnuHashLib.size_bytes(), &s));
-  EXPECT_EQ(0x158, (unsigned char*)s.gnu_hash - kGnuHashLib.data());
-  EXPECT_EQ(0x5f8, (unsigned char*)s.strtab - kGnuHashLib.data());
-  EXPECT_EQ(0x250, (unsigned char*)s.symtab - kGnuHashLib.data());
-  EXPECT_EQ(368, s.strsz);
+elf64_dyninfo_t GetDynInfo(std::span<const unsigned char> data) {
+  elf64_dyninfo_t out;
+
+  const unsigned char* elf = data.data();
+  const Elf64_Ehdr* ehdr = (Elf64_Ehdr*)elf;
+  EXPECT_LT(ehdr->e_phoff, data.size());
+  EXPECT_LT(ehdr->e_phoff + ehdr->e_phnum * ehdr->e_phentsize, data.size());
+  EXPECT_EQ(ehdr->e_phentsize, sizeof(Elf64_Phdr));
+
+  const Elf64_Phdr* phdrs = (const Elf64_Phdr*)(elf + ehdr->e_phoff);
+  const Elf64_Phdr* dyn_phdr = NULL;
+  for (int i = 0; i < ehdr->e_phnum; ++i) {
+    if (phdrs[i].p_type == PT_DYNAMIC) {
+      dyn_phdr = &phdrs[i];
+      break;
+    }
+  }
+  EXPECT_NE(dyn_phdr, nullptr);
+
+  // Find the appropriate dynamic sections.
+  const Elf64_Dyn* dyns = (const Elf64_Dyn*)(elf + dyn_phdr->p_offset);
+  EXPECT_EQ(dyn_phdr->p_filesz % sizeof(Elf64_Dyn), 0);
+  for (size_t i = 0; i < dyn_phdr->p_filesz / sizeof(Elf64_Dyn); ++i) {
+    const Elf64_Dyn* dyn = &dyns[i];
+    switch (dyn->d_tag) {
+      case DT_SYMTAB:
+        out.symtab = (const Elf64_Sym*)(elf + dyn->d_un.d_ptr);
+        break;
+
+      case DT_SYMENT:
+        EXPECT_EQ(dyn->d_un.d_val, sizeof(Elf64_Sym));
+        break;
+
+      case DT_STRTAB:
+        out.strtab = (const char*)(elf + dyn->d_un.d_ptr);
+        break;
+
+      case DT_GNU_HASH:
+        out.gnu_hash = elf + dyn->d_un.d_ptr;
+        break;
+    }
+  }
+
+  return out;
 }
 
-const Elf64_Sym* DoLookup(const gnu_hash_section_t* s, const char* symbol) {
-  return gnu_hash_lookup(s, symbol, gnu_hash(symbol));
+TEST(GnuHash, ParseTestdata) {
+  elf64_dyninfo_t dyn = GetDynInfo(kGnuHashLib);
+  EXPECT_EQ(0x158, (unsigned char*)dyn.gnu_hash - kGnuHashLib.data());
+  EXPECT_EQ(0x5f8, (unsigned char*)dyn.strtab - kGnuHashLib.data());
+  EXPECT_EQ(0x250, (unsigned char*)dyn.symtab - kGnuHashLib.data());
+}
+
+const Elf64_Sym* DoLookup(const elf64_dyninfo_t* d, const char* symbol) {
+  return gnu_hash_lookup(d, symbol, gnu_hash(symbol));
 }
 
 TEST(GnuHash, BasicLookup) {
-  gnu_hash_section_t s;
-  EXPECT_EQ(0, gnu_hash_get_section(kGnuHashLib.data(),
-                                    kGnuHashLib.size_bytes(), &s));
+  elf64_dyninfo_t s = GetDynInfo(kGnuHashLib);
 
   for (int i = 0; i < sizeof(kSymbols) / sizeof(kSymbols[0]); ++i) {
     SCOPED_TRACE(kSymbols[i].first);
@@ -130,13 +173,13 @@ TEST(GnuHash, BloomFilterFull) {
   std::vector<unsigned char> lib_mod(std::begin(kGnuHashLib),
                                      std::end(kGnuHashLib));
 
-  gnu_hash_section_t s;
-  EXPECT_EQ(0, gnu_hash_get_section(lib_mod.data(), lib_mod.size(), &s));
+  elf64_dyninfo_t s = GetDynInfo(lib_mod);
 
   // Override the bloom filter to be all ones.  This should not affect the
   // lookups semantically.
   uint32_t* data = (uint32_t*)s.gnu_hash;
-  for (int i = 0; i < s.gnu_hash->maskwords * 2; ++i) {
+  const gnu_hash_header_t* hdr = (const gnu_hash_header_t*)s.gnu_hash;
+  for (int i = 0; i < hdr->maskwords * 2; ++i) {
     data[sizeof(gnu_hash_header_t) / sizeof(uint32_t) + i] = 0xffffffff;
   }
 
@@ -165,12 +208,12 @@ TEST(GnuHash, BloomFilterEmpty) {
   std::vector<unsigned char> lib_mod(std::begin(kGnuHashLib),
                                      std::end(kGnuHashLib));
 
-  gnu_hash_section_t s;
-  EXPECT_EQ(0, gnu_hash_get_section(lib_mod.data(), lib_mod.size(), &s));
+  elf64_dyninfo_t s = GetDynInfo(lib_mod);
 
   // Override the bloom filter to be all zeroes.  All lookups should fail now.
   uint32_t* data = (uint32_t*)s.gnu_hash;
-  for (int i = 0; i < s.gnu_hash->maskwords * 2; ++i) {
+  const gnu_hash_header_t* hdr = (const gnu_hash_header_t*)s.gnu_hash;
+  for (int i = 0; i < hdr->maskwords * 2; ++i) {
     data[sizeof(gnu_hash_header_t) / sizeof(uint32_t) + i] = 0;
   }
 
@@ -195,14 +238,14 @@ TEST(GnuHash, BloomFilterPartial) {
   std::vector<unsigned char> lib_mod(std::begin(kGnuHashLib),
                                      std::end(kGnuHashLib));
 
-  gnu_hash_section_t s;
-  EXPECT_EQ(0, gnu_hash_get_section(lib_mod.data(), lib_mod.size(), &s));
+  elf64_dyninfo_t s = GetDynInfo(lib_mod);
 
   // Zero out the bloom filter, then set the bits just for one symbol (but which
   // shares its bits with other symbols)
   uint64_t* mask =
       (uint64_t*)((uintptr_t)s.gnu_hash + sizeof(gnu_hash_header_t));
-  for (int i = 0; i < s.gnu_hash->maskwords; ++i) {
+  const gnu_hash_header_t* hdr = (const gnu_hash_header_t*)s.gnu_hash;
+  for (int i = 0; i < hdr->maskwords; ++i) {
     mask[i] = 0;
   }
   mask[2] = 0x0000400000020000;

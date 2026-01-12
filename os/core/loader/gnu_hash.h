@@ -23,6 +23,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "os/core/loader/elf64.h"
 #include "proc/load/elf-internal.h"
 
 // Section header.
@@ -35,28 +36,12 @@ typedef struct {
 static_assert(sizeof(gnu_hash_header_t) == 4 * sizeof(uint32_t),
               "Bad gnu_hash_header_t size");
 
-// Information about a GNU hash table section.
-typedef struct {
-  // The DT_GNU_HASH segment (should be same as .gnu.hash section).
-  const gnu_hash_header_t* gnu_hash;
-
-  // The SYMTAB section.
-  const Elf64_Sym* symtab;
-
-  // The STRTAB section.
-  const char* strtab;
-  size_t strsz;
-} gnu_hash_section_t;
-
 // Calculate the GNU hash for a symbol name.
 uint32_t gnu_hash(const char* s);
 
-// Fill in a gnu_hash_section_t* from an ELF header, or return error.
-int gnu_hash_get_section(const void* elf, size_t len, gnu_hash_section_t* out);
-
 // Look up a symbol in the given .gnu.hash section.  Returns the Elf*_Sym
 // corresponding to the symbol, or NULL if it is not found.
-const Elf64_Sym* gnu_hash_lookup(const gnu_hash_section_t* gnu,
-                                 const char* symbol, uint32_t sym_hash);
+const Elf64_Sym* gnu_hash_lookup(const elf64_dyninfo_t* dyn, const char* symbol,
+                                 uint32_t sym_hash);
 
 #endif

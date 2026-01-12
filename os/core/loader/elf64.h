@@ -38,9 +38,11 @@ typedef struct {
 typedef struct {
   const Elf64_Dyn* dyn_array;  // All dynamic entries.
   const char* soname;
+  const Elf64_Sym* symtab;
   const char* strtab;
   const Elf64_Rela* rela;
   size_t rela_count;
+  const void* gnu_hash;
 } elf64_dyninfo_t;
 
 // Mode to read the file in.  This determines whether we look for data as a data
