@@ -26,6 +26,14 @@ int elf64_check_header(const Elf64_Ehdr* header);
 
 int elf64_load(int fd, load_binary_t** binary_out);
 
+// Parsed info from the program header segment.
+typedef struct {
+  const Elf64_Dyn* dyn_array;
+  // The minimum and maximum addresses of all LOAD segments.
+  uint64_t load_min;
+  uint64_t load_max;
+} elf64_phdr_info_t;
+
 // Parsed info from the PT_DYNAMIC segment of an ELF file.
 typedef struct {
   const Elf64_Dyn* dyn_array;  // All dynamic entries.
@@ -45,11 +53,12 @@ typedef enum {
 
 // Find the PT_DYNAMIC array in the given ELF image and return a memory address
 // that can be used to read it.
-const Elf64_Dyn* elf64_find_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
-                                    elf64_map_type_t mapping);
+int elf64_parse_phdr(uint64_t base_addr, const Elf64_Ehdr* ehdr,
+                     elf64_map_type_t mapping, elf64_phdr_info_t* phdr);
 
 // Parse the PT_DYNAMIC section into |dyninfo|.
 int elf64_parse_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
-                        const Elf64_Dyn* dyn_array, elf64_dyninfo_t* dyninfo);
+                        const elf64_phdr_info_t* phdr,
+                        elf64_dyninfo_t* dyninfo);
 
 #endif

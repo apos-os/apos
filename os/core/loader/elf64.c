@@ -165,8 +165,8 @@ int elf64_load(int fd, load_binary_t** binary_out) {
   return result;
 }
 
-const Elf64_Dyn* elf64_find_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
-                                    elf64_map_type_t mapping) {
+int elf64_parse_phdr(uint64_t base_addr, const Elf64_Ehdr* ehdr,
+                     elf64_map_type_t mapping, elf64_phdr_info_t* phdr) {
   KASSERT(mapping == ELF_MAPPED_FILE || mapping == ELF_MAPPED_LOADED);
   if (mapping == ELF_MAPPED_FILE) {
     KASSERT(base_addr == (uint64_t)ehdr);
@@ -177,14 +177,28 @@ const Elf64_Dyn* elf64_find_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
   const Elf64_Phdr* phdrs =
       (const Elf64_Phdr*)((uintptr_t)ehdr + ehdr->e_phoff);
   const Elf64_Phdr* dyn = NULL;
+  bool load_seen = false;
+  phdr->load_min = phdr->load_max = 0;
   for (int i = 0; i < ehdr->e_phnum; ++i) {
     switch (phdrs[i].p_type) {
       case PT_DYNAMIC:
         dyn = &phdrs[i];
         continue;
 
-      case PT_NULL:
       case PT_LOAD:
+        if (!load_seen) {
+          phdr->load_min = phdrs[i].p_vaddr;
+          load_seen = true;
+        } else {
+          // They should be in order.
+          KASSERT(phdr->load_min < phdrs[i].p_vaddr);
+        }
+        uint64_t end_addr = phdrs[i].p_vaddr + phdrs[i].p_memsz;
+        KASSERT(phdr->load_max < end_addr);
+        phdr->load_max = end_addr;
+        break;
+
+      case PT_NULL:
       case PT_NOTE:
       case PT_PHDR:
       case PT_GNU_STACK:
@@ -215,15 +229,17 @@ const Elf64_Dyn* elf64_find_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
   // Get an address for the DYNAMIC array based on mapping type.  If the file is
   // directly mapped, use the file offset; otherwise, the vaddr.
   if (mapping == ELF_MAPPED_FILE) {
-    return (const Elf64_Dyn*)((uint64_t)ehdr + dyn->p_offset);
+    phdr->dyn_array = (const Elf64_Dyn*)((uint64_t)ehdr + dyn->p_offset);
   } else {
-    return (const Elf64_Dyn*)(base_addr + dyn->p_vaddr);
+    phdr->dyn_array = (const Elf64_Dyn*)(base_addr + dyn->p_vaddr);
   }
+  return 0;
 }
 
 int elf64_parse_dynamic(uint64_t base_addr, const Elf64_Ehdr* ehdr,
-                        const Elf64_Dyn* dyns,
+                        const elf64_phdr_info_t* phdr,
                         elf64_dyninfo_t* dyninfo) {
+  const Elf64_Dyn* dyns = phdr->dyn_array;
   KASSERT(dyns != NULL);
   uint64_t rela = 0;
   uint64_t relasz = 0;

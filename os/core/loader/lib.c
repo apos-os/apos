@@ -73,15 +73,15 @@ static int find_lib(lib_t* lib) {
       continue;
     }
 
-    const Elf64_Dyn* dyns =
-        elf64_find_dynamic((uint64_t)base, ehdr, ELF_MAPPED_FILE);
-    if (!dyns) {
+    elf64_phdr_info_t phdrs;
+    result = elf64_parse_phdr((uint64_t)base, ehdr, ELF_MAPPED_FILE, &phdrs);
+    if (result) {
       LOG(1, "No DYNAMIC section found in %s\n", path);
       ld_munmap((void*)base, mapping_size);
       ld_close(fd);
       continue;
     }
-    result = elf64_parse_dynamic((uint64_t)base, ehdr, dyns, &lib->dyn);
+    result = elf64_parse_dynamic((uint64_t)base, ehdr, &phdrs, &lib->dyn);
     if (result) {
       LOG(1, "Unable to parse DYNAMIC section in %s\n", path);
       ld_munmap((void*)base, mapping_size);

@@ -90,14 +90,15 @@ void ld_main(int argc, char *argv[], char *envp[], const apos_auxv_t* auxv) {
     ld_exit(1);
   }
   lib->ehdr = (const Elf64_Ehdr*)exec_bin->regions[0].vaddr;
-  const Elf64_Dyn* dyns =
-      elf64_find_dynamic(exec_bin->base_addr, lib->ehdr, ELF_MAPPED_LOADED);
-  if (!dyns) {
+  elf64_phdr_info_t phdrs;
+  result = elf64_parse_phdr(exec_bin->base_addr, lib->ehdr, ELF_MAPPED_LOADED,
+                            &phdrs);
+  if (result) {
     // TODO(aoates): this should actually be fine.  Find a way to test it.
     LOG(0, "Error: unable to find DYNAMIC section\n");
     ld_exit(1);
   }
-  result = elf64_parse_dynamic(0, lib->ehdr, dyns, &lib->dyn);
+  result = elf64_parse_dynamic(0, lib->ehdr, &phdrs, &lib->dyn);
   if (result) {
     LOG(0, "Error: unable to parse DYNAMIC section\n");
     ld_exit(1);
@@ -165,11 +166,12 @@ static void relocate_me(uintptr_t base_addr) {
   X(e_shstrndx, "%u");
 #undef X
 
-  const Elf64_Dyn* dyns =
-      elf64_find_dynamic(base_addr, ehdr, ELF_MAPPED_LOADED);
-  KASSERT(dyns != NULL);
+  elf64_phdr_info_t phdrs;
+  result = elf64_parse_phdr(base_addr, ehdr, ELF_MAPPED_LOADED, &phdrs);
+  KASSERT(result == 0);
+  KASSERT(phdrs.dyn_array != NULL);
   elf64_dyninfo_t dyn;
-  KASSERT(0 == elf64_parse_dynamic(base_addr, ehdr, dyns, &dyn));
+  KASSERT(0 == elf64_parse_dynamic(base_addr, ehdr, &phdrs, &dyn));
 
   do_relocate(base_addr, &dyn);
 }
