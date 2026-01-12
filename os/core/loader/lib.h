@@ -16,6 +16,7 @@
 #define APOO_OS_CORE_LOADER_LIB_H
 
 #include "os/core/loader/elf64.h"
+#include "os/core/loader/gnu_hash.h"
 #include "proc/load/elf-internal.h"
 
 struct load_binary;
@@ -36,6 +37,8 @@ typedef struct lib {
   // ELF64 data, if currently mapped.
   const Elf64_Ehdr* ehdr;
   elf64_dyninfo_t dyn;
+
+  gnu_hash_section_t gnuhash;
 
   struct load_binary* bin;
   struct lib* next;  // The next library in global load order.
