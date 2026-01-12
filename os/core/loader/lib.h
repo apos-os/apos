@@ -45,9 +45,15 @@ typedef struct lib {
 typedef struct {
   lib_t* libs;  // Libraries in global order.  The first is the binary itself.
   lib_t* last_lib;
+
+  // The next available address for mapping a shared object.
+  uint64_t next_load_addr;
 } ctx_t;
 
 // Resolves all libraries transitively needed by the current loading binary.
 int find_libs(ctx_t* ctx);
+
+// Once all libraries are resolved and opened, load them all into memory.
+void load_libs(ctx_t* ctx);
 
 #endif

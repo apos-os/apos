@@ -188,3 +188,47 @@ int find_libs(ctx_t* ctx) {
   }
   return result;
 }
+
+void load_libs(ctx_t* ctx) {
+  KASSERT(ctx->libs->state == LIB_LOADED);
+
+  // Continue until we've loaded everything.
+  lib_t* lib = ctx->libs->next;
+  while (lib) {
+    KASSERT(lib->state == LIB_FOUND);
+    KASSERT(lib->bin == NULL);
+
+    int result = elf64_load(lib->fd, &lib->bin);
+    if (result) {
+      LOG(0, "Error: unable to load %s\n", lib->path);
+      ld_exit(1);
+    }
+    if (lib->bin->num_regions == 0) {
+      continue;
+    }
+
+    // Pick the next free address to load into.
+    // TODO(aoates): consider starting each library at an even power of two that
+    // contains the full library image, to make address math easier.
+    ctx->next_load_addr = align_up(ctx->next_load_addr, PAGE_SIZE);
+    LOG(1, "Loading %s at %p\n", lib->so_name, (void*)ctx->next_load_addr);
+    lib->bin->base_addr = ctx->next_load_addr;
+    for (int i = 0; i < lib->bin->num_regions; ++i) {
+      lib->bin->regions[i].vaddr += lib->bin->base_addr;
+    }
+    if (lib->bin->entry) {
+      lib->bin->entry += lib->bin->base_addr;
+    }
+    const load_region_t* last_region =
+        &lib->bin->regions[lib->bin->num_regions - 1];
+    ctx->next_load_addr = last_region->vaddr + last_region->mem_len;
+
+    result = load_map_binary(lib->fd, lib->bin);
+    if (result) {
+      LOG(0, "Error: unable to load library %s\n", lib->path);
+      ld_exit(1);
+    }
+    lib->state = LIB_LOADED;
+    lib = lib->next;
+  }
+}

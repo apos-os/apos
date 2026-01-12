@@ -32,6 +32,8 @@ unsigned long apos_auxval_get(unsigned long type);
 static const char kTestString[] = "Test String";
 static const char* kTestStringPtr = kTestString;
 
+static elf64_phdr_info_t g_my_phdrs;
+
 typedef void (*start_ptr_type)(char* argv[], char* envp[],
                                const apos_auxv_t* auxv);
 
@@ -112,6 +114,10 @@ void ld_main(int argc, char *argv[], char *envp[], const apos_auxv_t* auxv) {
     ld_exit(1);
   }
 
+  // Load the libraries in.
+  ctx.next_load_addr = g_my_phdrs.load_max + apos_auxval_get(AUXVEC_BASE);
+  load_libs(&ctx);
+
   // Jump to the entry point; we should never return.
   LOG(1, "Jumping to user executable entry at %p\n", (void*)exec_bin->entry);
   start_ptr_type start = (start_ptr_type)exec_bin->entry;
@@ -166,12 +172,11 @@ static void relocate_me(uintptr_t base_addr) {
   X(e_shstrndx, "%u");
 #undef X
 
-  elf64_phdr_info_t phdrs;
-  result = elf64_parse_phdr(base_addr, ehdr, ELF_MAPPED_LOADED, &phdrs);
+  result = elf64_parse_phdr(base_addr, ehdr, ELF_MAPPED_LOADED, &g_my_phdrs);
   KASSERT(result == 0);
-  KASSERT(phdrs.dyn_array != NULL);
+  KASSERT(g_my_phdrs.dyn_array != NULL);
   elf64_dyninfo_t dyn;
-  KASSERT(0 == elf64_parse_dynamic(base_addr, ehdr, &phdrs, &dyn));
+  KASSERT(0 == elf64_parse_dynamic(base_addr, ehdr, &g_my_phdrs, &dyn));
 
   do_relocate(base_addr, &dyn);
 }
