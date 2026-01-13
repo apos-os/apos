@@ -33,7 +33,7 @@ env.Append(LINKFLAGS=['-Wl,-static,-pie,--no-dynamic-linker,-ztext'])
 env.Tpl('#/os/core/loader/syscalls.h', 'syscalls.h.tpl')
 syscalls_c = env.TplSource('#/os/core/loader/syscalls.c', 'syscalls.c.tpl')
 
-env.Program('loader', [
+env.Program('ld.so.1', [
              'elf64.c',
              'gnu_hash.c',
              'ld_alloc.c',
