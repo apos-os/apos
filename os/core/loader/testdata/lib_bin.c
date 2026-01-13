@@ -13,14 +13,39 @@
 // limitations under the License.
 #include "os/core/loader/testdata/libs_header.h"
 
+#include <stdio.h>
+
 IMPL_FUNC(bin_, funcX, {})
 
-void _start(void) {
+static int result = 0;
+
+#define EXPECT_EQ(_val1, _val2)                                       \
+  do {                                                                \
+    if ((_val1) != (_val2)) {                                         \
+      printf("Failure: %s:%d: %s expected %d, actual %d\n", __FILE__, \
+             __LINE__, #_val1, (_val2), (_val1));                     \
+      result = 1;                                                     \
+    }                                                                 \
+  } while (0)
+
+int main(void) {
   testlib_calls_t c = {};
   funcA(&c);
   funcX(&c);
-  // TODO(aoates): when relocations are implemented, verify the outcome of the
-  // dynamic execution is correct.
+
+  EXPECT_EQ(c.lib1_funcA, 1);
+  EXPECT_EQ(c.lib2_funcB, 3);
+  EXPECT_EQ(c.lib2_funcC, 1);
+  EXPECT_EQ(c.lib3_funcD, 1);
+  EXPECT_EQ(c.lib4_funcE, 1);
+  EXPECT_EQ(c.lib4_funcA, 0);
+  EXPECT_EQ(c.lib4_funcB, 0);
+  EXPECT_EQ(c.bin_funcX, 2);
+  EXPECT_EQ(c.lib4_funcX, 0);
   // TODO(aoates): test global data relocations in addition to function calls.
   // TODO(aoates): test SONAME overrides with this.
+  if (result == 0) {
+    printf("Passed!\n");
+  }
+  return result;
 }

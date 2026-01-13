@@ -81,7 +81,7 @@ test_bin = testlib_env.Program('testdata/lib_bin', ['testdata/lib_bin.c'],
                                # --as-needed ensures that lib_bin only has a
                                # NEEDED entry for lib1, and the others will be
                                # found transitively.
-                               LINKFLAGS=['-nostdlib', '-Wl,--as-needed'])
+                               LINKFLAGS=['-Wl,--as-needed'])
 
 # scons doesn't detect the dependencies correctly automatically.
 Depends(test_bin, [lib1, lib2, lib3, lib4])
