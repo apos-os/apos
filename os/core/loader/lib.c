@@ -136,7 +136,8 @@ static void add_needed(ctx_t* ctx, const lib_t* lib) {
       // may have already found.
       for (new_lib = ctx->libs->next; new_lib != NULL; new_lib = new_lib->next) {
         if (kstrcmp(new_lib->so_name, soname) == 0) {
-          LOG(2, "  %s met with existing library %s\n", soname, new_lib->path);
+          LOG(2, "  %s met with existing library %s\n", soname,
+              new_lib->path ? new_lib->path : "<not yet identified>");
           break;
         }
       }

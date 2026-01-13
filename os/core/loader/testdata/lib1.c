@@ -15,4 +15,5 @@
 IMPL_FUNC(lib1_, funcA, {
   funcB(c);
   funcD(c);
+  funcB2(c);
 })

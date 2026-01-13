@@ -35,6 +35,7 @@ int main(void) {
 
   EXPECT_EQ(c.lib1_funcA, 1);
   EXPECT_EQ(c.lib2_funcB, 3);
+  EXPECT_EQ(c.lib2b_funcB2, 4);
   EXPECT_EQ(c.lib2_funcC, 1);
   EXPECT_EQ(c.lib3_funcD, 1);
   EXPECT_EQ(c.lib4_funcE, 1);

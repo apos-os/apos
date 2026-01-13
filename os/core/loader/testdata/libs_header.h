@@ -18,6 +18,7 @@
 typedef struct {
   int lib1_funcA;
   int lib2_funcB;
+  int lib2b_funcB2;
   int lib2_funcC;
   int lib3_funcD;
   int lib4_funcE;
@@ -31,12 +32,15 @@ typedef struct {
 // complex DAG of dependencies.
 // lib_bin -> lib1
 //   lib1 -> lib2
+//   lib1 -> lib2b
+//   lib2 -> lib2b
 //   lib1 -> lib3
 //     lib3 -> lib2
 //     lib3 -> lib4
 //  lib4: provides duplicate symbols to lib1 and lib2.
 void funcA(testlib_calls_t* c);  // lib1 and lib4
 void funcB(testlib_calls_t* c);  // lib2 and lib4
+void funcB2(testlib_calls_t* c);  // lib2b
 void funcC(testlib_calls_t* c);  // lib2
 void funcD(testlib_calls_t* c);  // lib3
 void funcE(testlib_calls_t* c);  // lib4

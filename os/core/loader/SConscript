@@ -68,15 +68,18 @@ testlib_env = user_env.Clone()
 testlib_env.Append(CFLAGS = ['-nostdlib'])
 testlib_env.Replace(SHLINKFLAGS = ['-nostdlib', '-shared'])
 lib1 = testlib_env.SharedLibrary('testdata/lib1.so', ['testdata/lib1.c'],
-                                 LIBS=['2', '3'],
+                                 LIBS=['2', '2b', '3'],
                                  LIBPATH=['testdata'])
-lib2 = testlib_env.SharedLibrary('testdata/lib2.so', ['testdata/lib2.c'])
+lib2 = testlib_env.SharedLibrary('testdata/lib2.so', ['testdata/lib2.c'],
+                                 LIBS=['2b'],
+                                 LIBPATH=['testdata'])
+lib2b = testlib_env.SharedLibrary('testdata/lib2b.so', ['testdata/lib2b.c'])
 lib3 = testlib_env.SharedLibrary('testdata/lib3.so', ['testdata/lib3.c'],
                                  LIBS=['2', '4'],
                                  LIBPATH=['testdata'])
 lib4 = testlib_env.SharedLibrary('testdata/lib4.so', ['testdata/lib4.c'])
 test_bin = testlib_env.Program('testdata/lib_bin', ['testdata/lib_bin.c'],
-                               LIBS=['1', '2', '3', '4'],
+                               LIBS=['1', '2', '2b', '3', '4'],
                                LIBPATH=['testdata'],
                                # --as-needed ensures that lib_bin only has a
                                # NEEDED entry for lib1, and the others will be
@@ -84,6 +87,7 @@ test_bin = testlib_env.Program('testdata/lib_bin', ['testdata/lib_bin.c'],
                                LINKFLAGS=['-Wl,--as-needed'])
 
 # scons doesn't detect the dependencies correctly automatically.
-Depends(test_bin, [lib1, lib2, lib3, lib4])
-Depends(lib1, [lib2, lib3])
+Depends(test_bin, [lib1, lib2, lib2b, lib3, lib4])
+Depends(lib1, [lib2, lib2b, lib3])
+Depends(lib2, [lib2b])
 Depends(lib3, [lib2, lib4])

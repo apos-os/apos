@@ -12,5 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include "os/core/loader/testdata/libs_header.h"
-IMPL_FUNC(lib2_, funcB, { funcB2(c); })
-IMPL_FUNC(lib2_, funcC, {})
+IMPL_FUNC(lib2b_, funcB2, {})
