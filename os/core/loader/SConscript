@@ -43,6 +43,7 @@ env.Program('loader', [
              'lib.c',
              'loader.c',
              'map.c',
+             'relocate.c',
              syscalls_c,
             ],
             LIBS=['apos_syscall'],

@@ -28,6 +28,7 @@
 #include "os/core/loader/ld_assert.h"
 #include "os/core/loader/ld_printf.h"
 #include "os/core/loader/map.h"
+#include "os/core/loader/relocate.h"
 #include "os/core/loader/syscalls.h"
 #include "proc/load/elf-internal.h"
 
@@ -230,7 +231,26 @@ void load_libs(ctx_t* ctx) {
       ld_exit(1);
     }
 
+    // Reparse the dynamic sections from the newly loaded position.
+    elf64_phdr_info_t phdrs;
+    KASSERT(lib->bin->regions[0].file_offset == 0);
+    const Elf64_Ehdr* ehdr = (const Elf64_Ehdr*)lib->bin->regions[0].vaddr;
+    KASSERT(0 == elf64_parse_phdr(lib->bin->base_addr, ehdr, ELF_MAPPED_LOADED,
+                                  &phdrs));
+    KASSERT(0 ==
+            elf64_parse_dynamic(lib->bin->base_addr, ehdr, &phdrs, &lib->dyn));
+
     lib->state = LIB_LOADED;
+    lib = lib->next;
+  }
+}
+
+void relocate_libs(ctx_t* ctx) {
+  KASSERT(ctx->libs->state == LIB_LOADED);
+
+  lib_t* lib = ctx->libs;
+  while (lib) {
+    elf64_relocate(ctx, lib);
     lib = lib->next;
   }
 }

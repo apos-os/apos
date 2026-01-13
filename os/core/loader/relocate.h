@@ -11,16 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "os/core/loader/testdata/libs_header.h"
+#ifndef APOO_OS_CORE_LOADER_RELOCATE_H
+#define APOO_OS_CORE_LOADER_RELOCATE_H
 
-IMPL_FUNC(bin_, funcX, {})
+#include "os/core/loader/lib.h"
 
-void _start(void) {
-  testlib_calls_t c = {};
-  funcA(&c);
-  funcX(&c);
-  // TODO(aoates): when relocations are implemented, verify the outcome of the
-  // dynamic execution is correct.
-  // TODO(aoates): test global data relocations in addition to function calls.
-  // TODO(aoates): test SONAME overrides with this.
-}
+void elf64_relocate(const ctx_t* ctx, lib_t* lib);
+
+#endif

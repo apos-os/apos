@@ -23,6 +23,8 @@ typedef struct {
   int lib4_funcE;
   int lib4_funcA;
   int lib4_funcB;
+  int bin_funcX;
+  int lib4_funcX;
 } testlib_calls_t;
 
 // A series of functions defined in different shared libraries that create a
@@ -38,6 +40,7 @@ void funcB(testlib_calls_t* c);  // lib2 and lib4
 void funcC(testlib_calls_t* c);  // lib2
 void funcD(testlib_calls_t* c);  // lib3
 void funcE(testlib_calls_t* c);  // lib4
+void funcX(testlib_calls_t* c);  // bin and lib4
 
 #define IMPL_FUNC(_lib, _func, _body) \
   void _func(testlib_calls_t* c) {    \

@@ -83,6 +83,7 @@ void ld_main(int argc, char *argv[], char *envp[], const apos_auxv_t* auxv) {
   lib->state = LIB_LOADED;
   lib->fd = exec_fd;
   lib->bin = exec_bin;
+  lib->so_name = "<executable>";
 
   // Assume/require that the first load region of the executable is mapping the
   // start of the file.  I don't think this is strictly required, but seems to
@@ -117,6 +118,7 @@ void ld_main(int argc, char *argv[], char *envp[], const apos_auxv_t* auxv) {
   // Load the libraries in.
   ctx.next_load_addr = g_my_phdrs.load_max + apos_auxval_get(AUXVEC_BASE);
   load_libs(&ctx);
+  relocate_libs(&ctx);
 
   // Jump to the entry point; we should never return.
   LOG(1, "Jumping to user executable entry at %p\n", (void*)exec_bin->entry);

@@ -57,4 +57,7 @@ int find_libs(ctx_t* ctx);
 // Once all libraries are resolved and opened, load them all into memory.
 void load_libs(ctx_t* ctx);
 
+// Relocate all libraries.
+void relocate_libs(ctx_t* ctx);
+
 #endif

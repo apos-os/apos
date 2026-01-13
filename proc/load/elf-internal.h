@@ -222,6 +222,22 @@ typedef struct {
   Elf64_Xword st_size;
 } Elf64_Sym;
 
+#define ELF32_ST_BIND(i) ((i)>>4)
+#define ELF32_ST_TYPE(i) ((i)&0xf)
+#define ELF32_ST_INFO(b,t) (((b)<<4)+((t)&0xf))
+
+#define ELF64_ST_BIND(i) ((i)>>4)
+#define ELF64_ST_TYPE(i) ((i)&0xf)
+#define ELF64_ST_INFO(b,t) (((b)<<4)+((t)&0xf))
+
+#define STB_LOCAL 0
+#define STB_GLOBAL 1
+#define STB_WEAK 2
+#define STB_LOOS 10
+#define STB_HIOS 12
+#define STB_LOPROC 13
+#define STB_HIPROC 15
+
 // Relocation types.
 typedef struct {
   Elf32_Addr r_offset;

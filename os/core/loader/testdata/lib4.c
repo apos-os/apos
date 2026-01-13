@@ -12,9 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include "os/core/loader/testdata/libs_header.h"
-IMPL_FUNC(lib4_, funcE, {})  // Leaf function
-
 // These are the same as funcA() and funcB() in lib1 and lib2, but shouldn't be
 // called due to library load ordering.
 IMPL_FUNC(lib4_, funcA, {})
 IMPL_FUNC(lib4_, funcB, {})
+
+IMPL_FUNC(lib4_, funcE, {
+  funcB(c);  // Should bind to lib2, not above.
+  funcX(c);  // Should bind to bin, not below.
+})  // Leaf function
+
+IMPL_FUNC(lib4_, funcX, { *(volatile char*)0 = 1; })

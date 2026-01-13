@@ -16,6 +16,8 @@
 #define APOO_PROC_LOAD_ELF_RISCV_H
 
 // RISC-V relocation types.
+#define R_RISCV_64 2
 #define R_RISCV_RELATIVE 3
+#define R_RISCV_JUMP_SLOT 5
 
 #endif
