@@ -21,6 +21,8 @@
 int ld_printf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 
 int ld_log_level(void);
+void ld_set_log_level(int level);
+
 // Log at a particular debug level.
 #define LOG(_level, _fmt, ...)        \
   do {                                \

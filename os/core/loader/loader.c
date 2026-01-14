@@ -52,6 +52,16 @@ void ld_main(int argc, char *argv[], char *envp[], const apos_auxv_t* auxv) {
     LOG(2, "    argv[%d] = '%s'\n", i, argv[i]);
   }
 
+  for (int i = 0; envp[i] != NULL; ++i) {
+    const char kPrefix[] = "LD_DEBUG=";
+    if (kstr_startswith(envp[i], kPrefix)) {
+      const char* val = envp[i] + kstrlen(kPrefix);
+      if (*val) {
+        ld_set_log_level(katoi(val));
+      }
+    }
+  }
+
   // Load and execute the main binary.
   int exec_fd = apos_auxval_get(AUXVEC_EXEC_FD);
   KASSERT(exec_fd >= 0 && exec_fd < 20000);

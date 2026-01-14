@@ -33,11 +33,14 @@
 /* End implementation of kprintf.c */
 /***********************************/
 
-// TODO(aoates): change the default to zero.
-static int g_ld_log_level = 10;
+static int g_ld_log_level = 0;
 
 int ld_log_level(void) {
   return g_ld_log_level;
+}
+
+void ld_set_log_level(int l) {
+  g_ld_log_level = l;
 }
 
 int ld_printf(const char* fmt, ...) {
