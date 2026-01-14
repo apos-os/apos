@@ -232,6 +232,9 @@ void load_libs(ctx_t* ctx) {
       ld_exit(1);
     }
 
+    KASSERT(0 == ld_close(lib->fd));
+    lib->fd = -1;
+
     // Reparse the dynamic sections from the newly loaded position.
     elf64_phdr_info_t phdrs;
     KASSERT(lib->bin->regions[0].file_offset == 0);
