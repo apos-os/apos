@@ -17,6 +17,7 @@
 
 IMPL_FUNC(bin_, funcX, {})
 
+extern multi_val_t lib2_var;
 static int result = 0;
 
 #define EXPECT_EQ(_val1, _val2)                                       \
@@ -43,7 +44,14 @@ int main(void) {
   EXPECT_EQ(c.lib4_funcB, 0);
   EXPECT_EQ(c.bin_funcX, 2);
   EXPECT_EQ(c.lib4_funcX, 0);
-  // TODO(aoates): test global data relocations in addition to function calls.
+  EXPECT_EQ(lib2_var.v[0], 1);
+  EXPECT_EQ(lib2_var.v[1], 2);
+  EXPECT_EQ(lib2_var.v[2], 4);
+  EXPECT_EQ(lib2_var.v[3], 5);
+  EXPECT_EQ(lib2_var_ptr->v[0], 1);
+  EXPECT_EQ(lib2_var_ptr->v[1], 2);
+  EXPECT_EQ(lib2_var_ptr->v[2], 4);
+  EXPECT_EQ(lib2_var_ptr->v[3], 5);
   // TODO(aoates): test SONAME overrides with this.
   if (result == 0) {
     printf("Passed!\n");

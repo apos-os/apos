@@ -14,3 +14,6 @@
 #include "os/core/loader/testdata/libs_header.h"
 IMPL_FUNC(lib2_, funcB, { funcB2(c); })
 IMPL_FUNC(lib2_, funcC, {})
+
+multi_val_t lib2_var = {{1, 2, 3, 4}};
+multi_val_t* lib2_var_ptr = &lib2_var;

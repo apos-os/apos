@@ -18,6 +18,7 @@
 // RISC-V relocation types.
 #define R_RISCV_64 2
 #define R_RISCV_RELATIVE 3
+#define R_RISCV_COPY 4
 #define R_RISCV_JUMP_SLOT 5
 
 #endif

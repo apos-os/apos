@@ -249,9 +249,13 @@ void load_libs(ctx_t* ctx) {
 void relocate_libs(ctx_t* ctx) {
   KASSERT(ctx->libs->state == LIB_LOADED);
 
-  lib_t* lib = ctx->libs;
+  // Relocate all the libraries first, then relocated the executable.  This
+  // ensures that any library relocations are completed before any executable
+  // COPY relocations.
+  lib_t* lib = ctx->libs->next;
   while (lib) {
     elf64_relocate(ctx, lib);
     lib = lib->next;
   }
+  elf64_relocate(ctx, ctx->libs);  // Relocate the executable.
 }

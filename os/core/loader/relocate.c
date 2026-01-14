@@ -14,9 +14,16 @@
 #include "os/core/loader/relocate.h"
 
 #include "os/core/loader/gnu_hash.h"
+#include "os/core/loader/ld_assert.h"
 #include "os/core/loader/ld_printf.h"
+#include "os/core/loader/ld_string.h"
 #include "os/core/loader/syscalls.h"
 #include "proc/load/elf-riscv.h"
+
+typedef enum {
+  LK_NORMAL,
+  LK_SKIP_EXEC,
+} lk_mode_t;
 
 typedef struct {
   const Elf64_Sym* sym;
@@ -25,15 +32,15 @@ typedef struct {
 
 // Looks up the given symbol in the current context.  Returns NULL if the symbol
 // can't be found, but it shouldn't be considered an error.
-static lookup_t lookup(const ctx_t* ctx, const lib_t* lib,
-                               uint32_t symbol) {
+static lookup_t lookup(const ctx_t* ctx, const lib_t* lib, uint32_t symbol,
+                       lk_mode_t mode) {
   const Elf64_Sym* src_sym = &lib->dyn.symtab[symbol];
   const char* symbol_str = lib->dyn.strtab + src_sym->st_name;
   LOG(4, "lookup(%s:%s) -> ", lib->so_name, symbol_str);
   uint32_t hash = gnu_hash(symbol_str);
 
   // TODO(aoates): support DT_SYMBOLIC here.
-  const lib_t* lookup_lib = ctx->libs;
+  const lib_t* lookup_lib = (mode == LK_NORMAL) ? ctx->libs : ctx->libs->next;
   while (lookup_lib) {
     const Elf64_Sym* target =
         gnu_hash_lookup(&lookup_lib->dyn, symbol_str, hash);
@@ -52,6 +59,19 @@ static lookup_t lookup(const ctx_t* ctx, const lib_t* lib,
     ld_exit(1);
   }
   return (lookup_t){NULL, NULL};
+}
+
+static void handle_copy_reloc(const ctx_t* ctx, lib_t* lib,
+                              const Elf64_Rela* r) {
+  lookup_t sym = lookup(ctx, lib, ELF64_R_SYM(r->r_info), LK_SKIP_EXEC);
+  KASSERT(sym.sym);  // TODO(aoates): is this correct for weak symbols?)
+  const Elf64_Sym* src_sym = &lib->dyn.symtab[ELF64_R_SYM(r->r_info)];
+
+  KASSERT(src_sym->st_value == r->r_offset);
+  KASSERT(src_sym->st_size == sym.sym->st_size);
+  kmemcpy((void*)(lib->bin->base_addr + src_sym->st_value),
+          (void*)(sym.lib->bin->base_addr + sym.sym->st_value),
+          src_sym->st_size);
 }
 
 static void do_rela(const ctx_t* ctx, lib_t* lib) {
@@ -78,6 +98,10 @@ static void do_rela(const ctx_t* ctx, lib_t* lib) {
         val = base_addr + r->r_addend;
         break;
 
+      case R_RISCV_COPY:
+        handle_copy_reloc(ctx, lib, r);
+        continue;
+
       case R_RISCV_JUMP_SLOT:
         add_symbol = true;
         val = 0;
@@ -88,7 +112,8 @@ static void do_rela(const ctx_t* ctx, lib_t* lib) {
         ld_exit(1);
     }
     if (add_symbol) {
-      lookup_t sym = lookup(ctx, lib, ELF64_R_SYM(dyn->rela[i].r_info));
+      lookup_t sym =
+          lookup(ctx, lib, ELF64_R_SYM(dyn->rela[i].r_info), LK_NORMAL);
       if (!sym.sym) {
         continue;
       }

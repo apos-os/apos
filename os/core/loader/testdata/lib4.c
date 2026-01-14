@@ -20,6 +20,8 @@ IMPL_FUNC(lib4_, funcB, {})
 IMPL_FUNC(lib4_, funcE, {
   funcB(c);  // Should bind to lib2, not above.
   funcX(c);  // Should bind to bin, not below.
+  lib2_var.v[2]++;
+  lib2_var_ptr->v[3]++;
 })  // Leaf function
 
 IMPL_FUNC(lib4_, funcX, { *(volatile char*)0 = 1; })

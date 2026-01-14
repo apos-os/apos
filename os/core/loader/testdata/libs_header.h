@@ -52,4 +52,15 @@ void funcX(testlib_calls_t* c);  // bin and lib4
     _body                             \
   }
 
+// A multi-byte variable that is located in the library and should cause a COPY
+// relocation in the binary.
+typedef struct {
+  int v[4];
+} multi_val_t;
+extern multi_val_t lib2_var;
+
+// A pointer that is located in the library, that should be relocated to point
+// at lib2_var's COPY in the binary.
+extern multi_val_t* lib2_var_ptr;
+
 #endif
