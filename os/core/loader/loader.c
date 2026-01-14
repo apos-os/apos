@@ -29,9 +29,6 @@
 
 unsigned long apos_auxval_get(unsigned long type);
 
-static const char kTestString[] = "Test String";
-static const char* kTestStringPtr = kTestString;
-
 static elf64_phdr_info_t g_my_phdrs;
 
 typedef void (*start_ptr_type)(char* argv[], char* envp[],
@@ -39,7 +36,7 @@ typedef void (*start_ptr_type)(char* argv[], char* envp[],
 
 static void log_libs(const ctx_t* ctx) {
   const lib_t* clib = ctx->libs->next;
-  if (ld_log_level() < 1 || !clib) return;
+  if (ld_log_level() < 2 || !clib) return;
   ld_printf("Final shared object list:\n");
   while (clib) {
     ld_printf("  %s: %s\n", clib->so_name,
@@ -49,16 +46,11 @@ static void log_libs(const ctx_t* ctx) {
 }
 
 void ld_main(int argc, char *argv[], char *envp[], const apos_auxv_t* auxv) {
-  int val = 0;
   LOG(2, "Running loader.\n");
   LOG(2, "  Args (argc = %d):\n", argc);
   for (int i = 0; i < argc; ++i) {
     LOG(2, "    argv[%d] = '%s'\n", i, argv[i]);
   }
-  LOG(2, "  Current stack ptr is %p\n", &val);
-  LOG(2, "  Address of main() is %p\n", &ld_main);
-  LOG(2, "  __builtin_return_address(0): %p\n", __builtin_return_address(0));
-  LOG(2, "  kTestString: '%s'\n", kTestStringPtr);
 
   // Load and execute the main binary.
   int exec_fd = apos_auxval_get(AUXVEC_EXEC_FD);
@@ -121,7 +113,7 @@ void ld_main(int argc, char *argv[], char *envp[], const apos_auxv_t* auxv) {
   relocate_libs(&ctx);
 
   // Jump to the entry point; we should never return.
-  LOG(1, "Jumping to user executable entry at %p\n", (void*)exec_bin->entry);
+  LOG(2, "Jumping to user executable entry at %p\n", (void*)exec_bin->entry);
   start_ptr_type start = (start_ptr_type)exec_bin->entry;
   (*start)(argv, envp, auxv);
 
@@ -129,10 +121,10 @@ void ld_main(int argc, char *argv[], char *envp[], const apos_auxv_t* auxv) {
 }
 
 static void do_relocate(uint64_t base_addr, const elf64_dyninfo_t* dyn) {
-  LOG(2, "Found %lu RELA relocations\n", dyn->rela_count);
+  LOG(3, "Found %lu RELA relocations\n", dyn->rela_count);
   for (size_t i = 0; i < dyn->rela_count; ++i) {
     const Elf64_Rela* r = &dyn->rela[i];
-    LOG(3,
+    LOG(4,
         "RELA[%lu] = { r_offset = 0x%lx, r_info = 0x%lx, r_addend = 0x%li }\n",
         i, r->r_offset, r->r_info, r->r_addend);
     _Static_assert(sizeof(uintptr_t) == sizeof(uint64_t), "");
@@ -158,7 +150,7 @@ static void relocate_me(uintptr_t base_addr) {
   }
   KASSERT(ehdr->e_phentsize == sizeof(Elf64_Phdr));
   LOG(2, "Found loader ELF header at 0x%lx\n", base_addr);
-#define X(field, printf) LOG(2, "  " #field ": " printf "\n", ehdr->field)
+#define X(field, printf) LOG(3, "  " #field ": " printf "\n", ehdr->field)
   X(e_type, "%u");
   X(e_machine, "%u");
   X(e_version, "%u");

@@ -96,7 +96,7 @@ static int find_lib(lib_t* lib) {
     // only if it matches.
     if (lib->dyn.soname) {
       soname = lib->dyn.soname;
-      LOG(3, "%s SONAME: %s\n", path, soname);
+      LOG(2, "%s SONAME: %s\n", path, soname);
       if (kstrcmp(soname, lib->so_name) != 0) {
         ld_close(fd);
         ld_munmap((void*)base, mapping_size);
@@ -129,14 +129,14 @@ static void add_needed(ctx_t* ctx, const lib_t* lib) {
   for (int i = 0; dyn[i].d_tag != DT_NULL; ++i) {
     if (dyn[i].d_tag == DT_NEEDED) {
       const char* soname = lib->dyn.strtab + dyn[i].d_un.d_val;
-      LOG(2, "Needed: %s -> %s\n", lib->path ? lib->path : "<bin>", soname);
+      LOG(3, "Needed: %s -> %s\n", lib->path ? lib->path : "<bin>", soname);
       // TODO(aoates): use a hash table for this to avoid linear search.
       const lib_t* new_lib = NULL;
       // Skipping the binary itself, search for a library with that SONAME we
       // may have already found.
       for (new_lib = ctx->libs->next; new_lib != NULL; new_lib = new_lib->next) {
         if (kstrcmp(new_lib->so_name, soname) == 0) {
-          LOG(2, "  %s met with existing library %s\n", soname,
+          LOG(3, "  %s met with existing library %s\n", soname,
               new_lib->path ? new_lib->path : "<not yet identified>");
           break;
         }
