@@ -202,8 +202,8 @@ static void auxv_test(void) {
   }
   KEXPECT_TRUE(auxv_seen[AUXVEC_BASE]);
   KEXPECT_TRUE(auxv_seen[AUXVEC_PAGESZ]);
-  KEXPECT_EQ(0, auxv_vals[AUXVEC_BASE]);
-  KEXPECT_EQ(0, apos_auxval_get(AUXVEC_BASE));
+  // Don't check the AUXVEC_BASE value --- it will depend on whether this was
+  // run via the dynamic loader or statically linked.
   KEXPECT_EQ(4096, auxv_vals[AUXVEC_PAGESZ]);
   KEXPECT_EQ(4096, apos_auxval_get(AUXVEC_PAGESZ));
 }
