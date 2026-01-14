@@ -221,7 +221,8 @@ user_env = target_env.Clone()
 user_env.Append(CPPDEFINES='ENABLE_TERM_COLOR=%d' % user_env['TERM_COLOR'])
 # Explicitly request static linking to avoid dynamically linking against libc.so
 # if it exists.  Once dynamic linking is fully supported, this can be removed.
-user_env.Append(LINKFLAGS = ['-Wl,-static'])
+if not env['USER_DYNAMIC_LOADER']:
+  user_env.Append(LINKFLAGS = ['-Wl,-static'])
 if user_env['CLANG']:
   user_env.Append(CFLAGS =
       ['-isystem', '$HEADER_INSTALL_PREFIX/include'])
