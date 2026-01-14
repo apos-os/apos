@@ -47,6 +47,6 @@ int ld_printf(const char* fmt, ...) {
   char buf[kBufLen];
   int len = kvsnprintf(buf, kBufLen, fmt, args);
   va_end(args);
-  ld_write(1, buf, len);
+  ld_write(2, buf, len);
   return len;
 }
