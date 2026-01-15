@@ -15,23 +15,34 @@
 import os
 import re
 
+# Run 'scons configure ...' to write values to bulid-config.conf.  If there are
+# configuration values you want to persist without having to specify them on
+# every 'scons configure ...' run, put them manually into
+# 'build-config-system.conf'.
+#
+# Note: values in build-config-system will always override those provided with
+# scons configure.
 CONFIG_CACHE_FILE = 'build-config.conf'
+SYSCONFIG_CACHE_FILE = 'build-config-system.conf'
 
 # If the user didn't request 'configure', read the cached config values.
 if 'configure' in COMMAND_LINE_TARGETS:
-  vars = Variables()
+  vars = Variables(SYSCONFIG_CACHE_FILE)
 else:
-  vars = Variables(CONFIG_CACHE_FILE)
+  vars = Variables([CONFIG_CACHE_FILE, SYSCONFIG_CACHE_FILE])
 
 vars.Add(EnumVariable('ARCH', 'architecture to target', None,
                       ['i586', 'x86_64', 'riscv64']))
 vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
 vars.Add('TOOL_PREFIX', 'prefix of build tools', None)
-vars.Add('HEADER_INSTALL_PREFIX', 'where to install userspace headers', '')
 vars.Add(BoolVariable('CLANG', 'whether to compile with clang', False))
 vars.Add('KSHELL_INITIAL_COMMAND',
   'command to automatically run when kshell starts', '')
+
+# System configuration options that are likely to be mostly static.
+vars.Add('HEADER_INSTALL_PREFIX', 'where to install userspace headers', '')
+vars.Add('GTEST_ROOT', 'root of googletest package (contains lib/ and include/)', '')
 
 # List of modules that can be enabled/disabled.  All are enabled by default,
 # unless unsupported by the current architecture.
@@ -43,6 +54,7 @@ FEATURES_DEFAULT_ENABLED = [
   'TERM_COLOR',
   'USB',
   'USER_DUMMY_LIB',
+  'USER_DYNAMIC_LOADER',
   'USER_OS',
   'USER_TESTS',
   'KMALLOC_HEAP_PROFILE',
@@ -129,86 +141,7 @@ if base_env['DEBUG']:
 # though, from SConscript.
 base_env.Tool('compilation_db')
 
-# target_env is for targets built for the APOS target (kernel and user code).
-target_env = base_env.Clone()
-
-if not target_env['CLANG']:
-  target_env.Replace(CC = '${TOOL_PREFIX}gcc')
-else:
-  target_env.Replace(CC = '${TOOL_PREFIX}clang')
-  target_env.Append(CFLAGS = ['-target', '$CLANG_TARGET'])
-  target_env.Append(CFLAGS = ['-fdebug-macro'])
-
-target_env.Replace(AR = '${TOOL_PREFIX}ar')
-target_env.Replace(AS = '${TOOL_PREFIX}as')
-target_env.Replace(LINK = '${TOOL_PREFIX}gcc')
-target_env.Replace(RANLIB = '${TOOL_PREFIX}ranlib')
-target_env.Replace(STRIP = '${TOOL_PREFIX}strip')
-target_env.Append(LINKFLAGS = ['-z', 'noexecstack'])
-
-env = target_env.Clone()
-env.Append(CPPDEFINES = ['__APOS_BUILDING_KERNEL__=1'])
-
-env.Append(CFLAGS = Split("-nostdlib -ffreestanding"))
-if env['CLANG']:
-  env.Append(CFLAGS = Split("-Wthread-safety -Wthread-safety-beta -Wthread-safety-pointer"))
-else:
-  env.Append(CFLAGS = Split("-nostartfiles -nodefaultlibs"))
-  # TODO(aoates): get format-string checking to work with both GCC and clang.
-  env.Append(CFLAGS = Split("-Wno-format"))
-env.Append(CFLAGS = Split("-Wframe-larger-than=1500"))
-env.Append(ASFLAGS = ['--gen-debug', '-I', '$BUILD_CFG_DIR'])
-env.Replace(LINK = '${TOOL_PREFIX}ld')
-env.Append(LINKFLAGS = ['-L', '$BUILD_CFG_DIR', '--orphan-handling=error'])
-
-env.Append(CPPPATH = ['#/archs/$ARCH', '#/archs/common', '#/$BUILD_CFG_DIR'])
-
-# Environment for userspace targets.
-user_env = target_env.Clone()
-user_env.Append(CPPDEFINES='ENABLE_TERM_COLOR=%d' % user_env['TERM_COLOR'])
-if user_env['CLANG']:
-  user_env.Append(CFLAGS =
-      ['-isystem', '$HEADER_INSTALL_PREFIX/include'])
-
-# Environment for build-system native targets.
-native_env = base_env.Clone()
-native_env['OBJPREFIX'] = 'native-'
-native_env['LIBPREFIX'] = 'native-'
-native_env.Append(CPPDEFINES='APOS_NATIVE_TARGET=1')
-
-def AposAddSources(env, srcs, subdirs, **kwargs):
-  """Helper for subdirectories."""
-  # Turn each source file path into an Object, if not already one.
-  make_obj = lambda src: env.Object(src, **kwargs) if type(src) == str else src
-  objects = [make_obj(src) for src in srcs]
-  for subdir in subdirs:
-    objects.append(SConscript('%s/SConscript' % subdir))
-  return objects
-
-def DisableFeature(env, feature):
-  """Causes the given feature to be disabled by default.
-
-  This can be overridden by explicitly enabling the feature with the
-  `enable=FOO` build option.
-  """
-  assert(feature in ALL_FEATURES)
-  env.Replace(**{feature: feature in env['enable']})
-
-def kernel_program(env, target, source):
-  """Builder for the main kernel file."""
-  return [
-      env.Depends(target, 'archs/$ARCH/build/linker.ld'),
-      env.Program(target, source,
-        LINKFLAGS=env['LINKFLAGS'] +
-                  ['-T', 'archs/$ARCH/build/linker.ld'])]
-
-def phys_object(env, source):
-  """Builder for object files that need to be linked in the physical (not
-  virtual) address space, i.e. the code run at boot before paging is
-  configured."""
-  return [env.Object(source, OBJSUFFIX='.PHYS.o',
-    CPPDEFINES=['$CPPDEFINES', '_MULTILINK_SUFFIX=_PHYS'])]
-
+# Define jinja template builders in all envs.
 def tpl_scanner_func(node, env, paths, arg=None):
   """Depedency scanner for .tpl files."""
   text = node.get_text_contents()
@@ -246,10 +179,111 @@ def tpl_source_build(env, target, source):
   obj = env.Object(target=source + '$OBJSUFFIX', source=tpl)
   return [obj]
 
-env.Append(BUILDERS = {'Tpl': tpl_bld})
+base_env.Append(BUILDERS = {'Tpl': tpl_bld})
+base_env.AddMethod(tpl_source_build, 'TplSource')
+
+# target_env is for targets built for the APOS target (kernel and user code).
+target_env = base_env.Clone()
+
+if not target_env['CLANG']:
+  target_env.Replace(CC = '${TOOL_PREFIX}gcc')
+else:
+  target_env.Replace(CC = '${TOOL_PREFIX}clang')
+  target_env.Append(CFLAGS = ['-target', '$CLANG_TARGET'])
+  target_env.Append(CFLAGS = ['-fdebug-macro'])
+
+target_env.Replace(AR = '${TOOL_PREFIX}ar')
+target_env.Replace(AS = '${TOOL_PREFIX}as')
+target_env.Replace(LINK = '${TOOL_PREFIX}gcc')
+target_env.Replace(RANLIB = '${TOOL_PREFIX}ranlib')
+target_env.Replace(STRIP = '${TOOL_PREFIX}strip')
+target_env.Append(LINKFLAGS = ['-z', 'noexecstack'])
+
+env = target_env.Clone()
+env.Append(CPPDEFINES = ['__APOS_BUILDING_KERNEL__=1'])
+
+env.Append(CFLAGS = Split("-nostdlib -ffreestanding"))
+if env['CLANG']:
+  env.Append(CFLAGS = Split("-Wthread-safety -Wthread-safety-beta -Wthread-safety-pointer"))
+else:
+  env.Append(CFLAGS = Split("-nostartfiles -nodefaultlibs"))
+  # TODO(aoates): get format-string checking to work with both GCC and clang.
+  env.Append(CFLAGS = Split("-Wno-format"))
+env.Append(CFLAGS = Split("-Wframe-larger-than=1500"))
+env.Append(ASFLAGS = ['--gen-debug', '-I', '$BUILD_CFG_DIR'])
+env.Replace(LINK = '${TOOL_PREFIX}ld')
+env.Append(LINKFLAGS = ['-L', '$BUILD_CFG_DIR', '--orphan-handling=error'])
+
+env.Append(CPPPATH = ['#/archs/$ARCH', '#/archs/common', '#/$BUILD_CFG_DIR'])
+
+# Environment for userspace targets.
+user_env = target_env.Clone()
+user_env.Append(CPPDEFINES='ENABLE_TERM_COLOR=%d' % user_env['TERM_COLOR'])
+# Explicitly request static linking to avoid dynamically linking against libc.so
+# if it exists.  Once dynamic linking is fully supported, this can be removed.
+if not env['USER_DYNAMIC_LOADER']:
+  user_env.Append(LINKFLAGS = ['-Wl,-static'])
+if user_env['CLANG']:
+  user_env.Append(CFLAGS =
+      ['-isystem', '$HEADER_INSTALL_PREFIX/include'])
+
+# Environment for build-system native targets.
+native_env = base_env.Clone()
+native_env['OBJPREFIX'] = 'native-'
+native_env['LIBPREFIX'] = 'native-'
+native_env.Append(CPPDEFINES='APOS_NATIVE_TARGET=1')
+native_env.Append(CXXFLAGS=['-std=c++20', '-g'])
+
+def BuildGtestProgram(env, target, srcs, **kw):
+  if env['GTEST_ROOT']:
+    extra_libpath = [os.path.join(env['GTEST_ROOT'], 'lib')]
+    extra_cpppath = [os.path.join(env['GTEST_ROOT'], 'include')]
+  else:
+    extra_libpath = extra_cpppath = []
+
+  env.Program(target,
+              srcs,
+              LIBS=['gtest', 'gtest_main'],
+              LIBPATH=extra_libpath,
+              CPPPATH=env['CPPPATH'] + extra_cpppath)
+
+native_env.AddMethod(BuildGtestProgram, 'GtestProgram')
+
+def AposAddSources(env, srcs, subdirs, **kwargs):
+  """Helper for subdirectories."""
+  # Turn each source file path into an Object, if not already one.
+  make_obj = lambda src: env.Object(src, **kwargs) if type(src) == str else src
+  objects = [make_obj(src) for src in srcs]
+  for subdir in subdirs:
+    objects.append(SConscript('%s/SConscript' % subdir))
+  return objects
+
+def DisableFeature(env, feature):
+  """Causes the given feature to be disabled by default.
+
+  This can be overridden by explicitly enabling the feature with the
+  `enable=FOO` build option.
+  """
+  assert(feature in ALL_FEATURES)
+  env.Replace(**{feature: feature in env['enable']})
+
+def kernel_program(env, target, source):
+  """Builder for the main kernel file."""
+  return [
+      env.Depends(target, 'archs/$ARCH/build/linker.ld'),
+      env.Program(target, source,
+        LINKFLAGS=env['LINKFLAGS'] +
+                  ['-T', 'archs/$ARCH/build/linker.ld'])]
+
+def phys_object(env, source):
+  """Builder for object files that need to be linked in the physical (not
+  virtual) address space, i.e. the code run at boot before paging is
+  configured."""
+  return [env.Object(source, OBJSUFFIX='.PHYS.o',
+    CPPDEFINES=['$CPPDEFINES', '_MULTILINK_SUFFIX=_PHYS'])]
+
 env.AddMethod(phys_object, 'PhysObject')
 env.AddMethod(kernel_program, 'Kernel')
-env.AddMethod(tpl_source_build, 'TplSource')
 
 Export('env user_env native_env AposAddSources DisableFeature')
 

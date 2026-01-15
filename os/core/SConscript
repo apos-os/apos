@@ -21,3 +21,8 @@ user_env.Program('getty', ['getty.c'], LIBS=['common'], LIBPATH=COMMON_LIB_PATH)
 user_env.Program('init', ['init.c'], LIBS=['common'], LIBPATH=COMMON_LIB_PATH)
 user_env.Program('ktest', ['ktest.c'])
 user_env.Program('login', ['login.c'], LIBS=['common'], LIBPATH=COMMON_LIB_PATH)
+
+# TODO(aoates): support other architectures (requires solving some weird linker
+# issues, and of course supporting 32-bits).
+if user_env['USER_DYNAMIC_LOADER']:
+  SConscript(['loader/SConscript'])

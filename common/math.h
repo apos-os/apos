@@ -17,8 +17,6 @@
 
 #include <stdint.h>
 
-#include "common/types.h"
-
 #define min(a, b) \
  ({ typeof (a) _a = (a); \
      typeof (b) _b = (b); \
@@ -50,7 +48,7 @@
     (_a + (_b / 2)) / _b; })
 
 // Aligns the given number to the next multiple of |align|.
-static inline addr_t align_up(addr_t x, unsigned int align) {
+static inline uintptr_t align_up(uintptr_t x, unsigned int align) {
   return ((x - 1) + (align - ((x - 1) % align)));
 }
 

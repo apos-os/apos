@@ -81,7 +81,8 @@ static int COPY_STRING_TABLE(BIN_ADDR_T* stack_top_ptr, char* const table[],
 }
 
 static int PREP_FUNC(const load_binary_t* bin, char* const argv[],
-                     char* const envp[], user_context_t* ctx) {
+                     char* const envp[], const apos_auxv_t* auxv,
+                     user_context_t* ctx) {
   KASSERT(bin->arch == BIN_X86_32);
 
   // Create the stack.
@@ -109,8 +110,18 @@ static int PREP_FUNC(const load_binary_t* bin, char* const argv[],
     return result;
   }
 
+  // Copy auxv to the new stack.
+  stack_top = stack_top & -4;  // Align to 4-byte address.
+  size_t auxv_entries = 0;
+  for (; auxv[auxv_entries].a_type != AUXVEC_NULL; ++auxv_entries);
+  auxv_entries++;  // Account for AUXVEC_NULL.
+  stack_top -= sizeof(apos_auxv_t) * auxv_entries;
+  kmemcpy((void*)(uintptr_t)stack_top, auxv, sizeof(apos_auxv_t) * auxv_entries);
+  addr_t auxv_addr = stack_top;
+
   // Push argv and envp onto the stack to pass to the program.
   stack_top -= stack_top % sizeof(BIN_ADDR_T);
+  *(BIN_ADDR_T*)(addr_t)(stack_top -= sizeof(BIN_ADDR_T)) = auxv_addr;
   *(BIN_ADDR_T*)(addr_t)(stack_top -= sizeof(BIN_ADDR_T)) = envp_addr;
   *(BIN_ADDR_T*)(addr_t)(stack_top -= sizeof(BIN_ADDR_T)) = argv_addr;
   *(BIN_ADDR_T*)(addr_t)(stack_top -= sizeof(BIN_ADDR_T)) = 0x0;  // Fake return address

@@ -104,7 +104,9 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
                       kstrcmp(ent->d_name, "dev") == 0 ||
                       kstrcmp(ent->d_name, "proc") == 0 ||
                       kstrcmp(ent->d_name, "etc") == 0 ||
-                      kstrcmp(ent->d_name, "sbin") == 0)) {
+                      kstrcmp(ent->d_name, "sbin") == 0 ||
+                      kstrcmp(ent->d_name, "lib") == 0 ||
+                      kstrcmp(ent->d_name, "usr") == 0)) {
         num_dirents--;
         continue;
       }

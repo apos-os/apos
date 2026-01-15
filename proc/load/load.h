@@ -18,8 +18,11 @@
 
 #include <stdbool.h>
 
-#include "common/attributes.h"
+#ifdef __APOS_BUILDING_KERNEL__
 #include "common/types.h"
+#endif
+
+#include "common/attributes.h"
 #include "memory/flags.h"
 
 // Architecture of a binary.  A particular kernel architecture may support
@@ -67,22 +70,38 @@ typedef struct {
   int prot;
 } load_region_t;
 
+#define LOADBIN_INTERP_LEN 100
+
 // A set of mappings corresponding to a single loadable binary.
 //
 // The mappings do not have to start and end on page boundaries, but they must
 // not overlap on the same page.
-typedef struct {
+typedef struct load_binary {
   bin_arch_t arch;  // The architecture of the binary.
   addr_t entry;  // The binary's entry point, or 0x0 if none.
+  addr_t base_addr;
+  char interp[LOADBIN_INTERP_LEN];
   int num_regions;  // How many regions to load;
   load_region_t regions[];  // num_regions load_region_ts.
 } load_binary_t;
+
+// Information about an ongoing execution attempt.
+typedef struct {
+  // The fd that must be loaded.
+  int load_fd;
+
+  // The fd that should be executed, if different than |load_fd|.
+  int exec_fd;
+
+  // The binary that must be loaded.
+  load_binary_t* load_bin;
+} exec_info_t;
 
 // Attempt to load a binary from the given fd.  Allocates a load_binary_t in
 // binary_out if successful (and returns 0).
 //
 // If successful, the caller MUST kfree(*binary_out) when it's done with it.
-int load_binary(int fd, load_binary_t** binary_out);
+int load_binary(int fd, exec_info_t* exec, load_binary_t** binary_out);
 
 // Attempt to map the given binary into the current address space.
 //

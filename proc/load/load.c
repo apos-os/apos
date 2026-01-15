@@ -17,14 +17,16 @@
 #include "common/dynamic-config.h"
 #include "common/errno.h"
 #include "common/kassert.h"
-#include "common/math.h"
 #include "common/kstring.h"
+#include "common/math.h"
+#include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/mmap.h"
 #include "memory/vm_page_fault.h"
 #include "proc/load/elf.h"
 #include "proc/load/load.h"
 #include "proc/load/load-internal.h"
+#include "vfs/vfs.h"
 
 static load_module_t g_modules[] = {
   { &elf_is_loadable, &elf_load },
@@ -32,7 +34,8 @@ static load_module_t g_modules[] = {
   { NULL, NULL },
 };
 
-int load_binary(int fd, load_binary_t** binary_out) {
+static int read_binary(int fd, load_binary_t** binary_out) {
+  *binary_out = NULL;
   for (int module_idx = 0; g_modules[module_idx].is_loadable != NULL;
        ++module_idx) {
     int result = g_modules[module_idx].is_loadable(fd);
@@ -40,50 +43,79 @@ int load_binary(int fd, load_binary_t** binary_out) {
       return g_modules[module_idx].load(fd, binary_out);
     }
   }
+  return -ENOEXEC;
+}
+
+static addr_t max_addr(const load_binary_t* bin) {
+  addr_t addr = 0;
+  for (int i = 0; i < bin->num_regions; ++i) {
+    addr = max(addr, bin->regions[i].vaddr + bin->regions[i].mem_len);
+  }
+  return next_page(addr);
+}
+
+int load_binary(int fd, exec_info_t* exec, load_binary_t** binary_out) {
+  int result = read_binary(fd, binary_out);
+  if (result) {
+    return result;
+  }
+
+  KASSERT(*binary_out != NULL);
+  load_binary_t* binary = *binary_out;
+  exec->exec_fd = -1;
+  exec->load_fd = fd;
+  exec->load_bin = binary;
 
   // TODO(aoates): verify the loaded binary (i.e. to make sure all the mappings
   // are valid, don't overlap, etc).
 
-  return -ENOEXEC;
-}
+  // If the binary requests an interpreter, try to open and load it.
+  if (binary->interp[0] != '\0') {
+    KASSERT(kstrnlen(binary->interp, LOADBIN_INTERP_LEN) != LOADBIN_INTERP_LEN);
+    klogfm(KL_PROC, DEBUG, "exec: binary requests interpreter '%s'\n",
+           binary->interp);
 
-void load_pagify_region(const load_region_t* orig_region,
-                        load_region_t* region0,
-                        load_region_t* region1,
-                        load_region_t* region2) {
-  KASSERT(orig_region->file_offset % PAGE_SIZE ==
-          orig_region->vaddr % PAGE_SIZE);
-  const addr_t adj_vaddr = addr2page(orig_region->vaddr);
-  const addr_t adj_offset = addr2page(orig_region->file_offset);
-  const addr_t adj_file_length =
-      (orig_region->file_offset % PAGE_SIZE) + orig_region->file_len;
-  const addr_t adj_mem_length =
-      (orig_region->file_offset % PAGE_SIZE) + orig_region->mem_len;
-  KASSERT_DBG(adj_mem_length >= adj_file_length);
+    int interp_fd =
+        vfs_open(binary->interp, VFS_O_RDONLY | VFS_O_INTERNAL_EXEC);
+    if (interp_fd < 0) {
+      klogfm(KL_PROC, INFO, "exec: unable to open interp '%s': %s\n",
+             binary->interp, errorname(-interp_fd));
+      return interp_fd;
+    }
 
-  region0->prot = region1->prot = region2->prot = orig_region->prot;
+    load_binary_t* interp_bin = NULL;
+    result = read_binary(interp_fd, &interp_bin);
+    if (result) {
+      klogfm(KL_PROC, INFO, "exec: unable to load interp '%s': %s\n",
+             binary->interp, errorname(-result));
+      vfs_close(interp_fd);
+      return result;
+    }
 
-  // Split into up to 3 regions: the file region, the file/memory region, and
-  // the memory-only region.
-  region0->file_offset = adj_offset;
-  region0->vaddr = adj_vaddr;
-  region0->file_len = region0->mem_len = addr2page(adj_file_length);
-
-  region1->file_offset = adj_offset + region0->file_len;
-  region1->vaddr = adj_vaddr + region0->mem_len;
-  region1->file_len = adj_file_length % PAGE_SIZE;
-  region1->mem_len =
-      min((addr_t)PAGE_SIZE, adj_mem_length - addr2page(adj_file_length));
-
-  KASSERT_DBG(region0->mem_len + region1->mem_len >= adj_file_length);
-  region2->file_offset = 0;  // Unused.
-  region2->file_len = 0;  // Memory only.
-  region2->vaddr = next_page(region1->vaddr + region1->mem_len);
-  if (region0->mem_len + region1->mem_len > adj_mem_length) {
-    region2->mem_len = 0;
-  } else {
-    region2->mem_len = adj_mem_length - region0->mem_len - region1->mem_len;
+    // If we successfully loaded the interpreter, run it instead.
+    KASSERT(interp_bin != NULL);
+    // Load the interpreter above the requested executable, AND at a high
+    // address (for the hell of it).
+    interp_bin->base_addr = max(max_addr(binary), (addr_t)0x200000);
+    klogfm(KL_PROC, DEBUG,
+           "exec: loading interp binary %s at 0x%" PRIxADDR "\n",
+           binary->interp, interp_bin->base_addr);
+    kfree(binary);
+    binary = *binary_out = exec->load_bin = interp_bin;
+    // Dup the FD just in case someone is holding onto it.
+    exec->exec_fd = vfs_dup(fd);
+    exec->load_fd = interp_fd;
+    vfs_close(fd);
   }
+
+  // Relocate the binary if necessary.
+  KASSERT(binary->base_addr % PAGE_SIZE == 0);
+  for (int i = 0; i < binary->num_regions; ++i) {
+    binary->regions[i].vaddr += binary->base_addr;
+  }
+  binary->entry += binary->base_addr;
+
+  return 0;
 }
 
 int load_map_binary(int fd, const load_binary_t* binary) {

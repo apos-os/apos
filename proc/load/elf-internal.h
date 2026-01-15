@@ -29,6 +29,7 @@ typedef uint64_t Elf64_Off;
 typedef uint16_t Elf64_Half;
 typedef uint32_t Elf64_Word;
 typedef uint64_t Elf64_Xword;
+typedef int64_t Elf64_Sxword;
 
 // Number of bytes in the ELF header e_ident array.
 #define EI_NIDENT 16
@@ -161,5 +162,110 @@ _Static_assert(sizeof(Elf64_Phdr) == 56, "malformed Elf64_Phdr");
 #define PF_X 0x1
 #define PF_W 0x2
 #define PF_R 0x4
+
+// Dynamic section entries.
+typedef struct {
+  Elf32_Sword d_tag;
+  union {
+    Elf32_Word d_val;
+    Elf32_Addr d_ptr;
+  } d_un;
+} Elf32_Dyn;
+
+typedef struct {
+  Elf64_Sxword d_tag;
+  union {
+    Elf64_Xword d_val;
+    Elf64_Addr d_ptr;
+  } d_un;
+} Elf64_Dyn;
+
+#define DT_NULL 0
+#define DT_NEEDED 1
+#define DT_PLTRELSZ 2
+#define DT_PLTGOT 3
+#define DT_HASH 4
+#define DT_STRTAB 5
+#define DT_SYMTAB 6
+#define DT_RELA 7
+#define DT_RELASZ 8
+#define DT_RELAENT 9
+#define DT_STRSZ 10
+#define DT_SYMENT 11
+#define DT_SONAME 14
+#define DT_PLTREL 20
+#define DT_DEBUG 21
+#define DT_JMPREL 23
+#define DT_INIT_ARRAY 25
+#define DT_FINI_ARRAY 26
+#define DT_INIT_ARRAYSZ 27
+#define DT_FINI_ARRAYSZ 28
+#define DT_GNU_HASH 0x6ffffef5
+#define DT_LOOS 0x6000000d
+#define DT_HIOS 0x6ffff000
+
+typedef struct {
+  Elf32_Word st_name;
+  Elf32_Addr st_value;
+  Elf32_Word st_size;
+  unsigned char st_info;
+  unsigned char st_other;
+  Elf32_Half st_shndx;
+} Elf32_Sym;
+
+typedef struct {
+  Elf64_Word st_name;
+  unsigned char st_info;
+  unsigned char st_other;
+  Elf64_Half st_shndx;
+  Elf64_Addr st_value;
+  Elf64_Xword st_size;
+} Elf64_Sym;
+
+#define ELF32_ST_BIND(i) ((i)>>4)
+#define ELF32_ST_TYPE(i) ((i)&0xf)
+#define ELF32_ST_INFO(b,t) (((b)<<4)+((t)&0xf))
+
+#define ELF64_ST_BIND(i) ((i)>>4)
+#define ELF64_ST_TYPE(i) ((i)&0xf)
+#define ELF64_ST_INFO(b,t) (((b)<<4)+((t)&0xf))
+
+#define STB_LOCAL 0
+#define STB_GLOBAL 1
+#define STB_WEAK 2
+#define STB_LOOS 10
+#define STB_HIOS 12
+#define STB_LOPROC 13
+#define STB_HIPROC 15
+
+// Relocation types.
+typedef struct {
+  Elf32_Addr r_offset;
+  Elf32_Word r_info;
+} Elf32_Rel;
+
+typedef struct {
+  Elf32_Addr r_offset;
+  Elf32_Word r_info;
+  Elf32_Sword r_addend;
+} Elf32_Rela;
+
+typedef struct {
+  Elf64_Addr r_offset;
+  Elf64_Xword r_info;
+} Elf64_Rel;
+
+typedef struct {
+  Elf64_Addr r_offset;
+  Elf64_Xword r_info;
+  Elf64_Sxword r_addend;
+} Elf64_Rela;
+
+#define ELF32_R_SYM(i) ((i)>>8)
+#define ELF32_R_TYPE(i) ((unsigned char)(i))
+#define ELF32_R_INFO(s,t) (((s)<<8)+(unsigned char)(t))
+#define ELF64_R_SYM(i) ((i)>>32)
+#define ELF64_R_TYPE(i) ((i)&0xffffffffL)
+#define ELF64_R_INFO(s,t) (((s)<<32)+((t)&0xffffffffL))
 
 #endif

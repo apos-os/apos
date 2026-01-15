@@ -44,3 +44,30 @@ void
 
 {% endfor %}
 {% endmacro %}
+
+{# Casts a syscalls arguments from the actual type to long. #}
+{% macro _cast_args(args) -%}
+{% for arg_num in range(6) -%}
+{% if arg_num < args | length -%}
+(long){{ args[arg_num].name }}
+{%- else -%}
+0
+{%- endif -%}
+{% if not loop.last %}, {% endif %}
+{%- endfor %}
+{%- endmacro %}
+
+{#- Implement a user-space syscall function body . #}
+{%- macro syscall_impl_body(syscall) -%}
+  {{ syscall.return_type }} result;
+  {% if syscall.can_fail -%}
+  do {
+  {% endif -%}
+
+  result = do_syscall({{ syscall_constant(syscall) }}, {{ _cast_args(syscall.args) }});
+
+  {% if syscall.can_fail -%}
+  } while (result == -EINTR_RESTART);
+  {% endif -%}
+  return result;
+{%- endmacro %}

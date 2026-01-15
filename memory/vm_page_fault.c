@@ -105,7 +105,7 @@ int vm_handle_page_fault(addr_t address, vm_fault_type_t type, vm_fault_op_t op,
   pmutex_lock(&proc->mu);
   int result = vm_handle_page_fault_locked(address, type, op, mode);
   pmutex_unlock(&proc->mu);
-  return result;
+  return result;  // gdb-page-fault-end
 }
 
 int vm_handle_page_fault_locked(addr_t address, vm_fault_type_t type,

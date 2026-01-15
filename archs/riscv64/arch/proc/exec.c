@@ -84,7 +84,8 @@ bool arch_binary_supported(const load_binary_t* bin) {
 }
 
 int arch_prep_exec(const load_binary_t* bin, char* const argv[],
-                   char* const envp[], user_context_t* ctx) {
+                   char* const envp[], const apos_auxv_t* auxv,
+                   user_context_t* ctx) {
   KASSERT(bin->arch == BIN_RISCV_64);
 
   // Create the stack.
@@ -113,6 +114,15 @@ int arch_prep_exec(const load_binary_t* bin, char* const argv[],
     return result;
   }
 
+  // Copy auxv to the new stack.
+  stack_top = stack_top & -4;  // Align to 4-byte address.
+  size_t auxv_entries = 0;
+  for (; auxv[auxv_entries].a_type != AUXVEC_NULL; ++auxv_entries);
+  auxv_entries++;  // Account for AUXVEC_NULL.
+  stack_top -= sizeof(apos_auxv_t) * auxv_entries;
+  kmemcpy((void*)stack_top, auxv, sizeof(apos_auxv_t) * auxv_entries);
+  addr_t auxv_addr = stack_top;
+
   // Align the stack top on a 16-byte boundary.
   stack_top = stack_top & -16;
 
@@ -120,6 +130,7 @@ int arch_prep_exec(const load_binary_t* bin, char* const argv[],
   ctx->ctx.sp = stack_top;
   ctx->ctx.a0 = argv_addr;
   ctx->ctx.a1 = envp_addr;
+  ctx->ctx.a2 = auxv_addr;
   ctx->ctx.address = bin->entry;
 
   return 0;

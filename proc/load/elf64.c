@@ -63,8 +63,8 @@ static int elf64_check_header(const Elf64_Ehdr* header) {
     return -EINVAL;
   }
 
-  if (header->e_type != ET_EXEC) {
-    KLOG(INFO, "ELF type != ET_EXEC (%d)\n", header->e_type);
+  if (header->e_type != ET_EXEC && header->e_type != ET_DYN) {
+    KLOG(INFO, "ELF type != ET_EXEC/ET_DYN (%d)\n", header->e_type);
     return -EINVAL;
   }
 
@@ -105,6 +105,9 @@ static int elf64_read_phdrs(int fd, const Elf64_Ehdr* header, Elf64_Phdr* phdrs)
         phdrs[i].p_type != PT_LOAD &&
         phdrs[i].p_type != PT_NOTE &&
         phdrs[i].p_type != PT_GNU_STACK &&
+        phdrs[i].p_type != PT_DYNAMIC &&
+        phdrs[i].p_type != PT_PHDR &&
+        phdrs[i].p_type != PT_INTERP &&
         phdrs[i].p_type != PT_RISCV_ATTRIBUTES) {
       KLOG(INFO, "unsupported ELF program segment type 0x%x (segment %d)\n",
            phdrs[i].p_type, i);
@@ -117,12 +120,14 @@ static int elf64_read_phdrs(int fd, const Elf64_Ehdr* header, Elf64_Phdr* phdrs)
   return 0;
 }
 
-static int elf64_create_load_binary(const Elf64_Ehdr* header,
+static int elf64_create_load_binary(int fd, const Elf64_Ehdr* header,
                                     const Elf64_Phdr* phdrs,
                                     load_binary_t** binary_out) {
   int num_regions = 0;
+  const Elf64_Phdr* interp_hdr = NULL;
   for (int i = 0; i < header->e_phnum; ++i) {
     if (phdrs[i].p_type == PT_LOAD) ++num_regions;
+    else if (phdrs[i].p_type == PT_INTERP) interp_hdr = &phdrs[i];
   }
 
   load_binary_t* bin = (load_binary_t*)kmalloc(
@@ -133,6 +138,8 @@ static int elf64_create_load_binary(const Elf64_Ehdr* header,
   KASSERT_DBG(header->e_machine == EM_RISCV);
   bin->arch = BIN_RISCV_64;
   bin->entry = header->e_entry;
+  bin->interp[0] = '\0';
+  bin->base_addr = 0;
   bin->num_regions = num_regions;
   int region_number = 0;
   for (int i = 0; i < header->e_phnum; ++i) {
@@ -147,6 +154,21 @@ static int elf64_create_load_binary(const Elf64_Ehdr* header,
     if (phdrs[i].p_flags & PF_R) region->prot |= MEM_PROT_READ;
     if (phdrs[i].p_flags & PF_W) region->prot |= MEM_PROT_WRITE;
     if (phdrs[i].p_flags & PF_X) region->prot |= MEM_PROT_EXEC;
+  }
+
+  if (interp_hdr) {
+    int result = vfs_seek(fd, interp_hdr->p_offset, VFS_SEEK_SET);
+    if (result < 0) {
+      KLOG(INFO, "Unable to seek to PT_INTERP offset: %s\n",
+           errorname(-result));
+      return result;
+    }
+    result = vfs_read(fd, bin->interp, LOADBIN_INTERP_LEN);
+    if (result < 0) {
+      KLOG(INFO, "Unable to read PT_INTERP: %s\n", errorname(-result));
+      return result;
+    }
+    bin->interp[LOADBIN_INTERP_LEN - 1] = '\0';  // Just in case, truncate it.
   }
 
   return 0;
@@ -187,7 +209,7 @@ int elf64_load(int fd, load_binary_t** binary_out) {
   }
 
   // Create a load_binary_t* from it.
-  result = elf64_create_load_binary(&header, phdrs, binary_out);
+  result = elf64_create_load_binary(fd, &header, phdrs, binary_out);
   kfree(phdrs);
   return result;
 }

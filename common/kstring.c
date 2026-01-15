@@ -11,17 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include "common/kstring.h"
 
+#include <stdint.h>
+
+// Non-kernel users of this code need to handle defining dependent functions
+// and types themselves before including.
+#ifdef __APOS_BUILDING_KERNEL__
 #include "common/attributes.h"
 #include "common/config.h"
-#include "common/kstring.h"
 #include "common/math.h"
 
 #if ENABLE_TSAN
 #include "sanitizers/tsan/tsan_hooks.h"
 #endif
+#endif  // __APOS_BUILDING_KERNEL__
 
-#include <stdint.h>
 
 int kstrlen(const char* s) {
   int x = 0;

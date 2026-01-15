@@ -131,6 +131,8 @@ static int elf_create_load_binary(const Elf32_Ehdr* header,
 
   bin->arch = BIN_X86_32;
   bin->entry = header->e_entry;
+  bin->interp[0] = '\0';
+  bin->base_addr = 0;
   bin->num_regions = num_regions;
   int region_number = 0;
   for (int i = 0; i < header->e_phnum; ++i) {

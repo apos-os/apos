@@ -1,0 +1,93 @@
+# Copyright 2025 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+Import('user_env native_env')
+
+env = user_env.Clone()
+env.Append(CFLAGS=['-fPIE'])
+env.Append(LINKFLAGS=['-nostdlib'])
+
+# We want the binary linked such that it can be trivially relocated by the
+# kernel, without requiring any dynamic linking itself (as that is what it will
+# do).  In theory -static-pie should do what we want --- however that doesn't
+# work in our apos cross toolchain.  This is the expanded definition of that
+# flag.  See gcc commit b20e59f49b51b7baf05e1b727be5da947e617496.
+#
+# This results in an ET_DYN ELF file with position-independent code but no
+# dynamic dependencies.  Note that this doesn't work properly with libc/newlib
+# (currently, at least) --- but that's OK, since we don't want to link libc into
+# this anyway.
+env.Append(LINKFLAGS=['-Wl,-static,-pie,--no-dynamic-linker,-ztext'])
+
+env.Tpl('#/os/core/loader/syscalls.h', 'syscalls.h.tpl')
+syscalls_c = env.TplSource('#/os/core/loader/syscalls.c', 'syscalls.c.tpl')
+
+env.Program('ld.so.1', [
+             'elf64.c',
+             'gnu_hash.c',
+             'ld_alloc.c',
+             'ld_assert.c',
+             'ld_printf.c',
+             'ld_string.c',
+             'lib.c',
+             'loader.c',
+             'map.c',
+             'relocate.c',
+             syscalls_c,
+            ],
+            LIBS=['apos_syscall'],
+            LIBPATH='#/$BUILD_CFG_DIR/user')
+
+ROOT = '#/os/core/loader/testdata'
+# Create a test shared library that can be used for tests.
+user_env.Command(
+    f'{ROOT}/gnu_hash_lib.so', ['testdata/gnu_hash_lib.c'],
+    '${TOOL_PREFIX}gcc -o $TARGET -shared -Wl,--hash-style=gnu $SOURCE')
+user_env.Command(f'{ROOT}/gnu_hash_lib.so.cdata',
+                 f'{ROOT}/gnu_hash_lib.so',
+                 'xxd -i -n kGnuHashLibRaw $SOURCE $TARGET')
+
+native_env.GtestProgram('gnu_hash_test', ['gnu_hash_test.cc', 'gnu_hash.c'])
+
+# Complex shared library hierarchy.  See libs_header.h for details.
+# We have to build these with '-l1' etc rather than references to the actual
+# scons lib1 (etc) objects to ensure that DT_NEEDED is set correctly (without a
+# path) in the final binary.
+testlib_env = user_env.Clone()
+testlib_env.Append(CFLAGS = ['-nostdlib'])
+testlib_env.Replace(SHLINKFLAGS = ['-nostdlib', '-shared'])
+lib1 = testlib_env.SharedLibrary('testdata/lib1.so', ['testdata/lib1.c'],
+                                 LIBS=['2', '2b', '3'],
+                                 LIBPATH=['testdata'])
+lib2 = testlib_env.SharedLibrary('testdata/lib2.so', ['testdata/lib2.c'],
+                                 LIBS=['2b'],
+                                 LIBPATH=['testdata'])
+lib2b = testlib_env.SharedLibrary('testdata/lib2b.so', ['testdata/lib2b.c'])
+lib3 = testlib_env.SharedLibrary('testdata/lib3.so', ['testdata/lib3.c'],
+                                 LIBS=['2', '4'],
+                                 LIBPATH=['testdata'])
+lib4 = testlib_env.SharedLibrary('testdata/lib4.so', ['testdata/lib4.c'])
+test_bin = testlib_env.Program('testdata/lib_bin', ['testdata/lib_bin.c'],
+                               LIBS=['1', '2', '2b', '3', '4'],
+                               LIBPATH=['testdata'],
+                               # --as-needed ensures that lib_bin only has a
+                               # NEEDED entry for lib1, and the others will be
+                               # found transitively.
+                               LINKFLAGS=['-Wl,--as-needed'])
+
+# scons doesn't detect the dependencies correctly automatically.
+Depends(test_bin, [lib1, lib2, lib2b, lib3, lib4])
+Depends(lib1, [lib2, lib2b, lib3])
+Depends(lib2, [lib2b])
+Depends(lib3, [lib2, lib4])

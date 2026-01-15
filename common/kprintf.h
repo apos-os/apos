@@ -16,8 +16,7 @@
 #define APOO_KPRINTF_H
 
 #include <stdarg.h>
-
-#include "common/types.h"
+#include <stddef.h>
 
 int ksprintf(char* str, const char* fmt, ...)
     __attribute__((format(printf, 2, 3)));
