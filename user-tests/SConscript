@@ -27,3 +27,7 @@ user_env.Program('all_tests',
          'thread_test_asm-${ARCH}.s', 'util.c', 'memory_test.c',
          'busybox_test.c', 'libc_test.c'],
     LIBS=[ktest_lib, 'common'], LIBPATH=COMMON_LIB_PATH)
+
+src = user_env.TplSource('#/user-tests/syscall_link_test.c',
+                         'syscall_link_test.c.tpl')
+user_env.Program('syscall_link_test', [src])
