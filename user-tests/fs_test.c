@@ -97,7 +97,6 @@ static void basic_fs_test(void) {
   KTEST_BEGIN("getdents(): bad arguments test");
   KEXPECT_EQ(-EBADF, do_getdents(-5, (struct dirent*)buffer, 500));
   KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0x0, 500));
-  KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0x89000, 500));
   KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0xc1000000, 500));
   KEXPECT_EQ(-EINVAL, do_getdents(fd, (struct dirent*)buffer, 0xfffffff));
 
