@@ -1936,10 +1936,34 @@ unsigned int sleep(unsigned int seconds) { return sleep_ms(seconds * 1000); }
 // Manual stub to convert from int[2] to int* and mollify GCC's
 // array-parameter diagnostic.
 int pipe(int fildes[2]) { return _pipe_r(_REENT, fildes); }
+
+int open(const char* path, int oflag, ...) {
+  mode_t mode = 0;
+  if (oflag & O_CREAT) {
+    va_list args;
+    va_start(args, oflag);
+    mode = va_arg(args, mode_t);
+    va_end(args);
+  }
+  return _open_r(_REENT, path, oflag, mode);
+}
+
+int fcntl(int fd, int cmd, ...) {
+  // Note: this is technically undefined behavior, since the caller could be
+  // passing a valid cmd/type pair that we don't know about (and isn't an int).
+  // But for now, assume the third argument is always an int.mode_t mode = 0;
+  va_list args;
+  va_start(args, cmd);
+  int arg = va_arg(args, int);
+  va_end(args);
+  return _fcntl_r(_REENT, fd, cmd, arg);
+}
 long syscall_test(long arg1, long arg2, long arg3, long arg4, long arg5,
                   long arg6) {
   return _syscall_test_r(_REENT, arg1, arg2, arg3, arg4, arg5, arg6);
 }
+
+int close(int fd) { return _close_r(_REENT, fd); }
 
 int dup(int fd) { return _dup_r(_REENT, fd); }
 
@@ -1955,12 +1979,32 @@ int mknod(const char* path, apos_mode_t mode, apos_dev_t dev) {
 
 int rmdir(const char* path) { return _rmdir_r(_REENT, path); }
 
+int unlink(const char* path) { return _unlink_r(_REENT, path); }
+
+ssize_t read(int fd, void* buf, size_t count) {
+  return _read_r(_REENT, fd, buf, count);
+}
+
+ssize_t write(int fd, const void* buf, size_t count) {
+  return _write_r(_REENT, fd, buf, count);
+}
+
 int getdents(int fd, kdirent_t* buf, int count) {
   return _getdents_r(_REENT, fd, buf, count);
 }
 
+int stat(const char* path, apos_stat_t* stat) {
+  return _stat_r(_REENT, path, stat);
+}
+
 int lstat(const char* path, apos_stat_t* stat) {
   return _lstat_r(_REENT, path, stat);
+}
+
+int fstat(int fd, apos_stat_t* stat) { return _fstat_r(_REENT, fd, stat); }
+
+apos_off_t lseek(int fd, apos_off_t offset, int whence) {
+  return _lseek_r(_REENT, fd, offset, whence);
 }
 
 int chdir(const char* path) { return _chdir_r(_REENT, path); }
@@ -1987,13 +2031,21 @@ int chmod(const char* path, apos_mode_t mode) {
 
 int fchmod(int fd, apos_mode_t mode) { return _fchmod_r(_REENT, fd, mode); }
 
+apos_pid_t fork(void) { return _fork_r(_REENT); }
+
 apos_pid_t vfork(void) { return _vfork_r(_REENT); }
+
+apos_pid_t wait(int* exit_status) { return _wait_r(_REENT, exit_status); }
 
 apos_pid_t waitpid(apos_pid_t child, int* exit_status, int options) {
   return _waitpid_r(_REENT, child, exit_status, options);
 }
 
+apos_pid_t getpid(void) { return _getpid_r(_REENT); }
+
 apos_pid_t getppid(void) { return _getppid_r(_REENT); }
+
+int kill(apos_pid_t pid, int sig) { return _kill_r(_REENT, pid, sig); }
 
 int sigaction(int signum, const struct ksigaction* act,
               struct ksigaction* oldact) {

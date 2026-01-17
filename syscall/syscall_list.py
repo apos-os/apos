@@ -181,13 +181,12 @@ AddSyscall('open', 1, 'vfs_open', 'vfs/vfs.h', '<fcntl.h>',
     'const char*:path:s',
     'int:flags:u',
     'apos_mode_t:mode:u'],
-    newlib_defined=True,
+    stubs_to_generate=['L1', 'L2'],
     mismatched_kernel_types=True)  # vfs_open() uses varargs
 
 AddSyscall('close', 2, 'vfs_close', 'vfs/vfs.h', '<unistd.h>',
     'int', [
-    'int:fd:u'],
-    newlib_defined=True)
+    'int:fd:u'])
 
 AddSyscall('dup', 45, 'vfs_dup', 'vfs/vfs.h', '<unistd.h>',
     'int', ['int:fd:u'])
@@ -222,22 +221,19 @@ AddSyscall('rename', 73, 'vfs_rename', 'vfs/vfs.h', '<stdio.h>',
 
 AddSyscall('unlink', 6, 'vfs_unlink', 'vfs/vfs.h', '<unistd.h>',
     'int', [
-    'const char*:path:s'],
-    newlib_defined=True)
+    'const char*:path:s'])
 
 AddSyscall('read', 7, 'vfs_read', 'vfs/vfs.h', '<unistd.h>',
     'ssize_t', [
     'int:fd:u',
     'void*:buf:bw:count',
-    'size_t:count:u'],
-    newlib_defined=True)
+    'size_t:count:u'])
 
 AddSyscall('write', 8, 'vfs_write', 'vfs/vfs.h', '<unistd.h>',
     'ssize_t', [
     'int:fd:u',
     'const void*:buf:br:count',
-    'size_t:count:u'],
-    newlib_defined=True)
+    'size_t:count:u'])
 
 AddSyscall('getdents', 10, 'vfs_getdents', 'vfs/vfs.h', '<dirent.h>',
     'int', [
@@ -256,7 +252,7 @@ AddSyscall('stat', 35, 'vfs_stat', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
     'const char*:path:s',
     'apos_stat%(s32)s_t*:stat:bw:sizeof(apos_stat%(s32)s_t)'],
-    needs_32bit_conv=True, newlib_defined=True)
+    needs_32bit_conv=True)
 
 AddSyscall('lstat', 36, 'vfs_lstat', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
@@ -268,14 +264,13 @@ AddSyscall('fstat', 37, 'vfs_fstat', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
     'int:fd:u',
     'apos_stat%(s32)s_t*:stat:bw:sizeof(apos_stat%(s32)s_t)'],
-    needs_32bit_conv=True, newlib_defined=True)
+    needs_32bit_conv=True)
 
 AddSyscall('lseek', 38, 'vfs_seek', 'vfs/vfs.h', '<unistd.h>',
     'apos_off_t', [
     'int:fd:u',
     'apos_off_t:offset:u',
-    'int:whence:u'],
-    newlib_defined=True)
+    'int:whence:u'])
 
 AddSyscall('chdir', 12, 'vfs_chdir', 'vfs/vfs.h', '<unistd.h>',
     'int', [
@@ -301,10 +296,10 @@ AddSyscall('fchmod', 71, 'vfs_fchmod', 'vfs/vfs.h', '<sys/stat.h>',
 
 AddSyscall('fcntl', 103, 'vfs_fcntl', 'vfs/vfs.h', '<fcntl.h>',
            'int', ['int:fd:u', 'int:cmd:u', 'int:arg:u'],
-           newlib_defined=True)
+           stubs_to_generate=['L1', 'L2'])
 
 AddSyscall('fork', 13, 'proc_fork_syscall', 'syscall/fork.h', '<unistd.h>',
-    'apos_pid_t', [], newlib_defined=True)
+    'apos_pid_t', [])
 
 AddSyscall('vfork', 74, 'proc_fork_syscall', 'syscall/fork.h', '<unistd.h>',
     'apos_pid_t', [])
@@ -317,8 +312,7 @@ AddSyscall('exit', 14, 'proc_exit_wrapper', 'syscall/wrappers.h',
     can_fail=False)
 
 AddSyscall('wait', 41, 'proc_wait', 'proc/wait.h', '<sys/wait.h>',
-    'apos_pid_t', ['int*:exit_status:bw?:sizeof(int)'],
-    newlib_defined=True)
+    'apos_pid_t', ['int*:exit_status:bw?:sizeof(int)'])
 
 AddSyscall('waitpid', 62, 'proc_waitpid', 'proc/wait.h', '<sys/wait.h>',
     'apos_pid_t', ['apos_pid_t:child:u', 'int*:exit_status:bw?:sizeof(int)',
@@ -338,8 +332,7 @@ AddSyscall('execve', 15, 'execve_wrapper', 'syscall/execve_wrapper.h',
 
 AddSyscall('getpid', 16, 'getpid_wrapper', 'syscall/wrappers.h',
     '<unistd.h>',
-    'apos_pid_t', [], can_fail=False,
-    newlib_defined=True)
+    'apos_pid_t', [], can_fail=False)
 
 AddSyscall('getppid', 17, 'getppid_wrapper', 'syscall/wrappers.h',
     '<unistd.h>',
@@ -353,8 +346,7 @@ AddSyscall('isatty', 18, 'vfs_isatty', 'vfs/vfs.h', '<unistd.h>',
 AddSyscall('kill', 19, 'proc_kill', 'proc/signal/signal.h', '<signal.h>',
     'int', [
     'apos_pid_t:pid:u',
-    'int:sig:u'],
-    newlib_defined=True)
+    'int:sig:u'])
 
 AddSyscall('sigaction', 20, 'proc_sigaction', 'proc/signal/signal.h',
     '<signal.h>',

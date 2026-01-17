@@ -72,3 +72,25 @@ unsigned int sleep(unsigned int seconds) {
 // Manual stub to convert from int[2] to int* and mollify GCC's
 // array-parameter diagnostic.
 int pipe(int fildes[2]) { return _pipe_r(_REENT, fildes); }
+
+int open(const char *path, int oflag, ... ) {
+  mode_t mode = 0;
+  if (oflag & O_CREAT) {
+    va_list args;
+    va_start(args, oflag);
+    mode = va_arg(args, mode_t);
+    va_end(args);
+  }
+  return _open_r(_REENT, path, oflag, mode);
+}
+
+int fcntl(int fd, int cmd, ...) {
+  // Note: this is technically undefined behavior, since the caller could be
+  // passing a valid cmd/type pair that we don't know about (and isn't an int).
+  // But for now, assume the third argument is always an int.mode_t mode = 0;
+  va_list args;
+  va_start(args, cmd);
+  int arg = va_arg(args, int);
+  va_end(args);
+  return _fcntl_r(_REENT, fd, cmd, arg);
+}

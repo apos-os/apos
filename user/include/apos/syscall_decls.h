@@ -39,13 +39,20 @@
 // Declare the userspace functions.
 long syscall_test(long arg1, long arg2, long arg3, long arg4, long arg5,
                   long arg6);
+int close(int fd);
 int dup(int fd);
 int dup2(int fd1, int fd2);
 int mkdir(const char* path, apos_mode_t mode);
 int mknod(const char* path, apos_mode_t mode, apos_dev_t dev);
 int rmdir(const char* path);
+int unlink(const char* path);
+ssize_t read(int fd, void* buf, size_t count);
+ssize_t write(int fd, const void* buf, size_t count);
 int getdents(int fd, kdirent_t* buf, int count);
+int stat(const char* path, apos_stat_t* stat);
 int lstat(const char* path, apos_stat_t* stat);
+int fstat(int fd, apos_stat_t* stat);
+apos_off_t lseek(int fd, apos_off_t offset, int whence);
 int chdir(const char* path);
 int access(const char* path, int amode);
 int chown(const char* path, apos_uid_t owner, apos_gid_t group);
@@ -53,9 +60,13 @@ int fchown(int fd, apos_uid_t owner, apos_gid_t group);
 int lchown(const char* path, apos_uid_t owner, apos_gid_t group);
 int chmod(const char* path, apos_mode_t mode);
 int fchmod(int fd, apos_mode_t mode);
+apos_pid_t fork(void);
 apos_pid_t vfork(void);
+apos_pid_t wait(int* exit_status);
 apos_pid_t waitpid(apos_pid_t child, int* exit_status, int options);
+apos_pid_t getpid(void);
 apos_pid_t getppid(void);
+int kill(apos_pid_t pid, int sig);
 int sigaction(int signum, const struct ksigaction* act,
               struct ksigaction* oldact);
 int sigprocmask(int how, const ksigset_t* set, ksigset_t* oset);
