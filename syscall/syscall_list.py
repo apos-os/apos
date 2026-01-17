@@ -212,8 +212,7 @@ AddSyscall('rmdir', 5, 'vfs_rmdir', 'vfs/vfs.h', '<unistd.h>',
     'const char*:path:s'])
 
 AddSyscall('link', 72, 'vfs_link', 'vfs/vfs.h', '<unistd.h>',
-    'int', ['const char*:path1:s', 'const char*:path2:s'],
-    newlib_defined=True)
+    'int', ['const char*:path1:s', 'const char*:path2:s'])
 
 AddSyscall('rename', 73, 'vfs_rename', 'vfs/vfs.h', '<stdio.h>',
     'int', ['const char*:path1:s', 'const char*:path2:s'],

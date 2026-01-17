@@ -1979,6 +1979,10 @@ int mknod(const char* path, apos_mode_t mode, apos_dev_t dev) {
 
 int rmdir(const char* path) { return _rmdir_r(_REENT, path); }
 
+int link(const char* path1, const char* path2) {
+  return _link_r(_REENT, path1, path2);
+}
+
 int unlink(const char* path) { return _unlink_r(_REENT, path); }
 
 ssize_t read(int fd, void* buf, size_t count) {
