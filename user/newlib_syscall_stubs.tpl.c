@@ -31,6 +31,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/socket.h>

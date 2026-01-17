@@ -304,7 +304,7 @@ AddSyscall('vfork', 74, 'proc_fork_syscall', 'syscall/fork.h', '<unistd.h>',
     'apos_pid_t', [])
 
 AddSyscall('exit', 14, 'proc_exit_wrapper', 'syscall/wrappers.h',
-    '',
+    '<stdlib.h>',
     'int', [
     'int:status:u'],
     stubs_to_generate=['L1'],
