@@ -15,6 +15,7 @@
 // Some basic tests to kick the tires on libc (newlib).
 #include <limits.h>
 #include <stdio.h>
+#include <wctype.h>
 
 #include "user-tests/ktest.h"
 
@@ -210,7 +211,26 @@ static void printf_tests(void) {
   printf_c99_test();
 }
 
+static void wctrans_test(void) {
+  KTEST_BEGIN("wctrans test");
+  wctrans_t desc;
+  wint_t result;
+
+  desc = wctrans("toupper");
+  KEXPECT_NE(0, desc);
+  result = towctrans(L'a', desc);
+  KEXPECT_EQ(L'A', result);
+
+  desc = wctrans("tolower");
+  KEXPECT_NE(0, desc);
+  result = towctrans('A', desc);
+  KEXPECT_EQ(L'a', result);
+
+  KEXPECT_EQ(0, wctrans("xyz"));
+}
+
 void libc_tests(void) {
   KTEST_SUITE_BEGIN("libc tests");
   printf_tests();
+  wctrans_test();
 }
