@@ -16,8 +16,10 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
+#include <sys/mman.h>
 
 #include "os/common/apos_klog.h"
+#include "user/include/apos/auxvec.h"
 
 #include "ktest.h"
 
@@ -42,6 +44,8 @@ static int current_test_passing = 0;
 static int test_start_time;
 
 static const char* current_test_name = 0x0;
+
+void* INVALID_ADDR;
 
 // Array of failing test names.  Assumes that test names aren't generated on the
 // fly (i.e. the pointers we get to them in KTEST_BEGIN() stay good).
@@ -206,6 +210,20 @@ bool kexpect_multiline_streq(const char* file, const char* line,
 }
 
 void ktest_begin_all(void) {
+  if (INVALID_ADDR == 0) {
+    const size_t kMapSize = 64 * 1024 * 1024;
+    void* result = mmap((void*)0xf234567, kMapSize, PROT_READ,
+                        MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    assert(result != MAP_FAILED);
+    // Make the second-to-last page our invalid address, and unmap everything
+    // except the pages surrounding that page.  This should hopefully minimize
+    // the likelihood that another mapping will take our invalid address.
+    const size_t PAGE_SIZE = apos_auxval_get(AUXVEC_PAGESZ);
+    INVALID_ADDR = result + kMapSize - PAGE_SIZE;
+    assert(0 == munmap(result, kMapSize - 3 * PAGE_SIZE));
+    assert(0 == munmap(INVALID_ADDR, PAGE_SIZE));
+    apos_klogf("Picked INVALID_ADDR of %p\n", INVALID_ADDR);
+  }
   num_suites = 0;
   num_tests = 0;
   num_suites_passing = 0;
