@@ -17,7 +17,8 @@
 
 #include <apos/syscall_decls.h>
 #include <sys/time.h>  // For utimes, gettimeofday
-#include <unistd.h>  // For sbrk
+#include <sys/times.h>  // For times
+#include <unistd.h>  // For sbrk, getentropy
 
 // This file simply calls every syscall we know must be defined in the standard
 // userspace environment.  This verifies that all functions are linked properly
@@ -42,6 +43,8 @@ static void userspace_functions(void) {
   utimes(0, NULL);
   sbrk(0);
   gettimeofday(NULL, NULL);
+  times(NULL);
+  getentropy(NULL, 0);
 }
 
 int main(void) {
