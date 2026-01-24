@@ -1,0 +1,2 @@
+# To use: git config diff.readelf.textconv "riscv64-pc-apos-readelf -a"
+*.so diff=readelf
