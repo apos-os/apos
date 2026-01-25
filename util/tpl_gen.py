@@ -22,6 +22,7 @@
 
 import argparse
 import jinja2
+import jinja2.meta
 import os
 import re
 import subprocess
@@ -57,6 +58,7 @@ def main(argv):
   parser.add_argument("template")
   parser.add_argument("--outfile",
                       help="Output filename.  If not given, stdout is used")
+  parser.add_argument("--depsfile", help="Filename to write dependencies in gcc format")
   parser.add_argument("--clang-format",
                       help="Whether to run clang-format on the output",
                       action="store_true")
@@ -65,12 +67,15 @@ def main(argv):
 
   # Find modules to import.
   python_env = {}
+  deps = []
   with open(tpl_file) as f:
     for line in f.readlines():
       m = re.search(r'\{#\s*PY_IMPORT\s*(\S*)', line)
       if m:
-        comp = compile(open(m.group(1)).read(), m.group(1), 'exec')
+        path = m.group(1)
+        comp = compile(open(path).read(), path, 'exec')
         eval(comp, python_env)
+        deps.append(path)
 
   env = jinja2.Environment(
       loader=jinja2.FileSystemLoader(['.', os.path.dirname(tpl_file)]),
@@ -78,6 +83,10 @@ def main(argv):
       undefined=jinja2.StrictUndefined,
       extensions=['jinja2.ext.do'])
   template = env.get_template(tpl_file)
+  ast = env.parse(open(tpl_file).read())
+  # TODO(aoates): make this work recursively (it currently does not)
+  template_deps = jinja2.meta.find_referenced_templates(ast)
+  deps.extend(template_deps)
   output = template.render(python_env)
 
   if args.clang_format:
@@ -87,6 +96,10 @@ def main(argv):
     write_if_changed(args.outfile, output)
   else:
     print(output)
+
+  if args.depsfile:
+    deps_str = " ".join(deps)
+    write_if_changed(args.depsfile, f'{args.outfile}: {deps_str}\n')
 
 if __name__ == '__main__':
   main(sys.argv)
