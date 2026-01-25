@@ -19,22 +19,49 @@
 # If the template includes lines of the form '{# PY_IMPORT <file> #}', the given
 # python file will be read and interpreted in the template's environment before
 # the template is instantiated.
-#
-# Usage:
-#   tpl_gen.py <template file>
 
+import argparse
 import jinja2
 import os
 import re
+import subprocess
 import sys
 
-def main(argv):
-  if len(argv) != 2:
-    print('Usage: %s.py <template>' % os.path.basename(argv[0]),
-          file=sys.stderr)
-    sys.exit(1)
 
-  tpl_file = argv[1]
+# TODO(aoates): dedup this with the one in config_gen.py?
+def write_if_changed(file_path, new_content):
+  try:
+    with open(file_path, 'r') as f:
+      if f.read() == new_content:
+        return  # Do nothing, preserving the old timestamp
+  except (FileNotFoundError, IOError):
+    # File doesn't exist or isn't readable; proceed to write
+    pass
+
+  with open(file_path, 'w') as f:
+    f.write(new_content)
+
+
+def clang_format(buf):
+  p = subprocess.run(["clang-format"],
+                     input=buf,
+                     capture_output=True,
+                     text=True,
+                     check=True,
+                     encoding='utf-8')
+  return p.stdout
+
+
+def main(argv):
+  parser = argparse.ArgumentParser()
+  parser.add_argument("template")
+  parser.add_argument("--outfile",
+                      help="Output filename.  If not given, stdout is used")
+  parser.add_argument("--clang-format",
+                      help="Whether to run clang-format on the output",
+                      action="store_true")
+  args = parser.parse_args()
+  tpl_file = args.template
 
   # Find modules to import.
   python_env = {}
@@ -51,7 +78,15 @@ def main(argv):
       undefined=jinja2.StrictUndefined,
       extensions=['jinja2.ext.do'])
   template = env.get_template(tpl_file)
-  print(template.render(python_env))
+  output = template.render(python_env)
+
+  if args.clang_format:
+    output = clang_format(output)
+
+  if args.outfile:
+    write_if_changed(args.outfile, output)
+  else:
+    print(output)
 
 if __name__ == '__main__':
   main(sys.argv)
