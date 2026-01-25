@@ -94,7 +94,9 @@ def main(argv):
   ast = env.parse(template_str)
   # TODO(aoates): make this work recursively (it currently does not)
   template_deps = jinja2.meta.find_referenced_templates(ast)
-  deps.extend(template_deps)
+  # TODO(aoates): this doesn't work with template-relative paths, so remove
+  # those and make all includes/imports use path from source root.
+  deps.extend([os.path.join(args.import_root, d) for d in template_deps])
   output = template.render(python_env)
 
   if args.clang_format:
