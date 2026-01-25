@@ -62,6 +62,9 @@ def main(argv):
   parser.add_argument("--clang-format",
                       help="Whether to run clang-format on the output",
                       action="store_true")
+  parser.add_argument("--import_root",
+                      help="Path to search for imported python modules",
+                      default=".")
   args = parser.parse_args()
   tpl_file = args.template
 
@@ -73,17 +76,22 @@ def main(argv):
       m = re.search(r'\{#\s*PY_IMPORT\s*(\S*)', line)
       if m:
         path = m.group(1)
+        path = os.path.join(args.import_root, path)
         comp = compile(open(path).read(), path, 'exec')
         eval(comp, python_env)
         deps.append(path)
 
-  env = jinja2.Environment(
-      loader=jinja2.FileSystemLoader(['.', os.path.dirname(tpl_file)]),
-      trim_blocks=True,
-      undefined=jinja2.StrictUndefined,
-      extensions=['jinja2.ext.do'])
-  template = env.get_template(tpl_file)
-  ast = env.parse(open(tpl_file).read())
+  env = jinja2.Environment(loader=jinja2.FileSystemLoader(
+      [args.import_root, os.path.dirname(tpl_file)]),
+                           trim_blocks=True,
+                           undefined=jinja2.StrictUndefined,
+                           extensions=['jinja2.ext.do'])
+  # We have to load the template here because jinja2 won't let us use ".." in
+  # template path names.  This lets us use a path relative to the build
+  # directory to reference a template.
+  template_str = open(tpl_file).read()
+  template = env.from_string(template_str)
+  ast = env.parse(template_str)
   # TODO(aoates): make this work recursively (it currently does not)
   template_deps = jinja2.meta.find_referenced_templates(ast)
   deps.extend(template_deps)
