@@ -1,0 +1,109 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/features.gni")
+import("//build/templates.gni")
+
+config_args = []
+config_args += [ "ETHERNET=${enable_ethernet}" ]
+config_args += [ "EXT2=${enable_ext2}" ]
+config_args += [ "NVME=${enable_nvme}" ]
+config_args += [ "TESTS=${enable_tests}" ]
+config_args += [ "TERM_COLOR=${enable_term_color}" ]
+config_args += [ "USB=${enable_usb}" ]
+config_args += [ "USER_DUMMY_LIB=${enable_user_dummy_lib}" ]
+config_args += [ "USER_DYNAMIC_LOADER=${enable_user_dynamic_loader}" ]
+config_args += [ "USER_OS=${enable_user_os}" ]
+config_args += [ "USER_TESTS=${enable_user_tests}" ]
+config_args += [ "KMALLOC_HEAP_PROFILE=${enable_kmalloc_heap_profile}" ]
+
+config_args +=
+    [ "KMUTEX_DEADLOCK_DETECTION=${enable_kmutex_deadlock_detection}" ]
+config_args += [ "PRELOAD_USER_BINS=${enable_preload_user_bins}" ]
+config_args += [ "PROFILING=${enable_profiling}" ]
+config_args += [ "PROFILE_IDLE=${enable_profile_idle}" ]
+config_args += [ "TSAN_FULL=${enable_tsan_full}" ]
+config_args += [ "TSAN_LIB=${enable_tsan_lib}" ]
+config_args += [ "TSAN_CORE=${enable_tsan_core}" ]
+
+config_args += [ "TSAN=${enable_tsan}" ]
+config_args += [ "DEBUG=${is_debug}" ]
+
+config_args += [ "ARCH=" + target_cpu ]
+config_args += [ "KSHELL_INITIAL_COMMAND=" + kshell_initial_command ]
+
+# Helper template for config generation
+template("gen_config") {
+  action(target_name) {
+    script = "//util/config_gen.py"
+    source = invoker.source
+    output = "$target_gen_dir/" + invoker.output
+
+    outputs = [ output ]
+
+    args = [
+      rebase_path(source, root_build_dir),
+      rebase_path(output, root_build_dir),
+    ]
+
+    foreach(arg, config_args) {
+      args += [ arg ]
+    }
+  }
+}
+
+gen_config("config_h") {
+  source = "config.h.in"
+  output = "config.h"
+}
+
+gen_config("debug_h") {
+  source = "debug.h.in"
+  output = "debug.h"
+}
+
+gen_config("dynamic_config_h") {
+  source = "dynamic-config.h.in"
+  output = "dynamic-config.h"
+}
+
+group("kernel_headers") {
+  public_deps = [
+    ":config_h",
+    ":debug_h",
+    ":dynamic_config_h",
+  ]
+}
+
+ksource_set("common") {
+  sources = [
+    "circbuf.c",
+    "crc.c",
+    "errno.c",
+    "hash.c",
+    "hashtable.c",
+    "initer.c",
+    "kassert.c",
+    "klog.c",
+    "kprintf.c",
+    "kstring.c",
+    "list.c",
+    "per_cpu.c",
+    "perf_trace.c",
+    "refcount.c",
+    "siphash.c",
+    "stack_trace_table.c",
+    "time.c",
+  ]
+}

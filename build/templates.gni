@@ -1,0 +1,74 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+template("tpl_source") {
+  action(target_name) {
+    script = "//util/tpl_gen.py"
+    sources = invoker.sources
+
+    source_file = sources[0]
+
+    # TODO(aoates): clean this up and remove default of .c
+    if (defined(invoker.output_file)) {
+      output_file =
+          "$target_gen_dir/" + rebase_path(invoker.output_file, target_gen_dir)
+    } else {
+      output_file =
+          "$target_gen_dir/" + get_path_info(source_file, "name") + ".c"
+    }
+
+    outputs = [ output_file ]
+    depfile = "$target_gen_dir/$target_name.d"
+
+    args = [
+      rebase_path(source_file, root_build_dir),
+      "--clang-format",
+      "--outfile",
+      rebase_path(output_file, root_build_dir),
+      "--depsfile",
+      rebase_path(depfile, root_build_dir),
+      "--import_root",
+      rebase_path("//", root_build_dir),
+    ]
+  }
+}
+
+template("ksource_set") {
+  source_set(target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "deps",
+                             "remove_configs",
+                           ])
+
+    # Ensure that all generated headers are generated _before_ we compile any
+    # kernel sources --- Ninja will still use actual calculated dependencies
+    # (from #includes) to determine when to rebuild other files, so this is only
+    # a build order constraint.
+    deps = [
+      "//archs/${target_cpu}:generated_headers",
+      "//common:kernel_headers",
+    ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+
+    configs += [ "//build/config:kernel_config" ]
+
+    if (defined(invoker.remove_configs)) {
+      configs -= invoker.remove_configs
+    }
+  }
+}

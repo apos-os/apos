@@ -1,0 +1,57 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+template("m4_gen") {
+  action(target_name) {
+    script = "gen_m4.py"
+    source = invoker.source
+    output = invoker.output
+    type = invoker.type
+
+    sources = [ source ]
+    outputs = [ "$target_gen_dir/$output" ]
+
+    args = [
+      type,
+      rebase_path(source, root_build_dir),
+      rebase_path(outputs[0], root_build_dir),
+    ]
+  }
+}
+
+m4_gen("memlayout_s") {
+  source = "memlayout.m4"
+  output = "memlayout.m4.s"
+  type = "asm"
+}
+
+m4_gen("memlayout_ld") {
+  source = "memlayout.m4"
+  output = "memlayout.m4.ld"
+  type = "ld"
+}
+
+m4_gen("memlayout_h") {
+  source = "memlayout.m4"
+  output = "memlayout.m4.h"
+  type = "c"
+}
+
+source_set("internal") {
+  deps = [
+    ":memlayout_h",
+    ":memlayout_ld",
+    ":memlayout_s",
+  ]
+}

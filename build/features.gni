@@ -1,0 +1,53 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Add platform-specific overrides.
+supports_usb = true
+supports_user_dynamic_loader = false
+if (target_cpu == "riscv64") {
+  supports_usb = false
+  supports_user_dynamic_loader = true
+}
+
+declare_args() {
+  # Features (enabled by default):
+  enable_ethernet = true
+  enable_ext2 = true
+  enable_nvme = true
+  enable_tests = true
+  enable_term_color = true
+  enable_usb = supports_usb
+  enable_user_dummy_lib = true
+  enable_user_dynamic_loader = supports_user_dynamic_loader
+  enable_user_os = true
+  enable_user_tests = true
+  enable_kmalloc_heap_profile = true
+
+  # Disabled by default:
+  enable_kmutex_deadlock_detection = false
+  enable_preload_user_bins = false
+  enable_profiling = false
+  enable_profile_idle = false
+  enable_tsan_full = false
+  enable_tsan_lib = false
+  enable_tsan_core = false
+
+  # Other options
+  kshell_initial_command = ""
+  header_install_prefix = ""
+}
+
+# Calculated
+enable_tsan = enable_tsan_full || enable_tsan_lib || enable_tsan_core
+assert(!enable_tsan)

@@ -46,11 +46,16 @@ REPLS_NINJA = [
     (R'obj/', 'build-scons/$ARCH-gcc/'),
     #(R'(apos-\S*) (.*) (-o \S*)', R'\1 \3 \2'),
     (R'-Igen', '-Ibuild-scons/$ARCH-gcc'),
+
+    # Make lib paths match what scons uses.
+    (R'(build-scons/([^/]*)-[^/]*/)archs/[^/]*/(libkernel_phys.a)', R'\1\3'),
+    (R'(build-scons/([^/]*)-[^/]*/)main/(libkernel.a)', R'\1\3'),
 ]
 
 REPLS_NINJA_FIXUP = [
     (R'-MMD *', ''),
     (R'-MF \S* *', ''),
+    (R'(-ar .*) rcs', R'\1 rc'),  # scons uses 'rc' rather than 'rcs'
 ]
 
 NINJA_IGNORE = []
@@ -73,6 +78,13 @@ REPLS_SCONS_FIXUP = [
     # scons passes both flags
     (R'(test/\S*\.c:.*) -Wframe-larger-than=1500 (-Wframe-larger-than=5000)',
      R'\1 \2'),
+    (R'dts_to_header\(\["(.*)"\], *\["(.*)"\]\)',
+     R'python test/dtb_testdata/gen_dtb_header.py \2 build/license_template.h \1'
+    ),
+
+    # Make kernel.bin path match what ninja does (we do it here rather than
+    # above so we don't have to generate the arch string from thin air).
+    (R'build-scons/[^/]*-[^/]*/kernel.bin', 'kernel.bin'),
 ]
 SCONS_IGNORE = [
     # TODO(aoates): get rid of all of these as we migrate more to gn.
@@ -82,16 +94,19 @@ SCONS_IGNORE = [
     R'.*\.tpl: \S*-pc-apos-ar ',  # Final ar.. line that gets mangled a bit
     R'cc.*passwd_test',
     R'^config_h_builder(.*)',
-    R'^dts_to_header(.*)',
     #R'^\S*-pc-apos-ar rc .*/os/common/libcommon.a',
     #R'^\S*-pc-apos-ar rc .*/user-tests/libktest.a',
     #R'^\S*-pc-apos-ar rc .*/user/header_tests/libapos_header_tests.a',
     #R'^\S*-pc-apos-ar rc .*/user/libapos_syscall.a',
     #R'^\S*-pc-apos-gcc .*/os/.*',
-    R'^\S*-pc-apos-ld -o \S*kernel.bin',
-    R'^\S*-pc-apos-ranlib .*',
-    R'^ranlib .*native-common.a',
+    #R'^\S*-pc-apos-ld -o \S*kernel.bin',
     R'^g++.*',
+    R'^xxd.* os/core/loader/testdata.*',
+
+    # Thinks we do not intend to port to ninja:
+    R'^ranlib .*native-common.a',
+    R'^\S*-pc-apos-ranlib .*',  # gn doesn't do ranlib
+    R'.*kernel.bin.stripped.*',
 ]
 SCONS_FILE_IGNORE = [
     R'(build-scons/[^/]*/)?user-tests/.*',
@@ -101,12 +116,22 @@ SCONS_FILE_IGNORE = [
 
 def parse_line(line: str) -> (str, str):
   """Returns (ftype, fname, cmd, args) for a line."""
+  m = re.match(R'dts_to_header\(\["(.*)"\], *\["(.*)"\]\)', line)
+  if m:
+    return ('c', m.group(1), line, [line])
+  m = re.match(R'python .*gen_dtb_header.py \S* \S* (.*)', line)
+  if m:
+    return ('c', m.group(1), line, [line])
   # perl -p -e 's/((.*) ([.\/_a-zA-Z0-9-]*\.([cs]|tpl))\W)/\3: \1/g' | \
-  m = re.match(R'^(\S+)(.*\W([.\/_a-zA-Z0-9-]*\.([cso]|tpl|so))\b.*)', line)
+  m = re.match(R'^(\S+)(.*\W([.\/_a-zA-Z0-9-]*\.([cso]|tpl|so|m4|bin))\b.*)', line)
   if not m:
     return (None, None, None, None)
   cmd = m.group(1)
   args = m.group(2).split()
+
+  if cmd == 'python':
+    cmd = cmd + ' ' + args[0]
+    args = args[1:]
 
   # Find the input filename.  .tpl/.m4 take priority so we get the input file
   # (the .tpl/.m4 file) rather than the output file.

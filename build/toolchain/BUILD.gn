@@ -1,0 +1,33 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/toolchain/compiler.gni")
+
+# Determine cross-compiler prefix based on target_cpu
+if (target_cpu == "x86_64") {
+  cross_prefix = "x86_64-pc-apos-"
+} else if (target_cpu == "i586") {
+  cross_prefix = "i586-pc-apos-"
+} else if (target_cpu == "riscv64") {
+  cross_prefix = "riscv64-pc-apos-"
+} else {
+  assert(false, "Unknown target_cpu: $target_cpu")
+}
+
+apos_toolchain("gcc") {
+  cc = "${cross_prefix}gcc"
+  ar = "${cross_prefix}ar"
+  ld = "${cross_prefix}gcc"
+  asm = "${cross_prefix}as"
+}
