@@ -28,13 +28,19 @@ do_ninja_build() {
 do_compare() {
   arch=$1
   comp=$2
-  cat ninja_build_log.$arch.$comp.log | ./experimental/gn/fix_ninja_log.sh > /tmp/ninja_log
+  cat ninja_build_log.$arch.$comp.log | ./experimental/gn/fix_ninja_log.sh \
+    --fixup \
+    --type=ninja \
+    > /tmp/ninja_log
   if [ "$comp" = "gcc" ]; then
     comp2=CLANG=0
   else
     comp2=CLANG=1
   fi
-  cat build_log.$arch.$comp2.log | ./experimental/gn/fix_scons_log.sh > /tmp/scons_log
+  cat build_log.$arch.$comp2.log | ./experimental/gn/fix_scons_log.sh \
+    --fixup \
+    --type=scons \
+    > /tmp/scons_log
 
   vimdiff /tmp/scons_log /tmp/ninja_log
 }
