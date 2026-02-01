@@ -51,6 +51,8 @@ REPLS_NINJA_FIXUP = [
     (R'-MF \S* *', ''),
 ]
 
+NINJA_IGNORE = []
+
 REPLS_SCONS = []
 REPLS_SCONS_FIXUP = [
     # scons version has two -I.
@@ -58,12 +60,40 @@ REPLS_SCONS_FIXUP = [
 
     # scons version has two --gen-debug
     (R'--gen-debug --gen-debug', '--gen-debug'),
+
+    # scons version puts '.PHYS.' in the name
+    (R'\.PHYS\.o', '.o'),
+
+    # scons passes both flags
+    (R'(test/\S*\.c:.*) -Wframe-larger-than=1500 (-Wframe-larger-than=5000)',
+     R'\1 \2'),
+]
+SCONS_IGNORE = [
+    # TODO(aoates): get rid of all of these as we migrate more to gn.
+    R'^Install file: .*',
+    R'^ar rc .*',
+    R'.*\.tpl: \S*-pc-apos-ar ',  # Final ar.. line that gets mangled a bit
+    R'[^:]*/user-tests/.*:',
+    R'[^:]*/os/.*:',
+    R'^os/[^:]*:',
+    R'^user-tests/.*\.[cs]:',
+    R'^user/.*\.[cs]:',
+    R'cc.*passwd_test',
+    R'^config_h_builder(.*)',
+    R'^dts_to_header(.*)',
+    R'^\S*-pc-apos-ar rc .*libkernel_phys.a',
+    R'^\S*-pc-apos-ar rc .*/os/common/libcommon.a',
+    R'^\S*-pc-apos-ar rc .*/user-tests/libktest.a',
+    R'^\S*-pc-apos-ar rc .*/user/header_tests/libapos_header_tests.a',
+    R'^\S*-pc-apos-ar rc .*/user/libapos_syscall.a',
+    R'^\S*-pc-apos-gcc .*/os/.*',
+    R'^\S*-pc-apos-ld -o \S*kernel.bin',
+    R'^\S*-pc-apos-ranlib .*',
+    R'^ranlib .*native-common.a',
 ]
 
-REPLS_C = None
-
 arch = None
-def normalize(line: str):
+def normalize(line: str, repls: Sequence[tuple[str, str]]):
   global arch
   line = line.strip()
   if not arch:
@@ -94,7 +124,7 @@ def normalize(line: str):
 
   args_out = ' '.join(args_out)
   line = f'{fname}: {cmd} {args_out}'
-  for pat, rep in REPLS_C:
+  for pat, rep in repls:
     line = re.sub(pat, rep, line)
 
   if arch:
@@ -112,24 +142,34 @@ def main(argv: Optional[Sequence[str]] = None):
       '--type',
       choices=['scons', 'ninja'],
       help='The type of log being processed.  Controls per-tool fixups.')
+  parser.add_argument('--ignores',
+                      action='store_false',
+                      help='Control if ignores are applied')
   args = parser.parse_args()
 
   repls = REPLS
   if args.type == 'scons':
-    extra, extra_fixup = REPLS_SCONS, REPLS_SCONS_FIXUP
+    extra, extra_fixup, ignores = REPLS_SCONS, REPLS_SCONS_FIXUP, SCONS_IGNORE
   elif args.type == 'ninja':
-    extra, extra_fixup = REPLS_NINJA, REPLS_NINJA_FIXUP
+    extra, extra_fixup, ignores = REPLS_NINJA, REPLS_NINJA_FIXUP, NINJA_IGNORE
   else:
-    extra, extra_fixup = [], []
+    extra, extra_fixup, ignores = [], [], []
 
   repls.extend(extra)
   if args.fixup:
     repls.extend(extra_fixup)
 
-  global REPLS_C
-  REPLS_C = [(re.compile(p), r) for p, r in REPLS]
+  repls_c = [(re.compile(p), r) for p, r in REPLS]
+  ignores = [re.compile(p) for p in ignores]
   for line in sys.stdin:
-    print(normalize(line))
+    ignore = False
+    if args.ignores:
+      for p in ignores:
+        if p.match(line):
+          ignore=True
+          break
+    if not ignore:
+      print(normalize(line, repls_c))
 
 if __name__ == '__main__':
   main(sys.argv)
