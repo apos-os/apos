@@ -31,9 +31,9 @@ REPLS = [
     (R'libkernel_phys\.([^.]*)\.o', R'\1.o'),
     (R'x86-common\.([^.]*)\.o', R'\1.o'),
 
-    (R'obj/', 'build-scons/i586-gcc/'),
+    (R'obj/', 'build-scons/$ARCH-gcc/'),
     #(R'(apos-\S*) (.*) (-o \S*)', R'\1 \3 \2'),
-    (R'-Igen', '-Ibuild-scons/i586-gcc'),
+    (R'-Igen', '-Ibuild-scons/$ARCH-gcc'),
 
     # scons version has two -I.
     (R'-I\. *-I\.', '-I.'),
@@ -44,8 +44,15 @@ REPLS = [
 
 REPLS_C = [(re.compile(p), r) for p, r in REPLS]
 
+arch = None
 def normalize(line: str):
+  global arch
   line = line.strip()
+  if not arch:
+    for a in ('i586', 'x86_64', 'riscv64'):
+      if a in line:
+        arch = a
+        break
 
   m = re.match(R'^([^:]*): (\S*)\s+(.*)$', line)
   if not m:
@@ -72,6 +79,8 @@ def normalize(line: str):
   for pat, rep in REPLS_C:
     line = re.sub(pat, rep, line)
 
+  if arch:
+    line = line.replace('$ARCH', arch)
   return line
 
 for line in sys.stdin:
