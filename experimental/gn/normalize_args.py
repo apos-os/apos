@@ -64,6 +64,9 @@ REPLS_SCONS_FIXUP = [
     # scons version puts '.PHYS.' in the name
     (R'\.PHYS\.o', '.o'),
 
+    # scons doubles this flag too
+    (R'-march=rv64gc -march=rv64gc', '-march=rv64gc'),
+
     # scons passes both flags
     (R'(test/\S*\.c:.*) -Wframe-larger-than=1500 (-Wframe-larger-than=5000)',
      R'\1 \2'),
