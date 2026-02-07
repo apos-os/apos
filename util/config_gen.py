@@ -44,10 +44,16 @@ def main():
     if '=' in arg:
       key, value = arg.split('=', 1)
       # Try to convert to int if possible, as formatting might use %d
-      try:
-        data[key] = int(value)
-      except ValueError:
-        data[key] = value
+      if value.lower() == 'true':
+        value = 1
+      elif value.lower() == 'false':
+        value = 0
+      else:
+        try:
+          value = int(value)
+        except ValueError:
+          pass
+      data[key] = value
 
   with open(template_file, 'r') as f:
     content = f.read()
