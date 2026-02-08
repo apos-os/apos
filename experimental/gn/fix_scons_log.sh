@@ -15,6 +15,5 @@
 
 DIR=$(dirname $0)
 grep -v 'Building compilation database' | \
-  ${DIR}/normalize_log.sh | \
   ${DIR}/normalize_args.py "$@" |
-  sort > /tmp/scons_log
+  sort

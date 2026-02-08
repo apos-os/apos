@@ -52,6 +52,7 @@ REPLS_NINJA_FIXUP = [
 ]
 
 NINJA_IGNORE = []
+NINJA_FILE_IGNORE = []
 
 REPLS_SCONS = []
 REPLS_SCONS_FIXUP = [
@@ -76,11 +77,6 @@ SCONS_IGNORE = [
     R'^Install file: .*',
     R'^ar rc .*',
     R'.*\.tpl: \S*-pc-apos-ar ',  # Final ar.. line that gets mangled a bit
-    R'[^:]*/user-tests/.*:',
-    R'[^:]*/os/.*:',
-    R'^os/[^:]*:',
-    R'^user-tests/.*\.[cs]:',
-    R'^user/.*\.[cs]:',
     R'cc.*passwd_test',
     R'^config_h_builder(.*)',
     R'^dts_to_header(.*)',
@@ -94,9 +90,46 @@ SCONS_IGNORE = [
     R'^\S*-pc-apos-ranlib .*',
     R'^ranlib .*native-common.a',
 ]
+SCONS_FILE_IGNORE = [
+    R'user-tests/.*\.[cs]',
+    R'os/.*\.[cs]',
+    R'user/.*\.[cs]',
+]
+
+def parse_line(line: str) -> (str, str):
+  """Returns (ftype, fname, cmd, args) for a line."""
+  # perl -p -e 's/((.*) ([.\/_a-zA-Z0-9-]*\.([cs]|tpl))\W)/\3: \1/g' | \
+  m = re.match(R'^(\S+)(.*\W([.\/_a-zA-Z0-9-]*\.([cs]|tpl))\b.*)', line)
+  if not m:
+    return (None, None, None, None)
+  cmd = m.group(1)
+  args = m.group(2).split()
+
+  # Find the input filename.  .tpl/.m4 take priority so we get the input file
+  # (the .tpl/.m4 file) rather than the output file.
+  fname = '<?>'
+  ftype = 'other'
+  for arg in args:
+    if arg.endswith('.tpl'):
+      ftype = 'tpl'
+      fname = arg
+      break
+    elif arg.endswith('.m4'):
+      ftype = 'm4'
+      fname = arg
+      break
+    elif arg.endswith('.s'):
+      ftype = 'asm'
+      fname = arg
+    elif arg.endswith('.c'):
+      ftype = 'c'
+      fname = arg
+  return (ftype, fname, cmd, args)
+
 
 arch = None
-def normalize(line: str, repls: Sequence[tuple[str, str]]):
+def normalize(line: str, repls: Sequence[tuple[str, str]],
+              file_ignores: Sequence[re.Pattern]):
   global arch
   line = line.strip()
   if not arch:
@@ -105,13 +138,14 @@ def normalize(line: str, repls: Sequence[tuple[str, str]]):
         arch = a
         break
 
-  m = re.match(R'^([^:]*): (\S*)\s+(.*)$', line)
-  if not m:
+  ftype, fname, cmd, args = parse_line(line)
+  if not ftype:
     return line.strip()
+  for p in file_ignores:
+    if p.match(fname):
+      print(f'Ignored: {fname}', file=sys.stderr)
+      return None
 
-  fname = m.group(1)
-  cmd = m.group(2)
-  args = m.group(3).split()
   args_out = []
   append_next = False
   for a in args:
@@ -126,7 +160,7 @@ def normalize(line: str, repls: Sequence[tuple[str, str]]):
   args_out.sort()
 
   args_out = ' '.join(args_out)
-  line = f'{fname}: {cmd} {args_out}'
+  line = f'[{ftype}] {fname}: {cmd} {args_out}'
   for pat, rep in repls:
     line = re.sub(pat, rep, line)
 
@@ -152,9 +186,13 @@ def main(argv: Optional[Sequence[str]] = None):
 
   repls = REPLS
   if args.type == 'scons':
-    extra, extra_fixup, ignores = REPLS_SCONS, REPLS_SCONS_FIXUP, SCONS_IGNORE
+    extra, extra_fixup, ignores, file_ignores = (REPLS_SCONS, REPLS_SCONS_FIXUP,
+                                                 SCONS_IGNORE,
+                                                 SCONS_FILE_IGNORE)
   elif args.type == 'ninja':
-    extra, extra_fixup, ignores = REPLS_NINJA, REPLS_NINJA_FIXUP, NINJA_IGNORE
+    extra, extra_fixup, ignores, file_ignores = (REPLS_NINJA, REPLS_NINJA_FIXUP,
+                                                 NINJA_IGNORE,
+                                                 NINJA_FILE_IGNORE)
   else:
     extra, extra_fixup, ignores = [], [], []
 
@@ -164,6 +202,7 @@ def main(argv: Optional[Sequence[str]] = None):
 
   repls_c = [(re.compile(p), r) for p, r in REPLS]
   ignores = [re.compile(p) for p in ignores]
+  file_ignores = [re.compile(p) for p in file_ignores]
   for line in sys.stdin:
     ignore = False
     if args.ignores:
@@ -172,7 +211,9 @@ def main(argv: Optional[Sequence[str]] = None):
           ignore=True
           break
     if not ignore:
-      print(normalize(line, repls_c))
+      out = normalize(line, repls_c, file_ignores)
+      if out:
+        print(out)
 
 if __name__ == '__main__':
   main(sys.argv)

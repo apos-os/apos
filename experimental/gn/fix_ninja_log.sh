@@ -22,4 +22,7 @@
 #  perl -pe 's/(apos-\S*) (.*) (-o \S*)/\1 \3 \2/g' | \
 
 DIR=$(dirname $0)
-grep '\[\d*/\d*\]' | ${DIR}/normalize_log.sh | ${DIR}/normalize_args.py "$@" | sort
+grep '\[\d*/\d*\]' | \
+  perl -p -e 's/^\[\d*\/\d*\] *//g' | \
+  ${DIR}/normalize_args.py "$@" | \
+  sort
