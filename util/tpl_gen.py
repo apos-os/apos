@@ -44,6 +44,10 @@ def write_if_changed(file_path, new_content):
 
 
 def clang_format(buf):
+  # Ensure that clang-format always adds a trailing newline.  If there is
+  # already one (or more) newlines at the end of the output, clang-format will
+  # only omit one.
+  buf += '\n'
   p = subprocess.run(["clang-format"],
                      input=buf,
                      capture_output=True,
