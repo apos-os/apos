@@ -34,7 +34,7 @@ REPLS_NINJA = [
 
     # Handle e.g. x/y/lastdir/lastdir.file.o (which is just x/y/lastdir/file.o
     # in scons build format).
-    (R'([^/]*)/\1\.([^.]+)\.o', R'\1/\2.o'),
+    (R'([^/]*)/\1\.([^/]+)\.o', R'\1/\2.o'),
 
     # special case for the above to handle targets in archs/ under the 'kernel'
     # target.
