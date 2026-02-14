@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 # Copyright 2026 Andrew Oates.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,5 +24,6 @@
 DIR=$(dirname $0)
 grep '\[\d*/\d*\]' | \
   perl -p -e 's/^\[\d*\/\d*\] *//g' | \
+  perl -p -e 's/rm -f.*&&//g' | \
   ${DIR}/normalize_args.py "$@" | \
   sort

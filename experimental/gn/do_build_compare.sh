@@ -45,8 +45,8 @@ do_compare() {
   vimdiff /tmp/scons_log /tmp/ninja_log
 }
 
-#ARCHS=(i586 x86_64 riscv64)
-ARCHS=(i586)
+ARCHS=(i586 x86_64 riscv64)
+#ARCHS=(riscv64)
 for arch in ${ARCHS[@]}; do
   for comp in gcc; do
     do_ninja_build $arch $comp
