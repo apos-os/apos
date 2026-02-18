@@ -46,12 +46,7 @@ template("tpl_source") {
 
 template("ksource_set") {
   source_set(target_name) {
-    forward_variables_from(invoker,
-                           "*",
-                           [
-                             "deps",
-                             "remove_configs",
-                           ])
+    forward_variables_from(invoker, "*", [ "deps" ])
 
     # Ensure that all generated headers are generated _before_ we compile any
     # kernel sources --- Ninja will still use actual calculated dependencies
@@ -66,9 +61,5 @@ template("ksource_set") {
     }
 
     configs += [ "//build/config:kernel_config" ]
-
-    if (defined(invoker.remove_configs)) {
-      configs -= invoker.remove_configs
-    }
   }
 }

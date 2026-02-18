@@ -46,9 +46,9 @@ do_compare() {
 }
 
 ARCHS=(i586 x86_64 riscv64)
-#ARCHS=(riscv64)
+COMPS=(gcc clang)
 for arch in ${ARCHS[@]}; do
-  for comp in gcc; do
+  for comp in ${COMPS[@]}; do
     do_ninja_build $arch $comp
     do_compare $arch $comp
   done

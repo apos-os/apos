@@ -16,6 +16,15 @@ import("//build/features.gni")
 
 import("//build/templates.gni")
 
+config("test_config") {
+  # TODO(aoates): get frame sizes small enough to reduce this.
+  cflags = [ "-Wframe-larger-than=5000" ]
+
+  if (compiler == "clang") {
+    cflags += [ "-Wno-self-assign" ]
+  }
+}
+
 ksource_set("test") {
   sources = [
     "ansi_escape_test.c",
@@ -104,7 +113,6 @@ ksource_set("test") {
     deps += [ "riscv64" ]
   }
 
-  # TODO(aoates): get frame sizes small enough to reduce this.
-  remove_configs = [ "//build/config:cflags_wframe_larger_than_default" ]
-  cflags = [ "-Wframe-larger-than=5000" ]
+  configs = default_configs + [ ":test_config" ]
+  configs -= [ "//build/config:cflags_wframe_larger_than_default" ]
 }

@@ -14,20 +14,16 @@
 
 import("//build/toolchain/compiler.gni")
 
-# Determine cross-compiler prefix based on target_cpu
-if (target_cpu == "x86_64") {
-  cross_prefix = "x86_64-pc-apos-"
-} else if (target_cpu == "i586") {
-  cross_prefix = "i586-pc-apos-"
-} else if (target_cpu == "riscv64") {
-  cross_prefix = "riscv64-pc-apos-"
-} else {
-  assert(false, "Unknown target_cpu: $target_cpu")
+apos_toolchain("$target_cpu-gcc") {
+  cc = "${target_cpu}-pc-apos-gcc"
+  ar = "${target_cpu}-pc-apos-ar"
+  ld = "${target_cpu}-pc-apos-gcc"
+  asm = "${target_cpu}-pc-apos-as"
 }
 
-apos_toolchain("gcc") {
-  cc = "${cross_prefix}gcc"
-  ar = "${cross_prefix}ar"
-  ld = "${cross_prefix}gcc"
-  asm = "${cross_prefix}as"
+apos_toolchain("$target_cpu-clang") {
+  cc = "${target_cpu}-pc-apos-clang"
+  ar = "${target_cpu}-pc-apos-ar"
+  ld = "${target_cpu}-pc-apos-gcc"  # Use gcc for linking.
+  asm = "${target_cpu}-pc-apos-as"
 }

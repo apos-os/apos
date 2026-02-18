@@ -21,7 +21,6 @@ config("compiler_defaults") {
     "-Wno-unused-parameter",
     "-Wno-error=unused-function",
     "-Wstrict-prototypes",
-    "-Wno-format",
     "-Wundef",
     "-g3",
     "-gdwarf-2",
@@ -72,13 +71,34 @@ config("compiler_defaults") {
   }
 }
 
+config("compiler_gcc_defaults") {
+  cflags = [
+    # TODO(aoates): get format-string checking to work with both GCC and clang.
+    "-Wno-format",
+  ]
+}
+config("compiler_clang_defaults") {
+  cflags = [
+    "-target",
+    "${target_cpu}-pc-apos",
+    "-fdebug-macro",
+    "-Wthread-safety",
+    "-Wthread-safety-beta",
+    "-Wthread-safety-pointer",
+  ]
+}
+
 config("kernel_config") {
   cflags = [
     "-nostdlib",
     "-ffreestanding",
-    "-nodefaultlibs",
-    "-nostartfiles",
   ]
+  if (compiler == "gcc") {
+    cflags += [
+      "-nodefaultlibs",
+      "-nostartfiles",
+    ]
+  }
   defines = [ "__APOS_BUILDING_KERNEL__=1" ]
   ldflags = [ "-nostdlib" ]
 }

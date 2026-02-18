@@ -43,9 +43,9 @@ REPLS_NINJA = [
     (R'kernel\.([^. ]+)\.o', R'\1.o'),
     (R'libkernel_phys\.([^. ]+)\.o', R'\1.o'),
     (R'x86-common\.([^. ]+)\.o', R'\1.o'),
-    (R'obj/', 'build-scons/$ARCH-gcc/'),
+    (R'obj/', 'build-scons/$ARCH-$COMP/'),
     #(R'(apos-\S*) (.*) (-o \S*)', R'\1 \3 \2'),
-    (R'-Igen', '-Ibuild-scons/$ARCH-gcc'),
+    (R'-Igen', '-Ibuild-scons/$ARCH-$COMP'),
 
     # Make lib paths match what scons uses.
     (R'(build-scons/([^/]*)-[^/]*/)archs/[^/]*/(libkernel_phys.a)', R'\1\3'),
@@ -167,14 +167,20 @@ def parse_line(line: str) -> (str, str):
 
 
 arch = None
+comp = None
 def normalize(line: str, repls: Sequence[tuple[str, str]],
               file_ignores: Sequence[re.Pattern]):
-  global arch
+  global arch, comp
   line = line.strip()
   if not arch:
     for a in ('i586', 'x86_64', 'riscv64'):
       if a in line:
         arch = a
+        break
+  if not comp:
+    for c in ('clang', 'gcc'):  # Must be in this order
+      if ('-' + c) in line:
+        comp = c
         break
 
   ftype, fname, cmd, args = parse_line(line)
@@ -215,6 +221,8 @@ def normalize(line: str, repls: Sequence[tuple[str, str]],
 
   if arch:
     line = line.replace('$ARCH', arch)
+  if comp:
+    line = line.replace('$COMP', comp)
   return line
 
 def main(argv: Optional[Sequence[str]] = None):

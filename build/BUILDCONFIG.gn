@@ -24,9 +24,9 @@ declare_args() {
 
 # Set default toolchain
 if (compiler == "gcc") {
-  set_default_toolchain("//build/toolchain:gcc")
+  set_default_toolchain("//build/toolchain:$target_cpu-gcc")
 } else if (compiler == "clang") {
-  set_default_toolchain("//build/toolchain:clang")
+  set_default_toolchain("//build/toolchain:$target_cpu-clang")
 } else {
   assert(false, "Unknown compiler: $compiler")
 }
@@ -34,6 +34,7 @@ if (compiler == "gcc") {
 # Global configs
 default_configs = [
   "//build/config:compiler_defaults",
+  "//build/config:compiler_${compiler}_defaults",
   "//build/config:cflags_wframe_larger_than_default",
 ]
 

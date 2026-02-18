@@ -19,4 +19,5 @@ ksource_set("i586") {
     "interrupt_test.c",
     "page_alloc_map_test.c",
   ]
+  configs = default_configs + [ "//test:test_config" ]
 }
