@@ -170,19 +170,6 @@ arch = None
 comp = None
 def normalize(line: str, repls: Sequence[tuple[str, str]],
               file_ignores: Sequence[re.Pattern]):
-  global arch, comp
-  line = line.strip()
-  if not arch:
-    for a in ('i586', 'x86_64', 'riscv64'):
-      if a in line:
-        arch = a
-        break
-  if not comp:
-    for c in ('clang', 'gcc'):  # Must be in this order
-      if ('-' + c) in line:
-        comp = c
-        break
-
   ftype, fname, cmd, args = parse_line(line)
   if not ftype:
     return line.strip()
@@ -257,10 +244,28 @@ def main(argv: Optional[Sequence[str]] = None):
   if args.fixup:
     repls.extend(extra_fixup)
 
+  # First read everything to determine the arch and compiler.
+  lines = []
+  global arch, comp
+  for line in sys.stdin:
+    line = line.strip()
+    lines.append(line)
+    if not arch:
+      for a in ('i586', 'x86_64', 'riscv64'):
+        if a in line:
+          arch = a
+          break
+    if arch and not comp:
+      for c in ('clang', 'gcc'):  # Must be in this order
+        if f'{arch}-pc-apos-{c}' in line:
+          comp = c
+          break
+
+  # Now process the lines.
   repls_c = [(re.compile(p), r) for p, r in REPLS]
   ignores = [re.compile(p) for p in ignores]
   file_ignores = [re.compile(p) for p in file_ignores]
-  for line in sys.stdin:
+  for line in lines:
     ignore = False
     if args.ignores:
       for p in ignores:
