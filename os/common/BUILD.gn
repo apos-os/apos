@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import("//build/features.gni")
+import("//build/templates.gni")
 
-group("kernel") {
-  deps = [
-    "//main:kernel.bin",
-    "//user",
+static_library("common") {
+  sources = [
+    "apos_klog.c",
+    "list.c",
+    "md5.c",
+    "passwd.c",
   ]
-  if (enable_user_tests) {
-    deps += [ "//user-tests" ]
-  }
+
+  configs += [ "//build/config:user_config" ]
 }
+# TODO(aoates): add target for native common lib
+# TODO(aoates): add target for passwd_test

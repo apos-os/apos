@@ -15,6 +15,15 @@
 import("//build/features.gni")
 import("//build/templates.gni")
 
+# Pseudo-target with all generated header files, which must be built first.
+group("all_generated_headers") {
+  deps = [
+    "//archs/${target_cpu}:generated_headers",
+    "//common:kernel_headers",
+    "//user/include",
+  ]
+}
+
 ksource_set("main") {
   sources = [
     "kernel.c",
@@ -65,4 +74,6 @@ executable("kernel.bin") {
     "noexecstack",
     "-Wl,--orphan-handling=error",
   ]
+
+  output_dir = "${root_build_dir}"
 }

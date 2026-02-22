@@ -13,11 +13,17 @@
 # limitations under the License.
 
 # Add platform-specific overrides.
+# TODO(aoates): do this with target_args overrides in the toolchain instead.
+# TODO(aoates): refactor enable_user_*, we probably only need one switch.
 supports_usb = true
 supports_user_dynamic_loader = false
+supports_userspace = true
 if (target_cpu == "riscv64") {
   supports_usb = false
   supports_user_dynamic_loader = true
+} else if (target_cpu == "x86_64") {
+  # For x86-64, use i586 (32-bit) userspace.
+  supports_userspace = false
 }
 
 declare_args() {
@@ -28,10 +34,10 @@ declare_args() {
   enable_tests = true
   enable_term_color = true
   enable_usb = supports_usb
-  enable_user_dummy_lib = true
+  enable_user_dummy_lib = supports_userspace
   enable_user_dynamic_loader = supports_user_dynamic_loader
-  enable_user_os = true
-  enable_user_tests = true
+  enable_user_os = supports_userspace
+  enable_user_tests = supports_userspace
   enable_kmalloc_heap_profile = true
 
   # Disabled by default:

@@ -13,13 +13,21 @@
 # limitations under the License.
 
 import("//build/features.gni")
+import("//build/templates.gni")
 
-group("kernel") {
+tpl_source("syscalls_h") {
+  sources = [ "apos/syscalls.h.tpl" ]
+  output_file = "//user/include/apos/syscalls.h"
+}
+
+tpl_source("syscall_decls_h") {
+  sources = [ "apos/syscall_decls.h.tpl" ]
+  output_file = "//user/include/apos/syscall_decls.h"
+}
+
+group("include") {
   deps = [
-    "//main:kernel.bin",
-    "//user",
+    ":syscall_decls_h",
+    ":syscalls_h",
   ]
-  if (enable_user_tests) {
-    deps += [ "//user-tests" ]
-  }
 }

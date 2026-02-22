@@ -113,6 +113,6 @@ ksource_set("test") {
     deps += [ "riscv64" ]
   }
 
+  override_wframe = true
   configs = default_configs + [ ":test_config" ]
-  configs -= [ "//build/config:cflags_wframe_larger_than_default" ]
 }

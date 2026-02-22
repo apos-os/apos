@@ -46,20 +46,60 @@ template("tpl_source") {
 
 template("ksource_set") {
   source_set(target_name) {
-    forward_variables_from(invoker, "*", [ "deps" ])
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "deps",
+                             "override_wframe",
+                           ])
 
     # Ensure that all generated headers are generated _before_ we compile any
     # kernel sources --- Ninja will still use actual calculated dependencies
     # (from #includes) to determine when to rebuild other files, so this is only
     # a build order constraint.
-    deps = [
-      "//archs/${target_cpu}:generated_headers",
-      "//common:kernel_headers",
-    ]
+    deps = [ "//main:all_generated_headers" ]
     if (defined(invoker.deps)) {
       deps += invoker.deps
     }
 
     configs += [ "//build/config:kernel_config" ]
+    if (!defined(invoker.override_wframe) || !invoker.override_wframe) {
+      configs += [ "//build/config:cflags_wframe_larger_than_default" ]
+    }
+  }
+}
+
+template("user_static_library") {
+  static_library(target_name) {
+    forward_variables_from(invoker, "*", [ "deps" ])
+    deps = [ "//main:all_generated_headers" ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+
+    configs += [ "//build/config:user_config" ]
+  }
+}
+
+template("user_executable") {
+  executable(target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "deps",
+                             "output_dir",
+                           ])
+    deps = [ "//main:all_generated_headers" ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+    if (!defined(invoker.output_dir)) {
+      # Put the binary in the main folder rather than in obj/ to match what
+      # scons does.
+      # TODO(aoates): remove this when scons is removed
+      output_dir = "$root_out_dir/" + rebase_path(".", "//")
+    }
+
+    configs += [ "//build/config:user_config" ]
   }
 }

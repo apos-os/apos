@@ -35,7 +35,6 @@ if (compiler == "gcc") {
 default_configs = [
   "//build/config:compiler_defaults",
   "//build/config:compiler_${compiler}_defaults",
-  "//build/config:cflags_wframe_larger_than_default",
 ]
 
 # Set default configs for all targets

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//build/features.gni")
+
 config("compiler_defaults") {
   cflags = [
     "-std=gnu11",
@@ -29,18 +31,7 @@ config("compiler_defaults") {
 
   asmflags = [ "--gen-debug" ]
 
-  include_dirs = [
-    "//",
-    root_gen_dir,
-    "//archs/" + target_cpu,
-  ]
-
-  if (target_cpu == "x86_64" || target_cpu == "i586") {
-    include_dirs += [ "//archs/x86-common" ]
-  }
-
-  # Ensure //archs/common comes after any arch-specific directories.
-  include_dirs += [ "//archs/common" ]
+  include_dirs = [ "//" ]
 
   defines = [ "__APOS_BUILDING_IN_TREE__=1" ]
 
@@ -72,11 +63,8 @@ config("compiler_defaults") {
 }
 
 config("compiler_gcc_defaults") {
-  cflags = [
-    # TODO(aoates): get format-string checking to work with both GCC and clang.
-    "-Wno-format",
-  ]
 }
+
 config("compiler_clang_defaults") {
   cflags = [
     "-target",
@@ -93,14 +81,50 @@ config("kernel_config") {
     "-nostdlib",
     "-ffreestanding",
   ]
+  include_dirs = [
+    root_gen_dir,
+    "//archs/${target_cpu}",
+  ]
+  if (target_cpu == "x86_64" || target_cpu == "i586") {
+    include_dirs += [ "//archs/x86-common" ]
+  }
+
+  # Ensure //archs/common comes after any arch-specific directories.
+  include_dirs += [ "//archs/common" ]
+
   if (compiler == "gcc") {
     cflags += [
       "-nodefaultlibs",
       "-nostartfiles",
+
+      # TODO(aoates): get format-string checking to work with both GCC and clang.
+      "-Wno-format",
     ]
   }
   defines = [ "__APOS_BUILDING_KERNEL__=1" ]
   ldflags = [ "-nostdlib" ]
+}
+
+config("user_config") {
+  cflags = []
+  if (enable_term_color) {
+    defines = [ "ENABLE_TERM_COLOR=1" ]
+  }
+  ldflags = []
+
+  # Explicitly request static linking to avoid dynamically linking against
+  # libc.so if it exists.  Once dynamic linking is fully supported, this can be
+  # removed.
+  if (!enable_user_dynamic_loader) {
+    ldflags += [ "-Wl,-static" ]
+  }
+  if (compiler == "clang") {
+    assert(cross_prefix != "")
+    cflags += [
+      "-isystem",
+      "${cross_prefix}/${target_cpu}-pc-apos/include",
+    ]
+  }
 }
 
 config("cflags_wframe_larger_than_default") {

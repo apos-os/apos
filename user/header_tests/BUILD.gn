@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import("//build/features.gni")
+import("//build/templates.gni")
 
-group("kernel") {
-  deps = [
-    "//main:kernel.bin",
-    "//user",
+# A set of compile-time tests that verify the headers in user_env set up
+# constants, etc properly (which is not the case with stock newlib, for
+# example).
+user_static_library("apos_header_tests") {
+  sources = [
+    "access_test.c",
+    "fcntl_test.c",
+    "signal_test.c",
+    "stdio_test.c",
+    "unistd_test.c",
   ]
-  if (enable_user_tests) {
-    deps += [ "//user-tests" ]
-  }
 }

@@ -24,7 +24,9 @@ DIFF=${DIFF:-vimdiff}
 do_ninja_build() {
   ARCH=$1
   comp=$2
-  rm -rf out/$ARCH-$comp && gn gen out/$ARCH-$comp --args="target_cpu=\"$ARCH\" compiler=\"$comp\"" && ninja -C out/$ARCH-$comp -v | tee ninja_build_log.$ARCH.$comp.log
+  rm -rf out/$ARCH-$comp \
+    && ./configure --arch $ARCH --compiler=$comp --mode=gn \
+    && ninja -C out/$ARCH-$comp -v | tee ninja_build_log.$ARCH.$comp.log
 }
 
 do_compare() {

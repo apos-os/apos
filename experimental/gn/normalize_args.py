@@ -43,6 +43,13 @@ REPLS_NINJA = [
     (R'kernel\.([^. ]+)\.o', R'\1.o'),
     (R'libkernel_phys\.([^. ]+)\.o', R'\1.o'),
     (R'x86-common\.([^. ]+)\.o', R'\1.o'),
+    (R'all_tests\.([^. ]+)\.o', R'\1.o'),
+    (R'libcommon\.([^. ]+)\.o', R'\1.o'),
+    (R'libapos_header_tests\.([^. ]+)\.o', R'\1.o'),
+    (R'libapos_user_dummy\.([^. ]+)\.[oa]', R'\1.o'),
+    (R'libapos_syscall\.([^. ]+)\.o', R'\1.o'),
+    (R'syscall_link_test\.([^. ]+)\.o', R'\1.o'),
+
     (R'obj/', 'build-scons/$ARCH-$COMP/'),
     #(R'(apos-\S*) (.*) (-o \S*)', R'\1 \3 \2'),
     (R'-Igen', '-Ibuild-scons/$ARCH-$COMP'),
@@ -97,7 +104,9 @@ REPLS_SCONS_FIXUP = [
 
     # Make kernel.bin path match what ninja does (we do it here rather than
     # above so we don't have to generate the arch string from thin air).
-    (R'build-scons/[^/]*-[^/]*/kernel.bin', 'kernel.bin'),
+    (R'build-scons/[^/]*-[^/]*/kernel\.bin', 'kernel.bin'),
+    (R'build-scons/[^/]*-[^/]*/user-tests/(all_tests[^.])', R'user-tests/\1'),
+    (R'build-scons/[^/]*-[^/]*/user-tests/(syscall_link_test[^.])', R'user-tests/\1'),
 ]
 SCONS_IGNORE = [
     # TODO(aoates): get rid of all of these as we migrate more to gn.
@@ -109,12 +118,12 @@ SCONS_IGNORE = [
     R'^config_h_builder(.*)',
     #R'^\S*-pc-apos-ar rc .*/os/common/libcommon.a',
     #R'^\S*-pc-apos-ar rc .*/user-tests/libktest.a',
-    #R'^\S*-pc-apos-ar rc .*/user/header_tests/libapos_header_tests.a',
     #R'^\S*-pc-apos-ar rc .*/user/libapos_syscall.a',
     #R'^\S*-pc-apos-gcc .*/os/.*',
     #R'^\S*-pc-apos-ld -o \S*kernel.bin',
     R'^g++.*',
     R'^xxd.* os/core/loader/testdata.*',
+    R'.*os/common/.*-DAPOS_NATIVE_TARGET.*',
 
     # Thinks we do not intend to port to ninja:
     R'^ranlib .*native-common.a',
@@ -122,9 +131,9 @@ SCONS_IGNORE = [
     R'.*kernel.bin.stripped.*',
 ]
 SCONS_FILE_IGNORE = [
-    R'(build-scons/[^/]*/)?user-tests/.*',
-    R'(build-scons/[^/]*/)?os/.*',
-    R'(build-scons/[^/]*/)?user/.*',
+    #R'(build-scons/[^/]*/)?user-tests/.*',
+    R'(build-scons/[^/]*/)?os/(?!common).*',
+    #R'(build-scons/[^/]*/)?user/.*',
 ]
 
 def parse_line(line: str) -> (str, str):

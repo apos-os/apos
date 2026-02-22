@@ -1,0 +1,57 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/templates.gni")
+
+user_executable("all_tests") {
+  sources = [
+    "all_tests.c",
+    "basic_signal_test.c",
+    "busybox_test.c",
+    "cpu_exception_test.c",
+    "execve_test.c",
+    "exit_status.c",
+    "fs_test.c",
+    "ktest.c",
+    "libc_test.c",
+    "memory_test.c",
+    "misc_syscall_test.c",
+    "setjmp_test.c",
+    "socket_test.c",
+    "stop_test.c",
+    "syscall_errno.c",
+    "thread_test.c",
+    "thread_test_asm-${target_cpu}.s",
+    "util.c",
+    "wait_test.c",
+  ]
+  deps = [ "//os/common" ]
+}
+
+tpl_source("syscall_link_test_c") {
+  sources = [ "syscall_link_test.c.tpl" ]
+  output_file = "//user-tests/syscall_link_test.c"
+}
+
+user_executable("syscall_link_test") {
+  deps = [ ":syscall_link_test_c" ]
+  sources = get_target_outputs(":syscall_link_test_c")
+}
+
+group("user-tests") {
+  deps = [
+    ":all_tests",
+    ":syscall_link_test",
+  ]
+}
