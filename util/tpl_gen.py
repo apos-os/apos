@@ -28,20 +28,7 @@ import re
 import subprocess
 import sys
 
-
-# TODO(aoates): dedup this with the one in config_gen.py?
-def write_if_changed(file_path, new_content):
-  try:
-    with open(file_path, 'r') as f:
-      if f.read() == new_content:
-        return  # Do nothing, preserving the old timestamp
-  except (FileNotFoundError, IOError):
-    # File doesn't exist or isn't readable; proceed to write
-    pass
-
-  with open(file_path, 'w') as f:
-    f.write(new_content)
-
+import build_util
 
 def clang_format(buf):
   # Ensure that clang-format always adds a trailing newline.  If there is
@@ -107,13 +94,13 @@ def main(argv):
     output = clang_format(output)
 
   if args.outfile:
-    write_if_changed(args.outfile, output)
+    build_util.write_if_changed(args.outfile, output)
   else:
     print(output)
 
   if args.depsfile:
     deps_str = " ".join(deps)
-    write_if_changed(args.depsfile, f'{args.outfile}: {deps_str}\n')
+    build_util.write_if_changed(args.depsfile, f'{args.outfile}: {deps_str}\n')
 
 if __name__ == '__main__':
   main(sys.argv)

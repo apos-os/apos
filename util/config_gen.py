@@ -19,17 +19,7 @@
 
 import sys
 
-def write_if_changed(file_path, new_content):
-  try:
-    with open(file_path, 'r') as f:
-      if f.read() == new_content:
-        return  # Do nothing, preserving the old timestamp
-  except (FileNotFoundError, IOError):
-    # File doesn't exist or isn't readable; proceed to write
-    pass
-
-  with open(file_path, 'w') as f:
-    f.write(new_content)
+import build_util
 
 def main():
   if len(sys.argv) < 3:
@@ -66,7 +56,7 @@ def main():
     print(f"Error: Missing key {e} for template {template_file}", file=sys.stderr)
     sys.exit(1)
 
-  write_if_changed(out_file, formatted)
+  build_util.write_if_changed(out_file, formatted)
 
 if __name__ == '__main__':
   main()
