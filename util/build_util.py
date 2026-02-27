@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
+import sys
+
 def write_if_changed(file_path, new_content):
   try:
     with open(file_path, 'r') as f:
@@ -23,3 +26,19 @@ def write_if_changed(file_path, new_content):
 
   with open(file_path, 'w') as f:
     f.write(new_content)
+
+def read_build_config(file_path):
+  """Reads a build config file (a series of key=value lines) into a dict"""
+  result = {}
+  with open(file_path) as f:
+    for line in f:
+      line = re.sub('#.*', '', line)
+      line = line.strip()
+      if not line:
+        continue
+      m = re.match(R"([a-zA-Z0-9_]+)\s*=\s*'(.*)'", line)
+      if not m:
+        print(f'Warning: unparseable config line "{line}"', file=sys.stderr)
+        continue
+      result[m.group(1)] = m.group(2)
+    return result
