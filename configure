@@ -61,6 +61,8 @@ def do_scons(args: argparse.Namespace, opts: typing.Sequence[str]):
       'scons', 'configure', 'ARCH=' + args.arch,
       'CLANG=' + ('1' if args.compiler == 'clang' else '0')
   ]
+  if args.kshell_initial_command:
+    cmd += ['KSHELL_INITIAL_COMMAND=' + args.kshell_initial_command]
   if opts:
     cmd.append('enable=' + ','.join(opts))
 
@@ -73,11 +75,15 @@ def do_scons(args: argparse.Namespace, opts: typing.Sequence[str]):
 
 
 def do_gn(args: argparse.Namespace, opts: typing.Sequence[str]):
-  args_str = f'target_cpu="{args.arch}" compiler="{args.compiler}" '
-  opts_str = []
+  opts_str = [
+      f'target_cpu="{args.arch}"',
+      f'compiler="{args.compiler}"',
+  ]
+  if args.kshell_initial_command:
+    opts_str += [f'kshell_initial_command="{args.kshell_initial_command}"']
   for opt in opts:
     opts_str.append('enable_' + opt.lower() + '=true')
-  args_str += ' '.join(opts_str)
+  args_str = ' '.join(opts_str)
 
   cmd = [
       'gn', 'gen', f'out-gn/{args.arch}-{args.compiler}', f'--args={args_str}'
@@ -119,6 +125,8 @@ def main(argv):
                       choices=["gcc", "clang"],
                       default="gcc",
                       help="Which compiler to use")
+  parser.add_argument("--kshell_initial_command",
+                      help="Initial command for kshell to run")
   parser.add_argument(
       "--enable",
       default="",
