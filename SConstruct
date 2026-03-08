@@ -41,7 +41,7 @@ vars.Add('KSHELL_INITIAL_COMMAND',
   'command to automatically run when kshell starts', '')
 
 # System configuration options that are likely to be mostly static.
-vars.Add('HEADER_INSTALL_PREFIX', 'where to install userspace headers', '')
+vars.Add('CROSS_PREFIX', 'cross toolchain root', '')
 vars.Add('GTEST_ROOT', 'root of googletest package (contains lib/ and include/)', '')
 
 # List of modules that can be enabled/disabled.  All are enabled by default,
@@ -225,7 +225,7 @@ if not env['USER_DYNAMIC_LOADER']:
   user_env.Append(LINKFLAGS = ['-Wl,-static'])
 if user_env['CLANG']:
   user_env.Append(CFLAGS =
-      ['-isystem', '$HEADER_INSTALL_PREFIX/include'])
+      ['-isystem', '$CROSS_PREFIX/$ARCH-pc-apos/include'])
 
 # Environment for build-system native targets.
 native_env = base_env.Clone()
