@@ -15,7 +15,8 @@
 import re
 import sys
 
-def write_if_changed(file_path, new_content):
+
+def write_if_changed(file_path: str, new_content: str) -> None:
   try:
     with open(file_path, 'r') as f:
       if f.read() == new_content:
@@ -27,7 +28,8 @@ def write_if_changed(file_path, new_content):
   with open(file_path, 'w') as f:
     f.write(new_content)
 
-def read_build_config(file_path):
+
+def read_build_config(file_path: str) -> dict[str, str]:
   """Reads a build config file (a series of key=value lines) into a dict"""
   result = {}
   with open(file_path) as f:

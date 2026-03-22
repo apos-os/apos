@@ -41,7 +41,7 @@ VALID_OPTIONS = [
 ]
 
 
-def set_link(link: str, link_target: str):
+def set_link(link: str, link_target: str) -> None:
   """Create a symlink, trying to safely override it if it already exists."""
   try:
     s = os.lstat(link)
@@ -56,7 +56,7 @@ def set_link(link: str, link_target: str):
   os.symlink(link_target, link)
 
 
-def do_scons(args: argparse.Namespace, opts: typing.Sequence[str]):
+def do_scons(args: argparse.Namespace, opts: typing.Sequence[str]) -> None:
   cmd = [
       'scons', 'configure', 'ARCH=' + args.arch,
       'CLANG=' + ('1' if args.compiler == 'clang' else '0')
@@ -74,7 +74,7 @@ def do_scons(args: argparse.Namespace, opts: typing.Sequence[str]):
   set_link('out', 'build-scons')
 
 
-def do_gn(args: argparse.Namespace, opts: typing.Sequence[str]):
+def do_gn(args: argparse.Namespace, opts: typing.Sequence[str]) -> None:
   opts_str = [
       f'target_cpu="{args.arch}"',
       f'compiler="{args.compiler}"',
@@ -111,7 +111,7 @@ CLANG = {clang_bool}
   set_link(f'out/latest-{args.arch}', latest)
 
 
-def main(argv):
+def main(argv : list[str]) -> None:
   parser = argparse.ArgumentParser()
   parser.add_argument("--mode",
                       choices=["scons", "gn"],
@@ -144,7 +144,7 @@ def main(argv):
   elif args.mode == "gn":
     do_gn(args, opts)
   else:
-    print(f"Invalid mode: {mode}", file=sys.stderr)
+    print(f"Invalid mode: {args.mode}", file=sys.stderr)
     sys.exit(1)
 
 
