@@ -56,7 +56,8 @@ def set_link(link: str, link_target: str) -> None:
   os.symlink(link_target, link)
 
 
-def do_scons(args: argparse.Namespace, opts: typing.Sequence[str]) -> None:
+def do_scons(args: argparse.Namespace, opts: typing.Sequence[str],
+             build_conf: dict[str, str]) -> None:
   cmd = [
       'scons', 'configure', 'ARCH=' + args.arch,
       'CLANG=' + ('1' if args.compiler == 'clang' else '0')
@@ -74,7 +75,8 @@ def do_scons(args: argparse.Namespace, opts: typing.Sequence[str]) -> None:
   set_link('out', 'build-scons')
 
 
-def do_gn(args: argparse.Namespace, opts: typing.Sequence[str]) -> None:
+def do_gn(args: argparse.Namespace, opts: typing.Sequence[str],
+          build_conf: dict[str, str]) -> None:
   opts_str = [
       f'target_cpu="{args.arch}"',
       f'compiler="{args.compiler}"',
@@ -83,6 +85,8 @@ def do_gn(args: argparse.Namespace, opts: typing.Sequence[str]) -> None:
     opts_str += [f'kshell_initial_command="{args.kshell_initial_command}"']
   for opt in opts:
     opts_str.append('enable_' + opt.lower() + '=true')
+  if 'CROSS_PREFIX' in build_conf:
+    opts_str += [f'cross_prefix="{build_conf["CROSS_PREFIX"]}"']
   args_str = ' '.join(opts_str)
 
   cmd = [
@@ -139,10 +143,22 @@ def main(argv : list[str]) -> None:
       print(f"Invalid option for --enable: {opt}", file=sys.stderr)
       sys.exit(1)
 
+  # Read the system build config, if it exists.
+  build_conf = {}
+  try:
+    build_conf = build_util.read_build_config("build-config-system.conf")
+  except FileNotFoundError as e:
+    pass
+
+  if build_conf:
+    print("Read settings from build-config-system.conf:", file=sys.stderr)
+    for k, v in build_conf.items():
+      print(f" {k} = {v}", file=sys.stderr)
+
   if args.mode == "scons":
-    do_scons(args, opts)
+    do_scons(args, opts, build_conf)
   elif args.mode == "gn":
-    do_gn(args, opts)
+    do_gn(args, opts, build_conf)
   else:
     print(f"Invalid mode: {args.mode}", file=sys.stderr)
     sys.exit(1)
