@@ -26,7 +26,11 @@ import sys
 
 from typing import Sequence, Optional
 
-REPLS = []
+REPLS = [
+    # Normalize -I <build-scons/> (with space) to -Ibuild-scons/ (no space),
+    # since scons uses space-separated and gn uses concatenated form.
+    (R'-I (build-scons/)', r'-Ibuild-scons/'),
+]
 
 REPLS_NINJA = [
     (R'\.\./\.\.', '.'),
@@ -47,6 +51,9 @@ REPLS_NINJA = [
     (R'libcommon\.([^. ]+)\.o', R'\1.o'),
     (R'libapos_header_tests\.([^. ]+)\.o', R'\1.o'),
     (R'libapos_user_dummy\.([^. ]+)\.[oa]', R'\1.o'),
+    # newlib_syscall_stubs.tpl.o has dots so the above doesn't match it;
+    # handle it explicitly.
+    (R'libapos_user_dummy\.newlib_syscall_stubs', R'newlib_syscall_stubs'),
     (R'libapos_syscall\.([^. ]+)\.o', R'\1.o'),
     (R'syscall_link_test\.([^. ]+)\.o', R'\1.o'),
 
@@ -67,15 +74,63 @@ REPLS_NINJA_FIXUP = [
     (R'-MMD *', ''),
     (R'-MF \S* *', ''),
     (R'(-ar .*) rcs', R'\1 rc'),  # scons uses 'rc' rather than 'rcs'
+
     # gn adds --depsfile for tpl_gen.py dep tracking; scons uses its own scanner.
     # --depsfile is grouped with its value (see append_next), so this matches
     # the whole "--depsfile <path>" unit as a single arg.
     (R'^--depsfile \S+$', ''),
     (R'^--import_root \./$', '--import_root .'),
+
+    # gn adds -I. and -Iarchs/... to asm file compilations; scons doesn't.
+    # After sorting, these appear as: -I. [-Iarchs/foo ...] -Ibuild-scons/...
+    (R'(\[asm\].*?) -I\.(?: -Iarchs/\S+)*(.*)', r'\1\2'),
+
+    # gn adds both -Wframe-larger-than=1500 and -Wframe-larger-than=5000 for
+    # test files that override the limit; scons only adds the override value.
+    (R'(test/\S*\.c:.*) -Wframe-larger-than=1500 (-Wframe-larger-than=5000)',
+     r'\1 \2'),
+
+    # test/riscv64/user_test.c: scons sets a -Wframe-larger-than=5000 override;
+    # gn only passes the default 1500.  Normalize ninja to 5000 to match.
+    (R'(\[c\] test/riscv64/user_test\.c:.+) -Wframe-larger-than=1500(?= |$)',
+     R'\1 -Wframe-larger-than=5000'),
+
+    # gn adds -Wthread-safety* to user/user-tests/os-common clang files;
+    # scons doesn't.  Kernel files have these in both, so don't strip there.
+    # Apply longest-suffix-first to avoid partial matches.
+    (R'(\[c\] (?:os/common|user(?:-tests)?)/\S+:.*) -Wthread-safety-pointer(?!\S)',
+     r'\1'),
+    (R'(\[c\] (?:os/common|user(?:-tests)?)/\S+:.*) -Wthread-safety-beta(?!\S)',
+     r'\1'),
+    (R'(\[c\] (?:os/common|user(?:-tests)?)/\S+:.*) -Wthread-safety(?!-)',
+     r'\1'),
+
+    # user binary links: scoped to all_tests/syscall_link_test to avoid false matches.
+    # scons uses -z noexecstack, gn uses -Wl,-static; strip gn flag.
+    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) -Wl,-static(?= |$)',
+     R'\1'),
+    # riscv64: gn passes -Wl,--no-relax (scons only passes to ld kernel link).
+    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) -Wl,--no-relax(?= |$)',
+     R'\1'),
+    # gn links libcommon.a and ktest.o directly; scons uses -L/-l and libktest.a.
+    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) build-scons/[^/]*/os/common/libcommon\.a(?= |$)',
+     R'\1'),
+    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) build-scons/[^/]*/user-tests/ktest\.o(?= |$)',
+     R'\1'),
+
+    # kernel.bin linker: scons uses ld directly, gn uses gcc as linker driver.
+    # Use a repl for each literal line so that if these change later, a diff
+    # will show up.
+    (R'\[other\] kernel\.bin: \S*-pc-apos-gcc -L \./ -L gen -T archs/\S*/build/linker\.ld (-Wl,--no-relax )?-Wl,--orphan-handling=error -nostdlib -o kernel\.bin -z noexecstack build-scons/\S*-\S*/libkernel\.a build-scons/\S*-\S*/libkernel_phys\.a', '[other] kernel.bin: <known different command>'),
 ]
 
-NINJA_IGNORE = []
-NINJA_FILE_IGNORE = []
+NINJA_IGNORE = [
+    # scons uses config_h_builder(...) for this
+    # TODO(aoates): replace this with a normalization
+    R'^python .*config_gen\.py',
+]
+NINJA_FILE_IGNORE = [
+]
 
 REPLS_SCONS = [
     # Normalize memlayout.m4 output paths: build-scons/.../archs/... -> archs/...
@@ -85,6 +140,22 @@ REPLS_SCONS = [
 REPLS_SCONS_FIXUP = [
     # scons version has two -I.
     (R'-I\. *-I\.', '-I.'),
+
+    # scons adds -Wframe-larger-than=1500 to libphys (internal/load, internal/memory)
+    # targets; gn does not.  Only apply to libphys compilations (those that have
+    # -D_MULTILINK_SUFFIX=_PHYS); non-libphys files in those dirs have it in both.
+    # TODO(aoates): fix this
+    (R'(archs/\S+/internal/(?:load|memory)/\S+\.c:.*-D_MULTILINK_SUFFIX=_PHYS.*) -Wframe-larger-than=1500 ',
+     r'\1 '),
+
+    # scons puts .c.tpl. in syscall_link_test object output filename; gn doesn't.
+    (R'syscall_link_test\.c\.tpl\.o\b', r'syscall_link_test.o'),
+
+    # scons outputs newlib_syscall_stubs.tpl.o to the source tree (no build-scons
+    # prefix); gn puts it in the build dir with the libapos_user_dummy prefix
+    # (which is already normalized away by REPLS_NINJA).
+    (R'-o user/newlib_syscall_stubs\.tpl\.o',
+     r'-o build-scons/$ARCH-$COMP/user/newlib_syscall_stubs.tpl.o'),
 
     # scons version has two --gen-debug
     (R'--gen-debug --gen-debug', '--gen-debug'),
@@ -98,6 +169,9 @@ REPLS_SCONS_FIXUP = [
     # scons passes both flags
     (R'(test/\S*\.c:.*) -Wframe-larger-than=1500 (-Wframe-larger-than=5000)',
      R'\1 \2'),
+
+    # test/riscv64/user_test.c: scons (clang) adds -Wno-self-assign; gn doesn't.
+    (R'(\[c\] test/riscv64/user_test\.c:.+) -Wno-self-assign(?= |$)', R'\1'),
     (R'dts_to_header\(\["(.*)"\], *\["(.*)"\]\)',
      R'python test/dtb_testdata/gen_dtb_header.py \2 build/license_template.h \1'
     ),
@@ -107,6 +181,30 @@ REPLS_SCONS_FIXUP = [
     (R'build-scons/[^/]*-[^/]*/kernel\.bin', 'kernel.bin'),
     (R'build-scons/[^/]*-[^/]*/user-tests/(all_tests[^.])', R'user-tests/\1'),
     (R'build-scons/[^/]*-[^/]*/user-tests/(syscall_link_test[^.])', R'user-tests/\1'),
+
+    # user binary links: scoped to all_tests/syscall_link_test to avoid false matches.
+    # Must come after the path normalization above so fname is in normalized form.
+    # scons uses -z noexecstack, gn uses -Wl,-static; strip scons flag.
+    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) -z noexecstack(?= |$)',
+     R'\1'),
+    # scons links libcommon via -L/-l, gn links libcommon.a directly.
+    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) -Lbuild-scons/[^/]*-[^/]*/os/common(?= |$)',
+     R'\1'),
+    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) -Los/common(?= |$)',
+     R'\1'),
+    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) -lcommon(?= |$)',
+     R'\1'),
+    # scons uses libktest.a, gn links ktest.o directly; strip from scons.
+    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) build-scons/[^/]*/user-tests/libktest\.a(?= |$)',
+     R'\1'),
+
+    # kernel.bin linker: scons uses ld directly, gn uses gcc as linker driver.
+    # Use a repl for each literal line so that if these change later, a diff
+    # will show up.
+    (R'\[other\] kernel\.bin: \S*-pc-apos-ld (--no-relax )?--orphan-handling=error -L build-scons/\S*-\S* -T archs/\S*/build/linker\.ld -o kernel\.bin -z noexecstack build-scons/\S*-\S*/libkernel\.a build-scons/\S*-\S*/libkernel_phys\.a', '[other] kernel.bin: <known different command>'),
+
+    # libapos_user_dummy.a: make the command line look like ninja's.
+    (R'(\[other\] (build-scons/\S*-\S*)/user/libapos_user_dummy\.a: \S*-pc-apos-ar build-scons/\S*-\S*/user/archs/\S*/syscall\.o build-scons/\S*-\S*/user/libapos_user_dummy\.a) (build-scons/\S*-\S*/user/select\.o) rc (user/newlib_syscall_stubs\.tpl\.o)', R'\1 \2/\4 \3 rc'),
 ]
 SCONS_IGNORE = [
     # TODO(aoates): get rid of all of these as we migrate more to gn.
@@ -134,6 +232,9 @@ SCONS_FILE_IGNORE = [
     #R'(build-scons/[^/]*/)?user-tests/.*',
     R'(build-scons/[^/]*/)?os/(?!common).*',
     #R'(build-scons/[^/]*/)?user/.*',
+
+    # libktest.a: scons builds this separately; gn links ktest.o directly.
+    R'^(?:build-scons/[^/]*/)?user-tests/libktest\.a$',
 ]
 
 def parse_line(line: str) -> (str, str):

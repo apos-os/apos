@@ -24,6 +24,17 @@ DIFF=${DIFF:-vimdiff}
 do_ninja_build() {
   ARCH=$1
   comp=$2
+  rm -f syscall/syscall_dispatch.tpl.c
+  rm -f syscall/syscall_dmz.tpl.c
+  rm -f test/dtb_testdata/interrupt_test.dts.h
+  rm -f test/dtb_testdata/large_golden.dts.h
+  rm -f test/dtb_testdata/long_string.dts.h
+  rm -f test/dtb_testdata/parse_test.dts.h
+  rm -f test/dtb_testdata/small_golden.dts.h
+  rm -f user/include/apos/syscall_decls.h
+  rm -f user/include/apos/syscalls.h
+  rm -f user/newlib_syscall_stubs.tpl.c
+  rm -f user-tests/syscall_link_test.c
   rm -rf out/$ARCH-$comp \
     && ./configure --arch $ARCH --compiler=$comp --mode=gn \
     && ninja -C out/$ARCH-$comp -v | tee ninja_build_log.$ARCH.$comp.log
