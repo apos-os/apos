@@ -16,6 +16,8 @@
 set -e
 set -o pipefail
 
+DIFF=${DIFF:-vimdiff}
+
 # Does a build for all three architectures and dumps out the build commands,
 # then normalizes them and compares between scons and ninja.
 
@@ -42,7 +44,7 @@ do_compare() {
     --type=scons \
     > /tmp/scons_log
 
-  vimdiff /tmp/scons_log /tmp/ninja_log
+  $DIFF /tmp/scons_log /tmp/ninja_log
 }
 
 ARCHS=(i586 x86_64 riscv64)
