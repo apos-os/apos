@@ -50,18 +50,31 @@ REPLS_NINJA = [
     # Make lib paths match what scons uses.
     (R'(build-scons/([^/]*)-[^/]*/)archs/[^/]*/(libkernel_phys.a)', R'\1\3'),
     (R'(build-scons/([^/]*)-[^/]*/)main/(libkernel.a)', R'\1\3'),
+
+    # Normalize memlayout.m4 output paths: gen/archs/... -> archs/...
+    (R'gen/archs/riscv64/internal/memlayout\.m4\.(\S+)',
+     R'archs/riscv64/internal/memlayout.m4.\1'),
 ]
 
 REPLS_NINJA_FIXUP = [
     (R'-MMD *', ''),
     (R'-MF \S* *', ''),
     (R'(-ar .*) rcs', R'\1 rc'),  # scons uses 'rc' rather than 'rcs'
+    # gn adds --depsfile for tpl_gen.py dep tracking; scons uses its own scanner.
+    # --depsfile is grouped with its value (see append_next), so this matches
+    # the whole "--depsfile <path>" unit as a single arg.
+    (R'^--depsfile \S+$', ''),
+    (R'^--import_root \./$', '--import_root .'),
 ]
 
 NINJA_IGNORE = []
 NINJA_FILE_IGNORE = []
 
-REPLS_SCONS = []
+REPLS_SCONS = [
+    # Normalize memlayout.m4 output paths: build-scons/.../archs/... -> archs/...
+    (R'build-scons/[^/]*/archs/riscv64/internal/memlayout\.m4\.(\S+)',
+     R'archs/riscv64/internal/memlayout.m4.\1'),
+]
 REPLS_SCONS_FIXUP = [
     # scons version has two -I.
     (R'-I\. *-I\.', '-I.'),
@@ -186,7 +199,8 @@ def normalize(line: str, repls: Sequence[tuple[str, str]],
       args_out[-1] = args_out[-1] + ' ' + a
       continue
 
-    if a in {'-o', '-MF', '-I', '-T', '-L', '-z'}:
+    if a in {'-o', '-MF', '-I', '-T', '-L', '-z', '--depsfile', '--outfile',
+             '--import_root'}:
       append_next = True
     args_out.append(a)
 
