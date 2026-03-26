@@ -34,12 +34,7 @@ do_compare() {
     --fixup \
     --type=ninja \
     > /tmp/ninja_log
-  if [ "$comp" = "gcc" ]; then
-    comp2=CLANG=0
-  else
-    comp2=CLANG=1
-  fi
-  cat build_log.$arch.$comp2.log | ./experimental/gn/fix_scons_log.sh \
+  cat build_log.$arch.$comp.log | ./experimental/gn/fix_scons_log.sh \
     --fixup \
     --type=scons \
     > /tmp/scons_log
