@@ -46,6 +46,7 @@ REPLS_NINJA = [
     # target.
     (R'kernel\.([^. ]+)\.o', R'\1.o'),
     (R'libkernel_phys\.([^. ]+)\.o', R'\1.o'),
+    (R'kernel_phys_src\.([^. ]+)\.o', R'\1.o'),
     (R'x86-common\.([^. ]+)\.o', R'\1.o'),
     (R'all_tests\.([^. ]+)\.o', R'\1.o'),
     (R'libcommon\.([^. ]+)\.o', R'\1.o'),
@@ -137,13 +138,6 @@ REPLS_SCONS = [
 REPLS_SCONS_FIXUP = [
     # scons version has two -I.
     (R'-I\. *-I\.', '-I.'),
-
-    # scons adds -Wframe-larger-than=1500 to libphys (internal/load, internal/memory)
-    # targets; gn does not.  Only apply to libphys compilations (those that have
-    # -D_MULTILINK_SUFFIX=_PHYS); non-libphys files in those dirs have it in both.
-    # TODO(aoates): fix this
-    (R'(archs/\S+/internal/(?:load|memory)/\S+\.c:.*-D_MULTILINK_SUFFIX=_PHYS.*) -Wframe-larger-than=1500 ',
-     r'\1 '),
 
     # scons puts .c.tpl. in syscall_link_test object output filename; gn doesn't.
     (R'syscall_link_test\.c\.tpl\.o\b', r'syscall_link_test.o'),

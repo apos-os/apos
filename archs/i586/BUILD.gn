@@ -43,7 +43,10 @@ ksource_set("kernel") {
   deps = [ "//archs/x86-common" ]
 }
 
-static_library("kernel_phys") {
+# Use a ksource_set underneath the static library to get all kernel default
+# configs and settings.
+ksource_set("kernel_phys_src") {
+  visibility = [ ":*" ]
   sources = [
     "internal/load/gdt.c",
     "internal/load/idt.c",
@@ -51,9 +54,12 @@ static_library("kernel_phys") {
     "internal/load/mem_init.c",
     "internal/memory/gdt.c",
   ]
-  deps = [ "//common:kernel_headers" ]
   defines = [ "_MULTILINK_SUFFIX=_PHYS" ]
-  configs += [ "//build/config:kernel_config" ]
+}
+
+static_library("kernel_phys") {
+  deps = [ ":kernel_phys_src" ]
+  complete_static_lib = true
 }
 
 group("generated_headers") {
