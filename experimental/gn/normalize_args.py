@@ -125,9 +125,6 @@ REPLS_NINJA_FIXUP = [
 ]
 
 NINJA_IGNORE = [
-    # scons uses config_h_builder(...) for this
-    # TODO(aoates): replace this with a normalization
-    R'^python .*config_gen\.py',
 ]
 NINJA_FILE_IGNORE = [
 ]
@@ -213,7 +210,6 @@ SCONS_IGNORE = [
     R'^ar rc .*',
     R'.*\.tpl: \S*-pc-apos-ar ',  # Final ar.. line that gets mangled a bit
     R'cc.*passwd_test',
-    R'^config_h_builder(.*)',
     #R'^\S*-pc-apos-ar rc .*/os/common/libcommon.a',
     #R'^\S*-pc-apos-ar rc .*/user-tests/libktest.a',
     #R'^\S*-pc-apos-ar rc .*/user/libapos_syscall.a',
@@ -245,6 +241,17 @@ def parse_line(line: str) -> (str, str):
   m = re.match(R'python .*gen_dtb_header.py \S* \S* (.*)', line)
   if m:
     return ('c', m.group(1), line, [line])
+  # ninja: python .../config_gen.py <input.h.in> <gen/output.h> KEY=val ...
+  # Strip the gen/ prefix (build-time generated dir) to get the bare output path.
+  # The input path (e.g. ../../common/debug.h.in) is normalized by REPLS_NINJA.
+  m = re.match(R'python \S*config_gen\.py (\S+) (?:gen/)?(\S+)', line)
+  if m:
+    return ('h', m.group(2), 'config_gen', [m.group(1)])
+  # scons: config_h_builder(["build-scons/ARCH-COMP/output.h"], ["input.h.in"])
+  # Strip the build-scons/ARCH-COMP/ prefix to get the bare output path.
+  m = re.match(R'config_h_builder\(\["(?:build-scons/[^/]*/)?([^"]+)"\], *\["([^"]+)"\]\)', line)
+  if m:
+    return ('h', m.group(1), 'config_gen', [m.group(2)])
   # perl -p -e 's/((.*) ([.\/_a-zA-Z0-9-]*\.([cs]|tpl))\W)/\3: \1/g' | \
   m = re.match(R'^(\S+)(.*\W([.\/_a-zA-Z0-9-]*\.([cso]|tpl|so|m4|bin))\b.*)', line)
   if not m:
