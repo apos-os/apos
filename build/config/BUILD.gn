@@ -34,32 +34,6 @@ config("compiler_defaults") {
   include_dirs = [ "//" ]
 
   defines = [ "__APOS_BUILDING_IN_TREE__=1" ]
-
-  # Architecture specific flags
-  # TODO(aoates): move these into toolchains
-  if (target_cpu == "i586") {
-    cflags += [
-      "-mno-mmx",
-      "-mno-sse",
-    ]
-  } else if (target_cpu == "x86_64") {
-    cflags += [
-      "-m64",
-      "-mno-red-zone",
-      "-mno-mmx",
-      "-mno-sse",
-      "-mcmodel=large",
-    ]
-  } else if (target_cpu == "riscv64") {
-    cflags += [
-      "-mcmodel=medany",
-      "-march=rv64gc",
-
-      # TODO(aoates): specify -mabi explicitly
-    ]
-
-    ldflags += [ "-Wl,--no-relax" ]
-  }
 }
 
 config("compiler_gcc_defaults") {
@@ -76,11 +50,39 @@ config("compiler_clang_defaults") {
   ]
 }
 
-config("kernel_config") {
-  cflags = [
-    "-nostdlib",
-    "-ffreestanding",
+# Architecture specific flags
+# TODO(aoates): move these into toolchains
+target_cflags = []
+target_ldflags = []
+if (target_cpu == "i586") {
+  target_cflags += [
+    "-mno-mmx",
+    "-mno-sse",
   ]
+} else if (target_cpu == "x86_64") {
+  target_cflags += [
+    "-m64",
+    "-mno-red-zone",
+    "-mno-mmx",
+    "-mno-sse",
+    "-mcmodel=large",
+  ]
+} else if (target_cpu == "riscv64") {
+  target_cflags += [
+    "-mcmodel=medany",
+    "-march=rv64gc",
+
+    # TODO(aoates): specify -mabi explicitly
+  ]
+
+  target_ldflags += [ "-Wl,--no-relax" ]
+}
+
+config("kernel_config") {
+  cflags = target_cflags + [
+             "-nostdlib",
+             "-ffreestanding",
+           ]
   include_dirs = [
     root_gen_dir,
     "//archs/${target_cpu}",
@@ -102,15 +104,15 @@ config("kernel_config") {
     ]
   }
   defines = [ "__APOS_BUILDING_KERNEL__=1" ]
-  ldflags = [ "-nostdlib" ]
+  ldflags = target_ldflags + [ "-nostdlib" ]
 }
 
 config("user_config") {
-  cflags = []
+  cflags = target_cflags
   if (enable_term_color) {
     defines = [ "ENABLE_TERM_COLOR=1" ]
   }
-  ldflags = []
+  ldflags = target_ldflags
 
   # Explicitly request static linking to avoid dynamically linking against
   # libc.so if it exists.  Once dynamic linking is fully supported, this can be
