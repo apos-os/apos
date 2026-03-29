@@ -213,6 +213,8 @@ static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info,
 memory_info_t* mem_init(uint64_t magic, multiboot_info_t* multiboot_info_phys,
                         uint64_t stack) {
   kassert_phys(magic == 0x2BADB002);
+  kassert_phys((uint64_t)multiboot_info_phys + sizeof(multiboot_info_t)
+               < KERNEL_MAP_2MB_REGIONS * 2 * 1024 * 1024);
 
   memory_info_t* meminfo = create_initial_meminfo(multiboot_info_phys, stack);
   meminfo = setup_paging(meminfo);
