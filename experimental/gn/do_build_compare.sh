@@ -36,7 +36,7 @@ do_ninja_build() {
   rm -f user/include/apos/syscalls.h
   rm -f user/newlib_syscall_stubs.tpl.c
   rm -f user-tests/syscall_link_test.c
-  rm -rf out/$ARCH-$comp \
+  rm -rf out/$ARCH-$comp out/native \
     && ./configure --arch $ARCH --compiler=$comp --mode=gn \
     && ninja -C out -v | tee ninja_build_log.$ARCH.$comp.log
 }

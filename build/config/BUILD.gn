@@ -40,14 +40,7 @@ config("compiler_gcc_defaults") {
 }
 
 config("compiler_clang_defaults") {
-  cflags = [
-    "-target",
-    "${target_cpu}-pc-apos",
-    "-fdebug-macro",
-    "-Wthread-safety",
-    "-Wthread-safety-beta",
-    "-Wthread-safety-pointer",
-  ]
+  cflags = [ "-fdebug-macro" ]
 }
 
 # Architecture specific flags
@@ -76,6 +69,21 @@ if (target_cpu == "i586") {
   ]
 
   target_ldflags += [ "-Wl,--no-relax" ]
+}
+
+# These may not be defined in older versions of clang, so only use them when
+# compiling for the target architecture.  Also, we don't want to apply them when
+# compiling native targets, even if the target compiler is clang.
+if (compiler == "clang") {
+  target_cflags += [
+    # TODO(aoates): remove this --- it is not necessary now that we use a
+    # target-named clang invocation (e.g. riscv64-pc-apos-clang).
+    "-target",
+    "${target_cpu}-pc-apos",
+    "-Wthread-safety",
+    "-Wthread-safety-beta",
+    "-Wthread-safety-pointer",
+  ]
 }
 
 config("kernel_config") {

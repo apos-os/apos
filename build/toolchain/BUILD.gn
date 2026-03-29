@@ -77,3 +77,14 @@ toolchain("codegen") {
     is_codegen = true
   }
 }
+
+apos_toolchain("native") {
+  cc = "gcc"
+  ar = "ar"
+  ld = "gcc"  # Use gcc for linking.
+  asm = "as"
+  toolchain_cpu = host_cpu
+  toolchain_compiler = "gcc"
+  is_native = true
+  toolchain_cflags = [ "-DAPOS_NATIVE_TARGET=1" ]
+}

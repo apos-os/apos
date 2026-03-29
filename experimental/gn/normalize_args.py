@@ -73,6 +73,9 @@ REPLS_NINJA = [
     # Normalize memlayout.m4 output paths: gen/archs/... -> archs/...
     (R'\S+-\S+/gen/archs/riscv64/internal/memlayout\.m4\.(\S+)',
      R'archs/riscv64/internal/memlayout.m4.\1'),
+
+    # Normalize native/... paths.
+    (R'native/obj/', 'build-scons/$ARCH-$COMP/'),
 ]
 
 REPLS_NINJA_FIXUP = [
@@ -139,6 +142,9 @@ REPLS_SCONS = [
     # Normalize memlayout.m4 output paths: build-scons/.../archs/... -> archs/...
     (R'build-scons/[^/]*/archs/riscv64/internal/memlayout\.m4\.(\S+)',
      R'archs/riscv64/internal/memlayout.m4.\1'),
+
+    # Remove 'native-' prefix from paths.
+    ('/native-', '/'),
 ]
 REPLS_SCONS_FIXUP = [
     # scons version has two -I.
