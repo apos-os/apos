@@ -36,7 +36,7 @@ user_executable("all_tests") {
     "util.c",
     "wait_test.c",
   ]
-  deps = [ "//os/common" ]
+  deps = [ "//os/common:common-lib" ]
 }
 
 tpl_source("syscall_link_test_c") {

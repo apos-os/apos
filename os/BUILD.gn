@@ -12,29 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import("//build/templates.gni")
-
-static_library("common-lib") {
-  sources = [
-    "apos_klog.c",
-    "list.c",
-    "md5.c",
-    "passwd.c",
-  ]
-
-  if (is_target) {
-    deps = [ "//main:all_generated_headers" ]
-    configs += [ "//build/config:user_config" ]
-  }
-}
-
-if (is_native) {
-  executable("passwd_test") {
-    sources = [ "passwd_test.c" ]
-    deps = [ ":common-lib" ]
-  }
-}
-
-group("common") {
-  deps = [ ":passwd_test(//build/toolchain:native)" ]
+group("os") {
+  deps = [ "common" ]
 }

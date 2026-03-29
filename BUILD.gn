@@ -25,6 +25,9 @@ if (is_target) {
     if (enable_user_tests) {
       deps += [ "//user-tests" ]
     }
+    if (enable_user_os) {
+      deps += [ "//os" ]
+    }
   }
 }
 

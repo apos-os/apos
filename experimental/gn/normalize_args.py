@@ -49,7 +49,9 @@ REPLS_NINJA = [
     (R'kernel_phys_src\.([^. ]+)\.o', R'\1.o'),
     (R'x86-common\.([^. ]+)\.o', R'\1.o'),
     (R'all_tests\.([^. ]+)\.o', R'\1.o'),
+    (R'libcommon-lib\.([^. ]+)\.o', R'\1.o'),
     (R'libcommon\.([^. ]+)\.o', R'\1.o'),
+    (R'passwd_test\.([^. ]+)\.o', R'\1.o'),
     (R'libapos_header_tests\.([^. ]+)\.o', R'\1.o'),
     (R'libapos_user_dummy\.([^. ]+)\.[oa]', R'\1.o'),
     # newlib_syscall_stubs.tpl.o has dots so the above doesn't match it;
@@ -76,12 +78,16 @@ REPLS_NINJA = [
 
     # Normalize native/... paths.
     (R'native/obj/', 'build-scons/$ARCH-$COMP/'),
+
+    # Native toolchain: gn names the library libcommon-lib.a, scons uses libcommon.a.
+    (R'libcommon-lib\.a\b', 'libcommon.a'),
 ]
 
 REPLS_NINJA_FIXUP = [
     (R'-MMD *', ''),
     (R'-MF \S* *', ''),
     (R'(-ar .*) rcs', R'\1 rc'),  # scons uses 'rc' rather than 'rcs'
+    (R'(: ar\b.*) rcs\b', R'\1 rc'),  # same for native ar
 
     # gn adds --depsfile for tpl_gen.py dep tracking; scons uses its own scanner.
     # --depsfile is grouped with its value (see append_next), so this matches
@@ -121,6 +127,7 @@ REPLS_NINJA_FIXUP = [
     (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) -Wl,--no-relax(?= |$)',
      R'\1'),
     # gn links libcommon.a and ktest.o directly; scons uses -L/-l and libktest.a.
+    # (libcommon-lib.a was renamed to libcommon.a by REPLS_NINJA)
     (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) build-scons/[^/]*/os/common/libcommon\.a(?= |$)',
      R'\1'),
     (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) build-scons/[^/]*/user-tests/ktest\.o(?= |$)',
@@ -130,6 +137,14 @@ REPLS_NINJA_FIXUP = [
     # Use a repl for each literal line so that if these change later, a diff
     # will show up.
     (R'\[other\] kernel\.bin: \S*-pc-apos-gcc -L \./ -L \S+-\S+/gen -T archs/\S*/build/linker\.ld (-Wl,--no-relax )?-Wl,--orphan-handling=error -nostdlib -o \S+-\S+/kernel\.bin -z noexecstack build-scons/\S*-\S*/libkernel\.a build-scons/\S*-\S*/libkernel_phys\.a', '[other] kernel.bin: <known different command>'),
+
+    # Native binary fname: the native/obj/ → build-scons/$ARCH-$COMP/ rule fires
+    # on the fname (applied to the full line in step 4), turning
+    # 'native/obj/os/common/passwd_test' into 'build-scons/arch/os/common/passwd_test'.
+    # scons fname is 'os/common/passwd_test' (arch-comp prefix stripped by fname
+    # normalization rule above).  Strip the build-scons/arch-comp/ prefix here.
+    # Use [^.:\s]+ to only match extension-less binary fnames, not .a archives.
+    (R'(\[\w+\]) build-scons/[^/]*-[^/]*/os/common/([^.:\s]+:)', R'\1 os/common/\2'),
 ]
 
 NINJA_IGNORE = [
@@ -147,6 +162,14 @@ REPLS_SCONS = [
     ('/native-', '/'),
 ]
 REPLS_SCONS_FIXUP = [
+    # Native toolchain: scons uses 'cc' (system compiler alias), gn uses 'gcc' explicitly.
+    (R'(: )cc\b', R'\1gcc'),
+
+    # Native toolchain: scons builds libcommon as 'native-common.a' (normalized to
+    # 'common.a' by REPLS_SCONS '/native-' → '/'); gn names it 'libcommon-lib.a'
+    # (normalized to 'libcommon.a' by REPLS_NINJA).  Normalize scons to match.
+    (R'(os/common/)common\.a\b', R'\1libcommon.a'),
+
     # scons version has two -I.
     (R'-I\. *-I\.', '-I.'),
 
@@ -227,9 +250,7 @@ SCONS_IGNORE = [
     # TODO(aoates): get rid of all of these as we migrate more to gn.
     R'^Install file: .*',
     R'^scons: .*',
-    R'^ar rc .*',
     R'.*\.tpl: \S*-pc-apos-ar ',  # Final ar.. line that gets mangled a bit
-    R'cc.*passwd_test',
     #R'^\S*-pc-apos-ar rc .*/os/common/libcommon.a',
     #R'^\S*-pc-apos-ar rc .*/user-tests/libktest.a',
     #R'^\S*-pc-apos-ar rc .*/user/libapos_syscall.a',
@@ -237,11 +258,10 @@ SCONS_IGNORE = [
     #R'^\S*-pc-apos-ld -o \S*kernel.bin',
     R'^g++.*',
     R'^xxd.* os/core/loader/testdata.*',
-    R'.*os/common/.*-DAPOS_NATIVE_TARGET.*',
 
     # Thinks we do not intend to port to ninja:
-    R'^ranlib .*native-common.a',
     R'^\S*-pc-apos-ranlib .*',  # gn doesn't do ranlib
+    R'^ranlib .*',  # gn doesn't do ranlib (native ranlib)
     R'.*kernel.bin.stripped.*',
 ]
 SCONS_FILE_IGNORE = [
