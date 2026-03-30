@@ -13,34 +13,54 @@
 # limitations under the License.
 
 template("tpl_source") {
-  action(target_name) {
-    script = "//util/tpl_gen.py"
-    sources = invoker.sources
+  # We define the target differently depending on if we're in the codegen
+  # toolchain or not.  Because the action may write to a destination inside the
+  # source tree, if it is instantiated in multiple toolchains the build will
+  # fail (as they conflict).
+  #
+  # Therefore, for non-codegen-toolchains, we define the target simply as a
+  # group that depends on the same target but in the codegen toolchain.  In the
+  # codegen toolchain, we do the actual work.
+  #
+  # This ensures that each tpl_source destination is only instantiated a single
+  # time, regardless of how many different toolchains it is referenced from.
+  #
+  # Note that this precludes toolchain/arch-specific logic in templates.
+  if (is_codegen) {
+    action(target_name) {
+      script = "//util/tpl_gen.py"
+      sources = invoker.sources
 
-    source_file = sources[0]
+      source_file = sources[0]
 
-    # TODO(aoates): clean this up and remove default of .c
-    if (defined(invoker.output_file)) {
-      output_file =
-          "$target_gen_dir/" + rebase_path(invoker.output_file, target_gen_dir)
-    } else {
-      output_file =
-          "$target_gen_dir/" + get_path_info(source_file, "name") + ".c"
+      # TODO(aoates): clean this up and remove default of .c
+      if (defined(invoker.output_file)) {
+        output_file = "$target_gen_dir/" +
+                      rebase_path(invoker.output_file, target_gen_dir)
+      } else {
+        output_file =
+            "$target_gen_dir/" + get_path_info(source_file, "name") + ".c"
+      }
+
+      outputs = [ output_file ]
+      depfile = "$target_gen_dir/$target_name.d"
+
+      args = [
+        rebase_path(source_file, root_build_dir),
+        "--clang-format",
+        "--outfile",
+        rebase_path(output_file, root_build_dir),
+        "--depsfile",
+        rebase_path(depfile, root_build_dir),
+        "--import_root",
+        rebase_path("//", root_build_dir),
+      ]
     }
-
-    outputs = [ output_file ]
-    depfile = "$target_gen_dir/$target_name.d"
-
-    args = [
-      rebase_path(source_file, root_build_dir),
-      "--clang-format",
-      "--outfile",
-      rebase_path(output_file, root_build_dir),
-      "--depsfile",
-      rebase_path(depfile, root_build_dir),
-      "--import_root",
-      rebase_path("//", root_build_dir),
-    ]
+  } else {
+    not_needed(invoker, "*")
+    group(target_name) {
+      deps = [ ":${target_name}(//build/toolchain:codegen)" ]
+    }
   }
 }
 

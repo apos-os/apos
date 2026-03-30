@@ -25,8 +25,11 @@ tpl_source("newlib_syscall_stubs") {
 if (enable_user_dummy_lib) {
   user_static_library("apos_user_dummy") {
     sources = [ "select.c" ]
-    sources += get_target_outputs(":newlib_syscall_stubs")
-    deps = [ ":apos_syscall" ]
+    sources += [ "//user/newlib_syscall_stubs.tpl.c" ]
+    deps = [
+      ":apos_syscall",
+      ":newlib_syscall_stubs",
+    ]
     complete_static_lib = true
   }
 }

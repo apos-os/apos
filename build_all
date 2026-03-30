@@ -29,7 +29,7 @@ link = os.readlink('out')
 if link == 'build-scons':
   cmd = ['scons', '--implicit-cache', '--max-drift=1']
 elif link == 'out-gn':
-  cmd = ['ninja', '-C', 'out/latest']
+  cmd = ['ninja', '-C', 'out']
 else:
   print(f'Unknown build system, "out" is linked to "{link}"', file=sys.stderr)
   sys.exit(1)
@@ -37,5 +37,5 @@ else:
 run_cmd(cmd, stdout=sys.stdout)
 
 if link == 'out-gn':
-  with open('out/latest/compile_commands.json', 'w') as f:
+  with open('out/compile_commands.json', 'w') as f:
     run_cmd(cmd + ['-t', 'compdb'], stdout=f)

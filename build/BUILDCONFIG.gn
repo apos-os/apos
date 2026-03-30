@@ -15,21 +15,25 @@
 # Build configuration
 
 declare_args() {
-  # Toolchain provider (gcc, clang)
-  compiler = "gcc"
+  # Toolchain provider (gcc, clang).  Set in target toolchain.
+  compiler = "compiler-not-set"
 
   # Debug build
   is_debug = true
+
+  # Toolchain identity variables.  Exactly one of these is true in any given
+  # toolchain context.  Set via toolchain_args in each toolchain definition.
+  # The defaults here reflect the stub (default) toolchain.
+  is_native = false  # native (host) toolchain
+  is_codegen = false  # codegen toolchain (source-tree-writing actions only)
+  is_target = false  # one of the target arch/compiler cross toolchains
 }
 
-# Set default toolchain
-if (compiler == "gcc") {
-  set_default_toolchain("//build/toolchain:$target_cpu-gcc")
-} else if (compiler == "clang") {
-  set_default_toolchain("//build/toolchain:$target_cpu-clang")
-} else {
-  assert(false, "Unknown compiler: $compiler")
-}
+# The stub toolchain is the default so all six arch toolchains are non-default
+# and each gets its own root_out_dir subdirectory (root_build_dir/$toolchain/).
+# Nothing is actually built in the stub toolchain; real builds are driven by
+# the explicit arch toolchain references in group("all") in the root BUILD.gn.
+set_default_toolchain("//build/toolchain:stub")
 
 # Global configs
 default_configs = [

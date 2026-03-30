@@ -62,6 +62,7 @@ executable("kernel.bin") {
     ":kernel",
   ]
 
+  output_dir = root_out_dir
   configs += [ "//build/config:kernel_config" ]
   ldflags = [
     "-T",
@@ -75,5 +76,4 @@ executable("kernel.bin") {
     "-Wl,--orphan-handling=error",
   ]
 
-  output_dir = "${root_build_dir}"
 }

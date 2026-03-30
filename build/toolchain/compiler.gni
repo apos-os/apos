@@ -58,5 +58,13 @@ template("apos_toolchain") {
       command = "cp -af {{source}} {{output}}"
       description = "COPY {{source}} {{output}}"
     }
+
+    toolchain_args = {
+      target_cpu = invoker.toolchain_cpu
+      compiler = invoker.toolchain_compiler
+      is_native = invoker.is_native
+      is_codegen = false
+      is_target = !invoker.is_native
+    }
   }
 }

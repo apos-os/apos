@@ -14,16 +14,66 @@
 
 import("//build/toolchain/compiler.gni")
 
-apos_toolchain("$target_cpu-gcc") {
-  cc = "${target_cpu}-pc-apos-gcc"
-  ar = "${target_cpu}-pc-apos-ar"
-  ld = "${target_cpu}-pc-apos-gcc"
-  asm = "${target_cpu}-pc-apos-as"
+# Instantiates both gcc and clang apos_toolchain targets for a given arch.
+# The target_name is used as the arch (e.g. "i586", "x86_64", "riscv64").
+template("apos_arch_toolchains") {
+  not_needed(invoker, "*")
+  _arch = target_name
+  _prefix = "${_arch}-pc-apos-"
+
+  apos_toolchain("${_arch}-gcc") {
+    cc = "${_prefix}gcc"
+    ar = "${_prefix}ar"
+    ld = "${_prefix}gcc"
+    asm = "${_prefix}as"
+    toolchain_cpu = _arch
+    toolchain_compiler = "gcc"
+    is_native = false
+  }
+
+  apos_toolchain("${_arch}-clang") {
+    cc = "${_prefix}clang"
+    ar = "${_prefix}ar"
+    ld = "${_prefix}gcc"  # Use gcc for linking.
+    asm = "${_prefix}as"
+    toolchain_cpu = _arch
+    toolchain_compiler = "clang"
+    is_native = false
+  }
 }
 
-apos_toolchain("$target_cpu-clang") {
-  cc = "${target_cpu}-pc-apos-clang"
-  ar = "${target_cpu}-pc-apos-ar"
-  ld = "${target_cpu}-pc-apos-gcc"  # Use gcc for linking.
-  asm = "${target_cpu}-pc-apos-as"
+apos_arch_toolchains("i586") {
+}
+apos_arch_toolchains("x86_64") {
+}
+apos_arch_toolchains("riscv64") {
+}
+
+# Stub default toolchain: exists solely so the target arch toolchains are
+# non-default and each gets its own root_out_dir subdirectory.  Nothing is ever
+# built in this toolchain; it has no compilation tools.
+toolchain("stub") {
+  # No need to set toolchain_args, as this is only ever used as the default
+  # toolchain --- so the default arg values are used regardless.
+}
+
+# Codegen toolchain: runs arch-independent source-tree-writing actions exactly
+# once. Only stamp/copy tools are available; do not add compilation deps here.
+toolchain("codegen") {
+  tool("stamp") {
+    command = "touch {{output}}"
+    description = "STAMP {{output}}"
+  }
+
+  tool("copy") {
+    command = "cp -af {{source}} {{output}}"
+    description = "COPY {{source}} {{output}}"
+  }
+
+  toolchain_args = {
+    # Set a fake target_cpu to try and catch anything that accidentally depends
+    # on this value being set in the codegen toolchain.
+    target_cpu = "not-a-cpu"
+    is_codegen = true
+  }
 }

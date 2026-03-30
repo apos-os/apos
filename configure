@@ -77,6 +77,8 @@ def do_scons(args: argparse.Namespace, opts: typing.Sequence[str],
 
 def do_gn(args: argparse.Namespace, opts: typing.Sequence[str],
           build_conf: dict[str, str]) -> None:
+  # target_cpu and compiler set the default toolchain; all toolchains are
+  # always built via the top-level "all" group.
   opts_str = [
       f'target_cpu="{args.arch}"',
       f'compiler="{args.compiler}"',
@@ -89,9 +91,7 @@ def do_gn(args: argparse.Namespace, opts: typing.Sequence[str],
     opts_str += [f'cross_prefix="{build_conf["CROSS_PREFIX"]}"']
   args_str = ' '.join(opts_str)
 
-  cmd = [
-      'gn', 'gen', f'out-gn/{args.arch}-{args.compiler}', f'--args={args_str}'
-  ]
+  cmd = ['gn', 'gen', 'out-gn', f'--args={args_str}']
 
   print('Running: ' + subprocess.list2cmdline(cmd))
   proc = subprocess.run(cmd)

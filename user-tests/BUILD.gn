@@ -46,7 +46,7 @@ tpl_source("syscall_link_test_c") {
 
 user_executable("syscall_link_test") {
   deps = [ ":syscall_link_test_c" ]
-  sources = get_target_outputs(":syscall_link_test_c")
+  sources = [ "//user-tests/syscall_link_test.c" ]
 }
 
 group("user-tests") {

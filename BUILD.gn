@@ -14,12 +14,33 @@
 
 import("//build/features.gni")
 
-group("kernel") {
-  deps = [
-    "//main:kernel.bin",
-    "//user",
-  ]
-  if (enable_user_tests) {
-    deps += [ "//user-tests" ]
+# Only instantiate in real toolchains; the stub default toolchain defines no
+# targets so that GN does not evaluate kernel BUILD.gn files in stub context.
+if (is_target) {
+  group("apos") {
+    deps = [
+      "//main:kernel.bin",
+      "//user",
+    ]
+    if (enable_user_tests) {
+      deps += [ "//user-tests" ]
+    }
   }
+}
+
+# Builds all architectures and compilers in a single ninja invocation.
+group("all") {
+  deps = [
+    ":apos(//build/toolchain:i586-clang)",
+    ":apos(//build/toolchain:i586-gcc)",
+    ":apos(//build/toolchain:riscv64-clang)",
+    ":apos(//build/toolchain:riscv64-gcc)",
+    ":apos(//build/toolchain:x86_64-clang)",
+    ":apos(//build/toolchain:x86_64-gcc)",
+  ]
+}
+
+# By default, only build the "current" arch/compiler.
+group("default") {
+  deps = [ ":apos(//build/toolchain:${target_cpu}-${compiler})" ]
 }

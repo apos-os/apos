@@ -101,7 +101,7 @@ ksource_set("test") {
   }
 
   deps = [
-    "dtb_testdata",
+    "//test/dtb_testdata:dtb_testdata(//build/toolchain:codegen)",
     "ext2",
   ]
 
