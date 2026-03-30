@@ -12,12 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Template for defining a toolchain
+# Template for defining a toolchain.  The invoker can set toolchain_cflags or
+# toolchain_ldflags to inject additional flags.
 template("apos_toolchain") {
+  _tc_cflags = ""
+  _tc_ldflags = ""
+  if (defined(invoker.toolchain_cflags)) {
+    _tc_cflags = string_join(" ", invoker.toolchain_cflags)
+  }
+  if (defined(invoker.toolchain_ldflags)) {
+    _tc_ldflags = string_join(" ", invoker.toolchain_ldflags)
+  }
+
   toolchain(target_name) {
     tool("cc") {
       depfile = "{{output}}.d"
-      command = "${invoker.cc} -MMD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} -c {{source}} -o {{output}}"
+      command = "${invoker.cc} ${_tc_cflags} -MMD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} -c {{source}} -o {{output}}"
       depsformat = "gcc"
       description = "CC {{output}}"
       outputs =
@@ -43,7 +53,7 @@ template("apos_toolchain") {
     }
 
     tool("link") {
-      command = "${invoker.ld} {{ldflags}} -o {{output}} {{inputs}} {{libs}}"
+      command = "${invoker.ld} ${_tc_ldflags} {{ldflags}} -o {{output}} {{inputs}} {{libs}}"
       description = "LINK {{output}}"
       outputs = [ "{{output_dir}}/{{target_output_name}}{{output_extension}}" ]
       default_output_dir = "{{target_out_dir}}"
