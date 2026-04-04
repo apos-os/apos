@@ -33,7 +33,7 @@ REPLS = [
 ]
 
 REPLS_NINJA = [
-    (R'\.\./\.\.', '.'),
+    (R'\.\.', '.'),
     (R'^\./(\S)', R'\1'),  # handles './abc'
     (R'(\s)\./(\S)', R'\1\2'),  # handles ' ./abc'
     (R'(-.)\./(\S)', R'\1\2'),  # handles '-I./abc'
@@ -58,16 +58,20 @@ REPLS_NINJA = [
     (R'libapos_syscall\.([^. ]+)\.o', R'\1.o'),
     (R'syscall_link_test\.([^. ]+)\.o', R'\1.o'),
 
-    (R'obj/', 'build-scons/$ARCH-$COMP/'),
+    (R'\S+-\S+/obj/', 'build-scons/$ARCH-$COMP/'),
     #(R'(apos-\S*) (.*) (-o \S*)', R'\1 \3 \2'),
-    (R'-Igen', '-Ibuild-scons/$ARCH-$COMP'),
+    (R'-I\S+-\S+/gen', '-Ibuild-scons/$ARCH-$COMP'),
 
     # Make lib paths match what scons uses.
     (R'(build-scons/([^/]*)-[^/]*/)archs/[^/]*/(libkernel_phys.a)', R'\1\3'),
-    (R'(build-scons/([^/]*)-[^/]*/)main/(libkernel.a)', R'\1\3'),
+    (R'(build-scons/([^/]*)-[^/]*/)main/(libkernel\.a)', R'\1\3'),
+
+    # Normalize user-test binary output paths in -o args (scoped to avoid
+    # incorrectly stripping object file paths like build-scons/i586-gcc/...).
+    (R'(-o )\S+-\S+/(user-tests/(?:all_tests|syscall_link_test))\b', R'\1\2'),
 
     # Normalize memlayout.m4 output paths: gen/archs/... -> archs/...
-    (R'gen/archs/riscv64/internal/memlayout\.m4\.(\S+)',
+    (R'\S+-\S+/gen/archs/riscv64/internal/memlayout\.m4\.(\S+)',
      R'archs/riscv64/internal/memlayout.m4.\1'),
 ]
 
@@ -122,10 +126,11 @@ REPLS_NINJA_FIXUP = [
     # kernel.bin linker: scons uses ld directly, gn uses gcc as linker driver.
     # Use a repl for each literal line so that if these change later, a diff
     # will show up.
-    (R'\[other\] kernel\.bin: \S*-pc-apos-gcc -L \./ -L gen -T archs/\S*/build/linker\.ld (-Wl,--no-relax )?-Wl,--orphan-handling=error -nostdlib -o kernel\.bin -z noexecstack build-scons/\S*-\S*/libkernel\.a build-scons/\S*-\S*/libkernel_phys\.a', '[other] kernel.bin: <known different command>'),
+    (R'\[other\] kernel\.bin: \S*-pc-apos-gcc -L \./ -L \S+-\S+/gen -T archs/\S*/build/linker\.ld (-Wl,--no-relax )?-Wl,--orphan-handling=error -nostdlib -o \S+-\S+/kernel\.bin -z noexecstack build-scons/\S*-\S*/libkernel\.a build-scons/\S*-\S*/libkernel_phys\.a', '[other] kernel.bin: <known different command>'),
 ]
 
 NINJA_IGNORE = [
+    R'.*gn.*--regeneration gen.*',
 ]
 NINJA_FILE_IGNORE = [
 ]
@@ -172,6 +177,21 @@ REPLS_SCONS_FIXUP = [
     (R'build-scons/[^/]*-[^/]*/kernel\.bin', 'kernel.bin'),
     (R'build-scons/[^/]*-[^/]*/user-tests/(all_tests[^.])', R'user-tests/\1'),
     (R'build-scons/[^/]*-[^/]*/user-tests/(syscall_link_test[^.])', R'user-tests/\1'),
+
+    # Normalize the -o output path for all_tests.o and syscall_link_test.o
+    # compilation outputs.  The existing path normalization rule uses [^.] to
+    # exclude target-prefixed linker inputs like all_tests.basic_signal_test.o,
+    # but that also excludes the compilation output all_tests.o.  Scope with -o
+    # so we only match compiler -o args, not the linker inputs.
+    (R'(-o )build-scons/[^/]*-[^/]*/user-tests/((?:all_tests|syscall_link_test)\.o)\b',
+     R'\1user-tests/\2'),
+
+    # Normalize fnames that have a spurious arch-comp/ prefix.  scons paths like
+    # build-scons/arch-comp/user-tests/all_tests cause parse_line to extract
+    # arch-comp/user-tests/all_tests as the fname; strip the arch-comp/ prefix
+    # so the scoped rules below can fire.
+    (R'(\[\w+\]) [^/\s]+-[^/\s]+/((?:user-tests|os|user|kernel\.bin)\S*?:)',
+     R'\1 \2'),
 
     # user binary links: scoped to all_tests/syscall_link_test to avoid false matches.
     # Must come after the path normalization above so fname is in normalized form.
@@ -220,7 +240,7 @@ SCONS_IGNORE = [
 ]
 SCONS_FILE_IGNORE = [
     #R'(build-scons/[^/]*/)?user-tests/.*',
-    R'(build-scons/[^/]*/)?os/(?!common).*',
+    R'(?:[^/]+-[^/]+/)?(?:build-scons/[^/]*/)?os/(?!common).*',
     #R'(build-scons/[^/]*/)?user/.*',
 
     # libktest.a: scons builds this separately; gn links ktest.o directly.
@@ -238,7 +258,7 @@ def parse_line(line: str) -> (str, str):
   # ninja: python .../config_gen.py <input.h.in> <gen/output.h> KEY=val ...
   # Strip the gen/ prefix (build-time generated dir) to get the bare output path.
   # The input path (e.g. ../../common/debug.h.in) is normalized by REPLS_NINJA.
-  m = re.match(R'python \S*config_gen\.py (\S+) (?:gen/)?(\S+)', line)
+  m = re.match(R'python \S*config_gen\.py (\S+) (?:\S+-\S+/gen/)?(\S+)', line)
   if m:
     return ('h', m.group(2), 'config_gen', [m.group(1)])
   # scons: config_h_builder(["build-scons/ARCH-COMP/output.h"], ["input.h.in"])
@@ -279,9 +299,9 @@ def parse_line(line: str) -> (str, str):
 
   # If we didn't find a source file, look for the output file to use.
   if not fname:
-    m = re.search(R'\s-o\s*(\S+)', line)
+    m = re.search(R'\s-o\s*([_a-zA-Z0-9]+-[_a-zA-Z0-9]+/)?(\S+)', line)
     if m:
-      fname = m.group(1)
+      fname = m.group(2)
   if not fname:
     fname = '<?>'
 

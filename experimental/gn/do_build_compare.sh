@@ -38,7 +38,7 @@ do_ninja_build() {
   rm -f user-tests/syscall_link_test.c
   rm -rf out/$ARCH-$comp \
     && ./configure --arch $ARCH --compiler=$comp --mode=gn \
-    && ninja -C out/$ARCH-$comp -v | tee ninja_build_log.$ARCH.$comp.log
+    && ninja -C out -v | tee ninja_build_log.$ARCH.$comp.log
 }
 
 do_compare() {
