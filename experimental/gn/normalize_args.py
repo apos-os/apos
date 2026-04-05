@@ -272,7 +272,7 @@ SCONS_IGNORE = [
 ]
 SCONS_FILE_IGNORE = [
     #R'(build-scons/[^/]*/)?user-tests/.*',
-    R'(?:[^/]+-[^/]+/)?(?:build-scons/[^/]*/)?os/(?!common|core/aposh).*',
+    R'(?:[^/]+-[^/]+/)?(?:build-scons/[^/]*/)?os/core/loader.*',
     #R'(build-scons/[^/]*/)?user/.*',
 
     # libktest.a: scons builds this separately; gn links ktest.o directly.

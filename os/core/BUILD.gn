@@ -14,11 +14,30 @@
 
 import("//build/templates.gni")
 
-user_executable("aposh") {
-  sources = [ "aposh.c" ]
-  deps = [ "//os/common:common-lib" ]
+_bins = [
+  "aposh",
+  "getty",
+  "init",
+  "login",
+]
+foreach(bin, _bins) {
+  user_executable(bin) {
+    sources = [ "${bin}.c" ]
+    deps = [ "//os/common:common-lib" ]
+  }
+}
+
+user_executable("ktest") {
+  sources = [ "ktest.c" ]
 }
 
 group("core") {
-  deps = [ ":aposh" ]
+  deps = [
+    ":aposh",
+    ":getty",
+    ":init",
+    ":ktest",
+    ":login",
+  ]
 }
+# TODO(aoates): add loader support
