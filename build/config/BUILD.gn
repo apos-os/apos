@@ -15,7 +15,8 @@
 import("//build/features.gni")
 
 config("compiler_defaults") {
-  cflags = [
+  # TODO(aoates): turn most of these on for C++ as well.
+  cflags_c = [
     "-std=gnu11",
     "-Wall",
     "-Wextra",
@@ -27,7 +28,7 @@ config("compiler_defaults") {
     "-g3",
     "-gdwarf-2",
   ]
-  ldflags = []
+  cflags_cc = [ "-std=c++20" ]
 
   asmflags = [ "--gen-debug" ]
 

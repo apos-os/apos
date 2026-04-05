@@ -80,8 +80,9 @@ toolchain("codegen") {
 
 apos_toolchain("native") {
   cc = "gcc"
+  cxx = "g++"
   ar = "ar"
-  ld = "gcc"  # Use gcc for linking.
+  ld = "g++"
   asm = "as"
   toolchain_cpu = host_cpu
   toolchain_compiler = "gcc"

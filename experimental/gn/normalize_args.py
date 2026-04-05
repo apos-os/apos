@@ -251,6 +251,9 @@ REPLS_SCONS_FIXUP = [
 
     # libapos_user_dummy.a: make the command line look like ninja's.
     (R'(\[other\] (build-scons/\S*-\S*)/user/libapos_user_dummy\.a: \S*-pc-apos-ar build-scons/\S*-\S*/user/archs/\S*/syscall\.o build-scons/\S*-\S*/user/libapos_user_dummy\.a) (build-scons/\S*-\S*/user/select\.o) rc (user/newlib_syscall_stubs\.tpl\.o)', R'\1 \2/\4 \3 rc'),
+
+    # We use g++ rather than gcc for native binary linking now.
+    (R'(\[other\] \S*/passwd_test: )gcc', R'\1g++'),
 ]
 SCONS_IGNORE = [
     # TODO(aoates): get rid of all of these as we migrate more to gn.

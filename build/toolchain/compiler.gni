@@ -34,6 +34,18 @@ template("apos_toolchain") {
           [ "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.o" ]
     }
 
+    if (defined(invoker.cxx)) {
+      tool("cxx") {
+        depfile = "{{output}}.d"
+        command = "${invoker.cxx} ${_tc_cflags} -MMD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} -c {{source}} -o {{output}}"
+        depsformat = "gcc"
+        description = "CXX {{output}}"
+        outputs = [
+          "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.o",
+        ]
+      }
+    }
+
     tool("asm") {
       depfile = "{{output}}.d"
       command = "${invoker.asm} {{include_dirs}} {{asmflags}} {{source}} -o {{output}}"

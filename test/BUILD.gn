@@ -17,11 +17,15 @@ import("//build/features.gni")
 import("//build/templates.gni")
 
 config("test_config") {
+  # We have to set these in cflags_c so that they get put after the -Wall from
+  # the default config; otherwise, -Wall from cflags_c will override this.
+  # TODO(aoates): move these to cflags with -Wall is moved to cflags.
+
   # TODO(aoates): get frame sizes small enough to reduce this.
-  cflags = [ "-Wframe-larger-than=5000" ]
+  cflags_c = [ "-Wframe-larger-than=5000" ]
 
   if (compiler == "clang") {
-    cflags += [ "-Wno-self-assign" ]
+    cflags_c += [ "-Wno-self-assign" ]
   }
 }
 
