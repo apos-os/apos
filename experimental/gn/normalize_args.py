@@ -51,7 +51,7 @@ REPLS_NINJA = [
     (R'all_tests\.([^. ]+)\.o', R'\1.o'),
     (R'libcommon-lib\.([^. ]+)\.o', R'\1.o'),
     (R'libcommon\.([^. ]+)\.o', R'\1.o'),
-    (R'core/([^/ ]*).\1\.o', R'core/\1.o'),
+    (R'core/([^/ ]*)\.\1\.o', R'core/\1.o'),
     (R'passwd_test\.([^. ]+)\.o', R'\1.o'),
     (R'libapos_header_tests\.([^. ]+)\.o', R'\1.o'),
     (R'libapos_user_dummy\.([^. ]+)\.[oa]', R'\1.o'),
@@ -60,6 +60,10 @@ REPLS_NINJA = [
     (R'libapos_user_dummy\.newlib_syscall_stubs', R'newlib_syscall_stubs'),
     (R'libapos_syscall\.([^. ]+)\.o', R'\1.o'),
     (R'syscall_link_test\.([^. ]+)\.o', R'\1.o'),
+    (R'ld\.so\.1\.([^. ]+)\.o', R'\1.o'),
+    (R'gnu_hash_test\.([^. ]+)\.o', R'\1.o'),
+    (R'(lib[0-9a-z]+)\.\1\.o', R'\1.os'),  # NOTE: also does .o -> .os to match
+    (R'(lib_bin)\.\1\.o', R'\1.o'),
 
     (R'\S+-\S+/obj/', 'build-scons/$ARCH-$COMP/'),
     #(R'(apos-\S*) (.*) (-o \S*)', R'\1 \3 \2'),
@@ -89,10 +93,16 @@ REPLS_NINJA = [
 
     # Native binaries (extension-less): normalize path without native- prefix.
     # Add more binary names here as needed.
-    (R'native/obj/((?:[^/\s:]+/)*)passwd_test\b', R'build-scons/$ARCH-$COMP/\1passwd_test'),
+    # See rule below with 'fname' in it too
+    (R'native/obj/((?:[^/\s:]+/)*)(passwd_test|gnu_hash_test)\b',
+     R'build-scons/$ARCH-$COMP/\1\2'),
 
     # Native toolchain: gn names the library libcommon-lib.a, scons uses libcommon.a.
     (R'libcommon-lib\.a\b', 'libcommon.a'),
+
+    # Normalize -L<arch>-<comp>/ paths (out-dir relative in ninja) to
+    # -Lbuild-scons/<arch>-<comp>/ to match scons's source-relative paths.
+    (R'-L(?!build-scons/)([a-z0-9]+-(?:gcc|clang))/', R'-Lbuild-scons/\1/'),
 ]
 
 REPLS_NINJA_FIXUP = [
@@ -155,11 +165,18 @@ REPLS_NINJA_FIXUP = [
     # embedded in the full line, it becomes 'build-scons/arch/os/common/passwd_test'.
     # scons fname is 'os/common/passwd_test'.  Strip the build-scons/arch-comp/ prefix.
     # Use [^.:\s]+ to only match extension-less binary fnames, not .a archives.
-    (R'(\[\w+\]) build-scons/[^/]*-[^/]*/os/common/([^.:\s]+:)', R'\1 os/common/\2'),
+    (R'(\[\w+\]) build-scons/[^/]*-[^/]*/os/((common|core)/[^.:\s]+:)', R'\1 os/\2'),
+
+    # ld.so.1: ninja uses explicit .a for libapos_syscall; scons uses -L/-l (stripped on scons side).
+    (R'(\[other\] os/core/loader/ld\.so\.1:.+) build-scons/[^/]+-[^/]+/user/libapos_syscall\.a\b', R'\1'),
 ]
 
 NINJA_IGNORE = [
     R'.*gn.*--regeneration gen.*',
+
+    # The script itself outputs the appropriate fake build lines, so ignore
+    # running the script.
+    R'^python ../os/core/loader/testdata/build_gnu_hash_lib.py .*',
 ]
 NINJA_FILE_IGNORE = [
 ]
@@ -169,6 +186,7 @@ REPLS_SCONS = [
     (R'build-scons/[^/]*/archs/riscv64/internal/memlayout\.m4\.(\S+)',
      R'archs/riscv64/internal/memlayout.m4.\1'),
 
+    (R'syscalls\.c\.tpl\.o', 'syscalls.o'),
 ]
 REPLS_SCONS_FIXUP = [
     # Native toolchain: scons uses 'cc' (system compiler alias), gn uses 'gcc' explicitly.
@@ -256,6 +274,17 @@ REPLS_SCONS_FIXUP = [
 
     # We use g++ rather than gcc for native binary linking now.
     (R'(\[other\] \S*/passwd_test: )gcc', R'\1g++'),
+
+    # In scons we use xxd to write directly to the file; fix that up.
+    (R'^(\[other\] <\?>: xxd -i -n kGnuHashLibRaw os/core/loader/testdata/gnu_hash_lib\.so) os/core/loader/testdata/gnu_hash_lib\.so\.cdata', R'\1'),
+
+    # testdata libs: scons adds a source-dir -L that ninja doesn't; strip it.
+    (R'(\[other\] os/core/loader/testdata/\S+:.+) -Los/core/loader/testdata\b', R'\1'),
+
+    # ld.so.1: scons uses -L/-l for libapos_syscall; ninja uses explicit .a (stripped on ninja side).
+    (R'(\[other\] os/core/loader/ld\.so\.1:.+) -Lbuild-scons/[^/]+-[^/]+/user\b', R'\1'),
+    (R'(\[other\] os/core/loader/ld\.so\.1:.+) -Luser\b', R'\1'),
+    (R'(\[other\] os/core/loader/ld\.so\.1:.+) -lapos_syscall\b', R'\1'),
 ]
 SCONS_IGNORE = [
     # TODO(aoates): get rid of all of these as we migrate more to gn.
@@ -267,8 +296,6 @@ SCONS_IGNORE = [
     #R'^\S*-pc-apos-ar rc .*/user/libapos_syscall.a',
     #R'^\S*-pc-apos-gcc .*/os/.*',
     #R'^\S*-pc-apos-ld -o \S*kernel.bin',
-    R'^g++.*',
-    R'^xxd.* os/core/loader/testdata.*',
 
     # Thinks we do not intend to port to ninja:
     R'^\S*-pc-apos-ranlib .*',  # gn doesn't do ranlib
@@ -276,10 +303,6 @@ SCONS_IGNORE = [
     R'.*kernel.bin.stripped.*',
 ]
 SCONS_FILE_IGNORE = [
-    #R'(build-scons/[^/]*/)?user-tests/.*',
-    R'(?:[^/]+-[^/]+/)?(?:build-scons/[^/]*/)?os/core/loader.*',
-    #R'(build-scons/[^/]*/)?user/.*',
-
     # libktest.a: scons builds this separately; gn links ktest.o directly.
     R'^(?:build-scons/[^/]*/)?user-tests/libktest\.a$',
 ]
@@ -332,6 +355,9 @@ def parse_line(line: str) -> (str, str):
       fname = arg
     elif arg.endswith('.c'):
       ftype = 'c'
+      fname = arg
+    elif arg.endswith('.cc'):
+      ftype = 'c++'
       fname = arg
 
   # If we didn't find a source file, look for the output file to use.

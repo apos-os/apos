@@ -64,6 +64,18 @@ template("apos_toolchain") {
       output_prefix = "lib"
     }
 
+    tool("solink") {
+      command = "${invoker.ld} ${_tc_ldflags} {{ldflags}} -shared -o {{output}} {{inputs}} {{libs}}"
+      description = "SOLINK {{output}}"
+      outputs = [ "{{output_dir}}/{{target_output_name}}{{output_extension}}" ]
+      default_output_dir = "{{target_out_dir}}"
+      default_output_extension = ".so"
+      output_prefix = "lib"
+      link_output = "{{output_dir}}/{{target_output_name}}{{output_extension}}"
+      depend_output =
+          "{{output_dir}}/{{target_output_name}}{{output_extension}}"
+    }
+
     tool("link") {
       command = "${invoker.ld} ${_tc_ldflags} {{ldflags}} -o {{output}} {{inputs}} {{libs}}"
       description = "LINK {{output}}"

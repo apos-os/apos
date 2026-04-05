@@ -45,7 +45,15 @@ do_ninja_build() {
   rm -f user/include/apos/syscall_decls.h
   rm -f user/include/apos/syscalls.h
   rm -f user/newlib_syscall_stubs.tpl.c
-  rm -f user-tests/syscall_link_test.c
+  if [ "${arch}" != "x86_64" ]; then
+    rm -f user-tests/syscall_link_test.c
+  fi
+  if [ "${arch}" = "riscv64" ]; then
+    rm -f os/core/loader/syscalls.h
+    rm -f os/core/loader/syscalls.c
+    rm -f os/core/loader/testdata/gnu_hash_lib.so
+    rm -f os/core/loader/testdata/gnu_hash_lib.so.cdata
+  fi
   rm -rf out/$arch-$comp out/native \
     && ./configure --arch $arch --compiler=$comp --mode=gn \
     && ninja -C out -v | tee ninja_build_log.$arch.$comp.log
@@ -66,7 +74,7 @@ do_compare() {
   $DIFF /tmp/scons_log /tmp/ninja_log
 }
 
-ARCHS=(i586 x86_64 riscv64)
+ARCHS=(riscv64 i586 x86_64)
 COMPS=(gcc clang)
 for arch in ${ARCHS[@]}; do
   for comp in ${COMPS[@]}; do

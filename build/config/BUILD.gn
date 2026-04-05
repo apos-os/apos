@@ -28,7 +28,10 @@ config("compiler_defaults") {
     "-g3",
     "-gdwarf-2",
   ]
-  cflags_cc = [ "-std=c++20" ]
+  cflags_cc = [
+    "-std=c++20",
+    "-g",
+  ]
 
   asmflags = [ "--gen-debug" ]
 

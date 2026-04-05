@@ -52,6 +52,9 @@ declare_args() {
   # Other options
   kshell_initial_command = ""
   cross_prefix = ""
+
+  # Path to gtest root (for native test targets).  Set via build-config-system.conf.
+  gtest_root = ""
 }
 
 # Calculated

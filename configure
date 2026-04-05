@@ -89,6 +89,8 @@ def do_gn(args: argparse.Namespace, opts: typing.Sequence[str],
     opts_str.append('enable_' + opt.lower() + '=true')
   if 'CROSS_PREFIX' in build_conf:
     opts_str += [f'cross_prefix="{build_conf["CROSS_PREFIX"]}"']
+  if 'GTEST_ROOT' in build_conf:
+    opts_str += [f'gtest_root="{build_conf["GTEST_ROOT"]}"']
   args_str = ' '.join(opts_str)
 
   cmd = ['gn', 'gen', 'out-gn', f'--args={args_str}']

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//build/features.gni")
 import("//build/templates.gni")
 
 _bins = [
@@ -39,5 +40,7 @@ group("core") {
     ":ktest",
     ":login",
   ]
+  if (enable_user_dynamic_loader) {
+    deps += [ "loader" ]
+  }
 }
-# TODO(aoates): add loader support
