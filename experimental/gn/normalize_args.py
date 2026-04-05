@@ -345,7 +345,7 @@ def parse_line(line: str) -> (str, str):
 arch = None
 comp = None
 def normalize(line: str, repls: Sequence[tuple[str, str]],
-              file_ignores: Sequence[re.Pattern]):
+              file_ignores: Sequence[re.Pattern], debug: bool = False):
   ftype, fname, cmd, args = parse_line(line)
   if not ftype:
     return line.strip()
@@ -353,6 +353,9 @@ def normalize(line: str, repls: Sequence[tuple[str, str]],
     if p.match(fname):
       print(f'Ignored: {fname}', file=sys.stderr)
       return None
+
+  if debug:
+    print(f'DEBUG input: {line}', file=sys.stderr)
 
   args_out = []
   append_next = False
@@ -368,25 +371,35 @@ def normalize(line: str, repls: Sequence[tuple[str, str]],
     args_out.append(a)
 
   # Apply the substitutions to each argument _before_ sorting.
-  def do_repls(s : str) -> str:
+  def do_repls(s: str, label: str = '') -> str:
     for pat, rep in repls:
-      s = re.sub(pat, rep, s)
+      new_s = re.sub(pat, rep, s)
+      if debug and new_s != s:
+        pat_str = pat.pattern if hasattr(pat, 'pattern') else pat
+        print(f'  [{label}] {pat_str!r} -> {rep!r}', file=sys.stderr)
+        print(f'    before: {s}', file=sys.stderr)
+        print(f'    after:  {new_s}', file=sys.stderr)
+      s = new_s
     return s
 
-  args_out = [do_repls(arg) for arg in args_out]
+  args_out = [do_repls(arg, f'arg:{arg}') for arg in args_out]
   args_out = [a for a in args_out if a]
   args_out.sort()
 
   args_out = ' '.join(args_out)
   line = f'[{ftype}] {fname}: {cmd} {args_out}'
+  if debug:
+    print(f'  [pre-fullline] {line}', file=sys.stderr)
   # Apply substitutions to the whole thing again at the end (for multi-arg
   # substitutions).
-  line = do_repls(line)
+  line = do_repls(line, 'fullline')
 
   if arch:
     line = line.replace('$ARCH', arch)
   if comp:
     line = line.replace('$COMP', comp)
+  if debug:
+    print(f'DEBUG output: {line}', file=sys.stderr)
   return line
 
 def main(argv: Optional[Sequence[str]] = None):
@@ -403,6 +416,10 @@ def main(argv: Optional[Sequence[str]] = None):
   parser.add_argument('--ignores',
                       action='store_false',
                       help='Control if ignores are applied')
+  parser.add_argument(
+      '--debug',
+      action='store_true',
+      help='Show how each line is rewritten by each pattern, printed to stderr.')
   args = parser.parse_args()
 
   repls = REPLS
@@ -450,7 +467,7 @@ def main(argv: Optional[Sequence[str]] = None):
           ignore=True
           break
     if not ignore:
-      out = normalize(line, repls_c, file_ignores)
+      out = normalize(line, repls_c, file_ignores, debug=args.debug)
       if out:
         print(out)
 
