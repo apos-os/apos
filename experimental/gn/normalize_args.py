@@ -51,6 +51,7 @@ REPLS_NINJA = [
     (R'all_tests\.([^. ]+)\.o', R'\1.o'),
     (R'libcommon-lib\.([^. ]+)\.o', R'\1.o'),
     (R'libcommon\.([^. ]+)\.o', R'\1.o'),
+    (R'core/([^/ ]*).\1\.o', R'core/\1.o'),
     (R'passwd_test\.([^. ]+)\.o', R'\1.o'),
     (R'libapos_header_tests\.([^. ]+)\.o', R'\1.o'),
     (R'libapos_user_dummy\.([^. ]+)\.[oa]', R'\1.o'),
@@ -68,9 +69,9 @@ REPLS_NINJA = [
     (R'(build-scons/([^/]*)-[^/]*/)archs/[^/]*/(libkernel_phys.a)', R'\1\3'),
     (R'(build-scons/([^/]*)-[^/]*/)main/(libkernel\.a)', R'\1\3'),
 
-    # Normalize user-test binary output paths in -o args (scoped to avoid
+    # Normalize user-test/os binary output paths in -o args (scoped to avoid
     # incorrectly stripping object file paths like build-scons/i586-gcc/...).
-    (R'(-o )\S+-\S+/(user-tests/(?:all_tests|syscall_link_test))\b', R'\1\2'),
+    (R'(-o )\S+-\S+/(user-tests/(?:all_tests|syscall_link_test)|os/core/\S+)\b', R'\1\2'),
 
     # Normalize memlayout.m4 output paths: gen/archs/... -> archs/...
     (R'\S+-\S+/gen/archs/riscv64/internal/memlayout\.m4\.(\S+)',
@@ -109,26 +110,27 @@ REPLS_NINJA_FIXUP = [
     (R'(\[c\] test/riscv64/user_test\.c:.+) -Wframe-larger-than=1500(?= |$)',
      R'\1 -Wframe-larger-than=5000'),
 
-    # gn adds -Wthread-safety* to user/user-tests/os-common clang files;
+    # gn adds -Wthread-safety* to user/user-tests/os-common/os-core clang files;
     # scons doesn't.  Kernel files have these in both, so don't strip there.
     # Apply longest-suffix-first to avoid partial matches.
-    (R'(\[c\] (?:os/common|user(?:-tests)?)/\S+:.*) -Wthread-safety-pointer(?!\S)',
+    (R'(\[c\] (?:os/(?:common|core)|user(?:-tests)?)/\S+:.*) -Wthread-safety-pointer(?!\S)',
      r'\1'),
-    (R'(\[c\] (?:os/common|user(?:-tests)?)/\S+:.*) -Wthread-safety-beta(?!\S)',
+    (R'(\[c\] (?:os/(?:common|core)|user(?:-tests)?)/\S+:.*) -Wthread-safety-beta(?!\S)',
      r'\1'),
-    (R'(\[c\] (?:os/common|user(?:-tests)?)/\S+:.*) -Wthread-safety(?!-)',
+    (R'(\[c\] (?:os/(?:common|core)|user(?:-tests)?)/\S+:.*) -Wthread-safety(?!-)',
      r'\1'),
 
-    # user binary links: scoped to all_tests/syscall_link_test to avoid false matches.
+    # user/os binary links: scoped to all_tests/syscall_link_test/os/core targets
+    # to avoid false matches.
     # scons uses -z noexecstack, gn uses -Wl,-static; strip gn flag.
-    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) -Wl,-static(?= |$)',
+    (R'(\[other\] (?:user-tests/(?:all_tests|syscall_link_test)|os/core/\S+):.+) -Wl,-static(?= |$)',
      R'\1'),
     # riscv64: gn passes -Wl,--no-relax (scons only passes to ld kernel link).
-    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) -Wl,--no-relax(?= |$)',
+    (R'(\[other\] (?:user-tests/(?:all_tests|syscall_link_test)|os/core/\S+):.+) -Wl,--no-relax(?= |$)',
      R'\1'),
     # gn links libcommon.a and ktest.o directly; scons uses -L/-l and libktest.a.
     # (libcommon-lib.a was renamed to libcommon.a by REPLS_NINJA)
-    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) build-scons/[^/]*/os/common/libcommon\.a(?= |$)',
+    (R'(\[other\] (?:user-tests/(?:all_tests|syscall_link_test)|os/core/\S+):.+) build-scons/[^/]*/os/common/libcommon\.a(?= |$)',
      R'\1'),
     (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) build-scons/[^/]*/user-tests/ktest\.o(?= |$)',
      R'\1'),
@@ -206,6 +208,9 @@ REPLS_SCONS_FIXUP = [
     (R'build-scons/[^/]*-[^/]*/kernel\.bin', 'kernel.bin'),
     (R'build-scons/[^/]*-[^/]*/user-tests/(all_tests[^.])', R'user-tests/\1'),
     (R'build-scons/[^/]*-[^/]*/user-tests/(syscall_link_test[^.])', R'user-tests/\1'),
+    # Normalize the -o output path for os/core binaries and compilation outputs.
+    # Scoped to -o so linker inputs (without -o) are unaffected.
+    (R'(-o )build-scons/[^/]*-[^/]*/(os/core/\S+)', R'\1\2'),
 
     # Normalize the -o output path for all_tests.o and syscall_link_test.o
     # compilation outputs.  The existing path normalization rule uses [^.] to
@@ -222,17 +227,18 @@ REPLS_SCONS_FIXUP = [
     (R'(\[\w+\]) [^/\s]+-[^/\s]+/((?:user-tests|os|user|kernel\.bin)\S*?:)',
      R'\1 \2'),
 
-    # user binary links: scoped to all_tests/syscall_link_test to avoid false matches.
+    # user/os binary links: scoped to all_tests/syscall_link_test/os/core targets
+    # to avoid false matches.
     # Must come after the path normalization above so fname is in normalized form.
     # scons uses -z noexecstack, gn uses -Wl,-static; strip scons flag.
-    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) -z noexecstack(?= |$)',
+    (R'(\[other\] (?:user-tests/(?:all_tests|syscall_link_test)|os/core/\S+):.+) -z noexecstack(?= |$)',
      R'\1'),
     # scons links libcommon via -L/-l, gn links libcommon.a directly.
-    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) -Lbuild-scons/[^/]*-[^/]*/os/common(?= |$)',
+    (R'(\[other\] (?:user-tests/(?:all_tests|syscall_link_test)|os/core/\S+):.+) -Lbuild-scons/[^/]*-[^/]*/os/common(?= |$)',
      R'\1'),
-    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) -Los/common(?= |$)',
+    (R'(\[other\] (?:user-tests/(?:all_tests|syscall_link_test)|os/core/\S+):.+) -Los/common(?= |$)',
      R'\1'),
-    (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) -lcommon(?= |$)',
+    (R'(\[other\] (?:user-tests/(?:all_tests|syscall_link_test)|os/core/\S+):.+) -lcommon(?= |$)',
      R'\1'),
     # scons uses libktest.a, gn links ktest.o directly; strip from scons.
     (R'(\[other\] user-tests/(?:all_tests|syscall_link_test):.+) build-scons/[^/]*/user-tests/libktest\.a(?= |$)',
@@ -266,7 +272,7 @@ SCONS_IGNORE = [
 ]
 SCONS_FILE_IGNORE = [
     #R'(build-scons/[^/]*/)?user-tests/.*',
-    R'(?:[^/]+-[^/]+/)?(?:build-scons/[^/]*/)?os/(?!common).*',
+    R'(?:[^/]+-[^/]+/)?(?:build-scons/[^/]*/)?os/(?!common|core/aposh).*',
     #R'(build-scons/[^/]*/)?user/.*',
 
     # libktest.a: scons builds this separately; gn links ktest.o directly.

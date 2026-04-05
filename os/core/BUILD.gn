@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-group("os") {
-  deps = [
-    "common",
-    "core",
-  ]
+import("//build/templates.gni")
+
+user_executable("aposh") {
+  sources = [ "aposh.c" ]
+  deps = [ "//os/common:common-lib" ]
+}
+
+group("core") {
+  deps = [ ":aposh" ]
 }
