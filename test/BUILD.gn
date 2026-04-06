@@ -101,8 +101,8 @@ ksource_set("test") {
   }
 
   deps = [
-    "//test/dtb_testdata:dtb_testdata(//build/toolchain:codegen)",
     "ext2",
+    "//test/dtb_testdata:dtb_testdata(//build/toolchain:codegen)",
   ]
 
   if (target_cpu == "i586") {

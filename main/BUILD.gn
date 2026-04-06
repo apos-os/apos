@@ -75,5 +75,4 @@ executable("kernel.bin") {
     "noexecstack",
     "-Wl,--orphan-handling=error",
   ]
-
 }
