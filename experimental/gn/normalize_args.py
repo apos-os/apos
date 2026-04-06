@@ -77,8 +77,19 @@ REPLS_NINJA = [
     (R'\S+-\S+/gen/archs/riscv64/internal/memlayout\.m4\.(\S+)',
      R'archs/riscv64/internal/memlayout.m4.\1'),
 
-    # Normalize native/... paths.
-    (R'native/obj/', 'build-scons/$ARCH-$COMP/'),
+    # Normalize native/... object file paths, adding native- prefix to the
+    # filename to distinguish from cross-compiled objects of the same source.
+    # Use [^/\s:]+ to avoid greedily matching across whitespace/colons in the
+    # full-line pass.
+    (R'native/obj/((?:[^/\s:]+/)*)([^/\s:]+)\.o\b', R'build-scons/$ARCH-$COMP/\1native-\2.o'),
+
+    # native/obj/os/common/libcommon-lib.a → native-common.a to match scons.
+    # Must come before the generic libcommon-lib.a rule below.
+    (R'native/obj/((?:[^/\s:]+/)*)libcommon-lib\.a\b', R'build-scons/$ARCH-$COMP/\1native-common.a'),
+
+    # Native binaries (extension-less): normalize path without native- prefix.
+    # Add more binary names here as needed.
+    (R'native/obj/((?:[^/\s:]+/)*)passwd_test\b', R'build-scons/$ARCH-$COMP/\1passwd_test'),
 
     # Native toolchain: gn names the library libcommon-lib.a, scons uses libcommon.a.
     (R'libcommon-lib\.a\b', 'libcommon.a'),
@@ -140,11 +151,9 @@ REPLS_NINJA_FIXUP = [
     # will show up.
     (R'\[other\] kernel\.bin: \S*-pc-apos-gcc -L \./ -L \S+-\S+/gen -T archs/\S*/build/linker\.ld (-Wl,--no-relax )?-Wl,--orphan-handling=error -nostdlib -o \S+-\S+/kernel\.bin -z noexecstack build-scons/\S*-\S*/libkernel\.a build-scons/\S*-\S*/libkernel_phys\.a', '[other] kernel.bin: <known different command>'),
 
-    # Native binary fname: the native/obj/ → build-scons/$ARCH-$COMP/ rule fires
-    # on the fname (applied to the full line in step 4), turning
-    # 'native/obj/os/common/passwd_test' into 'build-scons/arch/os/common/passwd_test'.
-    # scons fname is 'os/common/passwd_test' (arch-comp prefix stripped by fname
-    # normalization rule above).  Strip the build-scons/arch-comp/ prefix here.
+    # Native binary fname: after the passwd_test-specific rule fires on the fname
+    # embedded in the full line, it becomes 'build-scons/arch/os/common/passwd_test'.
+    # scons fname is 'os/common/passwd_test'.  Strip the build-scons/arch-comp/ prefix.
     # Use [^.:\s]+ to only match extension-less binary fnames, not .a archives.
     (R'(\[\w+\]) build-scons/[^/]*-[^/]*/os/common/([^.:\s]+:)', R'\1 os/common/\2'),
 ]
@@ -160,17 +169,10 @@ REPLS_SCONS = [
     (R'build-scons/[^/]*/archs/riscv64/internal/memlayout\.m4\.(\S+)',
      R'archs/riscv64/internal/memlayout.m4.\1'),
 
-    # Remove 'native-' prefix from paths.
-    ('/native-', '/'),
 ]
 REPLS_SCONS_FIXUP = [
     # Native toolchain: scons uses 'cc' (system compiler alias), gn uses 'gcc' explicitly.
     (R'(: )cc\b', R'\1gcc'),
-
-    # Native toolchain: scons builds libcommon as 'native-common.a' (normalized to
-    # 'common.a' by REPLS_SCONS '/native-' → '/'); gn names it 'libcommon-lib.a'
-    # (normalized to 'libcommon.a' by REPLS_NINJA).  Normalize scons to match.
-    (R'(os/common/)common\.a\b', R'\1libcommon.a'),
 
     # scons version has two -I.
     (R'-I\. *-I\.', '-I.'),
