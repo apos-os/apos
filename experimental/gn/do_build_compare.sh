@@ -17,14 +17,24 @@ set -e
 set -o pipefail
 
 DIFF=${DIFF:-vimdiff}
-BUILD=${BUILD:-1}
 
 # Does a build for all three architectures and dumps out the build commands,
 # then normalizes them and compares between scons and ninja.
 
 do_ninja_build() {
-  ARCH=$1
-  comp=$2
+  local arch=$1
+  local comp=$2
+
+  # Configure and do a quick check to see if anything needs to be rebuilt.
+  # If nothing has changed, the existing log is still valid.
+  ./configure --arch $arch --compiler=$comp --mode=gn
+  if ninja -n -C out 2>&1 | grep -q "ninja: no work to do"; then
+    echo "Nothing changed for $arch/$comp, keeping existing log." >&2
+    return 0
+  fi
+
+  # Something was (or would be) rebuilt; do a full clean rebuild for a
+  # canonical log.
   rm -f syscall/syscall_dispatch.tpl.c
   rm -f syscall/syscall_dmz.tpl.c
   rm -f test/dtb_testdata/interrupt_test.dts.h
@@ -36,9 +46,9 @@ do_ninja_build() {
   rm -f user/include/apos/syscalls.h
   rm -f user/newlib_syscall_stubs.tpl.c
   rm -f user-tests/syscall_link_test.c
-  rm -rf out/$ARCH-$comp out/native \
-    && ./configure --arch $ARCH --compiler=$comp --mode=gn \
-    && ninja -C out -v | tee ninja_build_log.$ARCH.$comp.log
+  rm -rf out/$arch-$comp out/native \
+    && ./configure --arch $arch --compiler=$comp --mode=gn \
+    && ninja -C out -v | tee ninja_build_log.$arch.$comp.log
 }
 
 do_compare() {
@@ -60,9 +70,7 @@ ARCHS=(i586 x86_64 riscv64)
 COMPS=(gcc clang)
 for arch in ${ARCHS[@]}; do
   for comp in ${COMPS[@]}; do
-    if [ ${BUILD} -ne 0 ]; then
-      do_ninja_build $arch $comp
-    fi
+    do_ninja_build $arch $comp
     do_compare $arch $comp
   done
 done
