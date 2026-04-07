@@ -71,7 +71,11 @@ do_compare() {
     --type=scons \
     > /tmp/scons_log
 
-  $DIFF /tmp/scons_log /tmp/ninja_log
+  if ! diff /tmp/scons_log /tmp/ninja_log; then
+    $DIFF /tmp/scons_log /tmp/ninja_log
+  else
+    echo No diff for $arch-$comp
+  fi
 }
 
 ARCHS=(riscv64 i586 x86_64)
