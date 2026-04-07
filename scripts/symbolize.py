@@ -72,7 +72,7 @@ def batch_symbolize(tool_prefix, addresses):
 
   if uncached_addresses:
     # Call addr2line with all uncached addresses at once
-    cmd = ["%saddr2line" % tool_prefix, "-f", "-s", "-e", "build-scons/kernel.bin"] + uncached_addresses
+    cmd = ["%saddr2line" % tool_prefix, "-f", "-s", "-e", "out/latest/kernel.bin"] + uncached_addresses
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
     output = p.communicate()[0].strip()
 
