@@ -18,9 +18,13 @@
 supports_usb = true
 supports_user_dynamic_loader = false
 supports_userspace = true
+supports_tsan = false
 if (target_cpu == "riscv64") {
   supports_usb = false
   supports_user_dynamic_loader = true
+  if (compiler == "clang") {
+    supports_tsan = true
+  }
 } else if (target_cpu == "x86_64") {
   # For x86-64, use i586 (32-bit) userspace.
   supports_userspace = false
@@ -57,6 +61,14 @@ declare_args() {
   gtest_root = ""
 }
 
-# Calculated
+# Force TSAN off if we're in a toolchain that doesn't support it.  This means
+# that if the user selects enable_tsan_full (for example), TSAN will only in
+# fact be enabled in the toolchains that support it.
+#
+# This is arguably confusing.
+if (!supports_tsan) {
+  enable_tsan_full = false
+  enable_tsan_lib = false
+  enable_tsan_core = false
+}
 enable_tsan = enable_tsan_full || enable_tsan_lib || enable_tsan_core
-assert(!enable_tsan)

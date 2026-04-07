@@ -144,3 +144,20 @@ config("user_config") {
 config("cflags_wframe_larger_than_default") {
   cflags = [ "-Wframe-larger-than=1500" ]
 }
+
+# Applied to all kernel ksource_set targets (except the TSAN library itself)
+# when any TSAN variant is enabled; raises the frame-size limit to accommodate
+# the extra metadata kept on the stack by TSAN-instrumented code.
+config("tsan_kernel_wframe_config") {
+  cflags = [ "-Wframe-larger-than=2500" ]
+}
+
+# Applied to all kernel ksource_set targets (except the TSAN library itself)
+# when TSAN_CORE or TSAN_FULL is enabled; instruments all kernel code.
+config("tsan_instrument_config") {
+  cflags = [
+    "-fsanitize=thread",
+    "-O1",
+    "-fno-omit-frame-pointer",
+  ]
+}

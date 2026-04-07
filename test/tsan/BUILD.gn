@@ -12,26 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//build/features.gni")
 import("//build/templates.gni")
 
-ksource_set("tsan") {
+assert(compiler == "clang", "test/tsan is clang-only")
+
+# tsan_test.c: compiled with the normal kernel+TSAN flags (only enabled with
+# TSAN_CORE or TSAN_FULL).
+ksource_set("tsan_tests") {
+  sources = [ "tsan_test.c" ]
+}
+
+# The instrumented files _always_ have TSAN enabled.
+ksource_set("tsan_instrumented") {
   sources = [
-    "tsan.c",
-    "tsan_access.c",
-    "tsan_atomic_hooks.c",
-    "tsan_event.c",
-    "tsan_hooks.c",
-    "tsan_sync.c",
-    "tsan_thread.c",
-    "vector_clock.c",
+    "instrumented.c",
+    "instrumented_raw_spinlock.c",
   ]
+  cflags = [ "-fsanitize=thread" ]
+}
 
-  # The TSAN runtime must NOT be compiled with -fsanitize=thread.
-  no_tsan_instrument = true
-
-  # TODO(tsan): increase this to -O2 or -O3
-  cflags = [
-    "-O1",
-    "-fno-omit-frame-pointer",
+group("tsan") {
+  deps = [
+    ":tsan_instrumented",
+    ":tsan_tests",
   ]
 }

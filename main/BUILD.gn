@@ -49,7 +49,10 @@ static_library("kernel") {
 
   configs += [ "//build/config:kernel_config" ]
 
-  # TODO(aoates): support sanitizers
+  if (enable_tsan) {
+    deps += [ "//sanitizers" ]
+  }
+
   complete_static_lib = true
 }
 

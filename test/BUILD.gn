@@ -22,7 +22,11 @@ config("test_config") {
   # TODO(aoates): move these to cflags with -Wall is moved to cflags.
 
   # TODO(aoates): get frame sizes small enough to reduce this.
-  cflags_c = [ "-Wframe-larger-than=5000" ]
+  if (enable_tsan) {
+    cflags_c = [ "-Wframe-larger-than=10000" ]
+  } else {
+    cflags_c = [ "-Wframe-larger-than=5000" ]
+  }
 
   if (compiler == "clang") {
     cflags_c += [ "-Wno-self-assign" ]
@@ -115,6 +119,10 @@ ksource_set("test") {
 
   if (target_cpu == "riscv64") {
     deps += [ "riscv64" ]
+  }
+
+  if (enable_tsan) {
+    deps += [ "tsan" ]
   }
 
   override_wframe = true

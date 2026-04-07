@@ -103,6 +103,10 @@ REPLS_NINJA = [
     # Normalize -L<arch>-<comp>/ paths (out-dir relative in ninja) to
     # -Lbuild-scons/<arch>-<comp>/ to match scons's source-relative paths.
     (R'-L(?!build-scons/)([a-z0-9]+-(?:gcc|clang))/', R'-Lbuild-scons/\1/'),
+
+    # test/tsan .o files in ar commands: GN uses <target_name>.<src>.o naming;
+    # strip the target-name prefix to match scons naming.
+    (R'(test/tsan/)tsan_(?:tests|instrumented)\.(\S+\.o\b)', R'\1\2'),
 ]
 
 REPLS_NINJA_FIXUP = [
@@ -116,6 +120,11 @@ REPLS_NINJA_FIXUP = [
     # the whole "--depsfile <path>" unit as a single arg.
     (R'^--depsfile \S+$', ''),
     (R'^--import_root \./$', '--import_root .'),
+
+    # tpl_gen.py: strip --import_root . from ninja side; some scons builds (e.g.
+    # TSAN) don't include it, while scons non-TSAN does (stripped on scons side
+    # in REPLS_SCONS_FIXUP below). Stripping from both sides normalizes them.
+    (R'(\[tpl\] .*) --import_root \.(?= |$)', R'\1'),
 
     # gn adds -I. and -Iarchs/... to asm file compilations; scons doesn't.
     # After sorting, these appear as: -I. [-Iarchs/foo ...] -Ibuild-scons/...
@@ -217,8 +226,25 @@ REPLS_SCONS_FIXUP = [
     (R'(test/\S*\.c:.*) -Wframe-larger-than=1500 (-Wframe-larger-than=5000)',
      R'\1 \2'),
 
+    # scons passes both 1500 and 2500 when TSAN is enabled (10000 for tests).
+    # Can't match on -fsanitize=thread in all cases because even if ENABLE_TSAN
+    # is on, -fsanitize=thread may not be set on all files (but args will change
+    # nonetheless).
+    (R'(\S*\.c:.*) -Wframe-larger-than=1500 (-Wframe-larger-than=2500)',
+     R'\1 \2'),
+    (R'(test/\S*\.c:.* -Wframe-larger-than=10000) -Wframe-larger-than=2500',
+     R'\1'),
+    (R'(test/\S*\.c:.* -Wframe-larger-than=2500) -Wframe-larger-than=5000',
+     R'\1'),
+
+    # tpl_gen.py: scons non-TSAN includes --import_root .; strip for consistency
+    # with TSAN scons builds (which don't have it). Ninja side is stripped in
+    # REPLS_NINJA above.
+    (R'(\[tpl\] .*) --import_root \.(?= |$)', R'\1'),
+
     # test/riscv64/user_test.c: scons (clang) adds -Wno-self-assign; gn doesn't.
     (R'(\[c\] test/riscv64/user_test\.c:.+) -Wno-self-assign(?= |$)', R'\1'),
+
     (R'dts_to_header\(\["(.*)"\], *\["(.*)"\]\)',
      R'python test/dtb_testdata/gen_dtb_header.py \2 build/license_template.h \1'
     ),

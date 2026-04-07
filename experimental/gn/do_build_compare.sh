@@ -24,12 +24,21 @@ DIFF=${DIFF:-vimdiff}
 do_ninja_build() {
   local arch=$1
   local comp=$2
+  local variant=$3
+  local enable_values=$4
+  local suffix=${variant:+.$variant}
+  local label=$arch/$comp${variant:+/$variant}
+
+  local configure_args="--arch $arch --compiler=$comp --mode=gn"
+  if [ -n "$enable_values" ]; then
+    configure_args="$configure_args --enable=$enable_values"
+  fi
 
   # Configure and do a quick check to see if anything needs to be rebuilt.
   # If nothing has changed, the existing log is still valid.
-  ./configure --arch $arch --compiler=$comp --mode=gn
+  ./configure $configure_args
   if ninja -n -C out 2>&1 | grep -q "ninja: no work to do"; then
-    echo "Nothing changed for $arch/$comp, keeping existing log." >&2
+    echo "Nothing changed for $label, keeping existing log." >&2
     return 0
   fi
 
@@ -55,18 +64,22 @@ do_ninja_build() {
     rm -f os/core/loader/testdata/gnu_hash_lib.so.cdata
   fi
   rm -rf out/$arch-$comp out/native \
-    && ./configure --arch $arch --compiler=$comp --mode=gn \
-    && ninja -C out -v | tee ninja_build_log.$arch.$comp.log
+    && ./configure $configure_args \
+    && ninja -C out -v | tee ninja_build_log.$arch.$comp${suffix}.log
 }
 
 do_compare() {
-  arch=$1
-  comp=$2
-  cat ninja_build_log.$arch.$comp.log | ./experimental/gn/fix_ninja_log.sh \
+  local arch=$1
+  local comp=$2
+  local variant=$3
+  local suffix=${variant:+.$variant}
+  local label=$arch-$comp${variant:+-$variant}
+
+  cat ninja_build_log.$arch.$comp${suffix}.log | ./experimental/gn/fix_ninja_log.sh \
     --fixup \
     --type=ninja \
     > /tmp/ninja_log
-  cat build_log.$arch.$comp.log | ./experimental/gn/fix_scons_log.sh \
+  cat build_log.$arch.$comp${suffix}.log | ./experimental/gn/fix_scons_log.sh \
     --fixup \
     --type=scons \
     > /tmp/scons_log
@@ -74,7 +87,7 @@ do_compare() {
   if ! diff /tmp/scons_log /tmp/ninja_log; then
     $DIFF /tmp/scons_log /tmp/ninja_log
   else
-    echo No diff for $arch-$comp
+    echo No diff for $label
   fi
 }
 
@@ -86,3 +99,12 @@ for arch in ${ARCHS[@]}; do
     do_compare $arch $comp
   done
 done
+
+do_ninja_build riscv64 clang tsan TSAN_FULL
+do_compare riscv64 clang tsan
+
+do_ninja_build riscv64 clang tsan_core TSAN_CORE
+do_compare riscv64 clang tsan_core
+
+do_ninja_build riscv64 clang tsan_lib TSAN_LIB
+do_compare riscv64 clang tsan_lib

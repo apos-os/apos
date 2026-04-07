@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//build/features.gni")
+
 template("tpl_source") {
   # We define the target differently depending on if we're in the codegen
   # toolchain or not.  Because the action may write to a destination inside the
@@ -70,6 +72,7 @@ template("ksource_set") {
                            "*",
                            [
                              "deps",
+                             "no_tsan_instrument",
                              "override_wframe",
                            ])
 
@@ -83,8 +86,22 @@ template("ksource_set") {
     }
 
     configs += [ "//build/config:kernel_config" ]
-    if (!defined(invoker.override_wframe) || !invoker.override_wframe) {
+    _set_default_wframe =
+        !defined(invoker.override_wframe) || !invoker.override_wframe
+    if (_set_default_wframe) {
       configs += [ "//build/config:cflags_wframe_larger_than_default" ]
+    }
+
+    # Apply TSAN configs to all kernel targets EXCEPT the TSAN library itself.
+    if (enable_tsan &&
+        (!defined(invoker.no_tsan_instrument) || !invoker.no_tsan_instrument)) {
+      if (_set_default_wframe) {
+        configs -= [ "//build/config:cflags_wframe_larger_than_default" ]
+        configs += [ "//build/config:tsan_kernel_wframe_config" ]
+      }
+      if (enable_tsan_core || enable_tsan_full) {
+        configs += [ "//build/config:tsan_instrument_config" ]
+      }
     }
   }
 }
