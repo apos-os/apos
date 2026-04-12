@@ -15,9 +15,7 @@
 import("//build/features.gni")
 import("//build/templates.gni")
 
-# tpl_source targets must be unconditional: the codegen toolchain evaluates
-# them regardless of whether the loader is enabled (target_cpu = "not-a-cpu"
-# there).
+# Bespoke syscall stubs for ld since it doesn't link libc.
 tpl_source("syscalls_h") {
   sources = [ "syscalls.h.tpl" ]
   output_file = "//os/core/loader/syscalls.h"
@@ -79,16 +77,17 @@ executable("ld.so.1") {
   ]
 }
 
-# Complex shared library hierarchy for loader testing.  See SConscript and
-# testdata/libs_header.h for details.  Libraries link against each other via
-# -l flags (not GN deps) so that DT_NEEDED entries are set correctly.
+# Complex shared library hierarchy.  See libs_header.h for details.  We have to
+# build these with '-l1' etc rather than references to the actual library
+# targets (GN deps) to ensure that DT_NEEDED is set correctly (without a path)
+# in the final binary.
 _testdata_out_dir = "$root_out_dir/" + rebase_path("testdata", "//")
 
 # Path to the testdata output directory, relative to the build root (suitable
 # for use in -L linker flags where commands run from root_build_dir).
 _testdata_lib_dir = rebase_path(_testdata_out_dir, root_build_dir)
 
-# Compile flags for testdata shared libraries: PIC objects, no stdlib.
+# Compile flags for testdata shared libraries.
 config("testlib_config") {
   cflags = [
     "-fPIC",
