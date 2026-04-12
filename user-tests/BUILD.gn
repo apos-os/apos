@@ -14,6 +14,7 @@
 
 import("//build/templates.gni")
 
+# A set of tests that run in userspace.
 user_executable("all_tests") {
   sources = [
     "all_tests.c",

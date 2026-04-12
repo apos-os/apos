@@ -28,6 +28,16 @@ tpl_source("syscalls_c") {
   output_file = "//os/core/loader/syscalls.c"
 }
 
+# We want the binary linked such that it can be trivially relocated by the
+# kernel, without requiring any dynamic linking itself (as that is what it will
+# do).  In theory -static-pie should do what we want --- however that doesn't
+# work in our apos cross toolchain.  This is the expanded definition of that
+# flag.  See gcc commit b20e59f49b51b7baf05e1b727be5da947e617496.
+#
+# This results in an ET_DYN ELF file with position-independent code but no
+# dynamic dependencies.  Note that this doesn't work properly with libc/newlib
+# (currently, at least) --- but that's OK, since we don't want to link libc into
+# this anyway.
 config("loader_config") {
   cflags = [ "-fPIE" ]
   ldflags = [
@@ -210,6 +220,8 @@ executable("lib_bin") {
   ]  # ordering: all .so files must exist before lib_bin links
   cflags = [ "-nostdlib" ]
   ldflags = [
+    # --as-needed ensures that lib_bin only has a NEEDED entry for lib1, and
+    # the others will be found transitively.
     "-Wl,--as-needed",
     "-L$_testdata_lib_dir",
   ]

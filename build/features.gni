@@ -46,12 +46,14 @@ declare_args() {
 
   # Disabled by default:
   enable_kmutex_deadlock_detection = false
+  # Whether to pre-page in user binaries.  Useful when debugging them to avoid
+  # stepping through lots of page faults.
   enable_preload_user_bins = false
   enable_profiling = false
   enable_profile_idle = false
   enable_tsan_full = false
-  enable_tsan_lib = false
-  enable_tsan_core = false
+  enable_tsan_lib = false   # TSAN only for the TSAN tests themselves
+  enable_tsan_core = false  # TSAN only for the scheduler and core thread code.
 
   # Other options
   kshell_initial_command = ""
@@ -71,4 +73,5 @@ if (!supports_tsan) {
   enable_tsan_lib = false
   enable_tsan_core = false
 }
+# Set a universal TSAN feature flag if any TSAN variants are enabled.
 enable_tsan = enable_tsan_full || enable_tsan_lib || enable_tsan_core

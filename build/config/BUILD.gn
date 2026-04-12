@@ -148,6 +148,7 @@ config("cflags_wframe_larger_than_default") {
 # Applied to all kernel ksource_set targets (except the TSAN library itself)
 # when any TSAN variant is enabled; raises the frame-size limit to accommodate
 # the extra metadata kept on the stack by TSAN-instrumented code.
+# TODO(aoates): reduce function stack size to eliminate this.
 config("tsan_kernel_wframe_config") {
   cflags = [ "-Wframe-larger-than=2500" ]
 }

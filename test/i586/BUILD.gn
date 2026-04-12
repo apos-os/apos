@@ -14,6 +14,7 @@
 
 import("//build/templates.gni")
 
+# TODO(aoates): figure out how to merge this with the test/BUILD.gn config section.
 ksource_set("i586") {
   sources = [
     "interrupt_test.c",

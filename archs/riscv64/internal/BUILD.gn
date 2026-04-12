@@ -48,6 +48,7 @@ m4_gen("memlayout_h") {
   type = "c"
 }
 
+# TODO(aoates): figure out a better way to pass these dependencies.
 source_set("internal") {
   deps = [
     ":memlayout_h",
