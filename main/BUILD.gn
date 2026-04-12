@@ -42,12 +42,15 @@ static_library("kernel") {
     "//net",
     "//proc",
     "//syscall",
-    "//test",
     "//util",
     "//vfs",
   ]
 
   configs += [ "//build/config:kernel_config" ]
+
+  if (enable_tests) {
+    deps += [ "//test" ]
+  }
 
   if (enable_tsan) {
     deps += [ "//sanitizers" ]
