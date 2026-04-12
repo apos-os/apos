@@ -152,8 +152,16 @@ REPLS_NINJA_FIXUP = [
 
     # user/os binary links: scoped to all_tests/syscall_link_test/os/core targets
     # to avoid false matches.
-    # scons uses -z noexecstack, gn uses -Wl,-static; strip gn flag.
+    # i586/x86_64: scons defaults USER_DYNAMIC_LOADER=true for all arches, so
+    # never adds -Wl,-static; gn derives enable_user_dynamic_loader from
+    # supports_user_dynamic_loader (false on i586/x86_64), so it adds
+    # -Wl,-static.  Strip gn flag.
     (R'(\[other\] (?:user-tests/(?:all_tests|syscall_link_test)|os/core/\S+):.+) -Wl,-static(?= |$)',
+     R'\1'),
+    # loader testdata shared libs and lib_bin: scons uses a minimal testlib_env
+    # with SHLINKFLAGS/LINKFLAGS replaced (no -z noexecstack); gn inherits it
+    # from user_config.  Strip gn flag for these targets.
+    (R'(\[other\] os/core/loader/testdata/\S+:.+) -z noexecstack(?= |$)',
      R'\1'),
     # riscv64: gn passes -Wl,--no-relax (scons only passes to ld kernel link).
     (R'(\[other\] (?:user-tests/(?:all_tests|syscall_link_test)|os/core/\S+):.+) -Wl,--no-relax(?= |$)',
@@ -276,9 +284,6 @@ REPLS_SCONS_FIXUP = [
     # user/os binary links: scoped to all_tests/syscall_link_test/os/core targets
     # to avoid false matches.
     # Must come after the path normalization above so fname is in normalized form.
-    # scons uses -z noexecstack, gn uses -Wl,-static; strip scons flag.
-    (R'(\[other\] (?:user-tests/(?:all_tests|syscall_link_test)|os/core/\S+):.+) -z noexecstack(?= |$)',
-     R'\1'),
     # scons links libcommon via -L/-l, gn links libcommon.a directly.
     (R'(\[other\] (?:user-tests/(?:all_tests|syscall_link_test)|os/core/\S+):.+) -Lbuild-scons/[^/]*-[^/]*/os/common(?= |$)',
      R'\1'),
