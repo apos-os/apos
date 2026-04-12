@@ -17,6 +17,11 @@ set -e
 set -o pipefail
 
 DIFF=${DIFF:-vimdiff}
+FIXUP=1
+if [[ "${1:-}" == "--no-fixup" ]]; then
+  FIXUP=0
+  shift
+fi
 
 # Does a build for all three architectures and dumps out the build commands,
 # then normalizes them and compares between scons and ninja.
@@ -75,12 +80,15 @@ do_compare() {
   local suffix=${variant:+.$variant}
   local label=$arch-$comp${variant:+-$variant}
 
+  local fixup_flag=""
+  if [[ "$FIXUP" == "1" ]]; then fixup_flag="--fixup"; fi
+
   cat ninja_build_log.$arch.$comp${suffix}.log | ./experimental/gn/fix_ninja_log.sh \
-    --fixup \
+    $fixup_flag \
     --type=ninja \
     > /tmp/ninja_log
   cat build_log.$arch.$comp${suffix}.log | ./experimental/gn/fix_scons_log.sh \
-    --fixup \
+    $fixup_flag \
     --type=scons \
     > /tmp/scons_log
 
