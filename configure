@@ -12,12 +12,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
+
 # Configures APOS for building in a build-system agnostic way.  After this runs,
 # the following will be set up:
 #  - out/ contains all build artifacts
 #  - out/latest points to the latest configuration
 #  - out/latest-$arch points to the latest configuration for $arch
+#
+# Usage:
+#   ./configure --mode=<scons|gn> --arch=<i586|x86_64|riscv64> [options]
+#
+# Run ./configure --help for full usage.
 
 import argparse
 import os
@@ -118,11 +123,22 @@ CLANG = {clang_bool}
 
 
 def main(argv : list[str]) -> None:
-  parser = argparse.ArgumentParser()
+  parser = argparse.ArgumentParser(
+      description='Configure APOS for building.',
+      epilog=(
+          'System build config (build-config-system.conf):\n'
+          '  Machine-local settings not checked into the repo. Each line has\n'
+          '  the form:  KEY = \'value\'\n'
+          '  Supported keys:\n'
+          '    CROSS_PREFIX   Path to the cross-compiler toolchain directory.\n'
+          '    GTEST_ROOT     Path to the googletest installation.\n'
+      ),
+      formatter_class=argparse.RawDescriptionHelpFormatter,
+  )
   parser.add_argument("--mode",
                       choices=["scons", "gn"],
                       default="scons",
-                      help="Build system to use")
+                      help="Build system to use (default: scons)")
   parser.add_argument("--arch",
                       choices=["i586", "x86_64", "riscv64"],
                       required=True,
@@ -130,13 +146,15 @@ def main(argv : list[str]) -> None:
   parser.add_argument("--compiler",
                       choices=["gcc", "clang"],
                       default="gcc",
-                      help="Which compiler to use")
+                      help="Compiler to use (default: gcc)")
   parser.add_argument("--kshell_initial_command",
-                      help="Initial command for kshell to run")
+                      help="Initial command for kshell to run on startup")
   parser.add_argument(
       "--enable",
       default="",
-      help="Additional features/options to enable, comma-separated")
+      metavar="OPT1,OPT2,...",
+      help=("Comma-separated features to enable. Valid options: " +
+            ", ".join(VALID_OPTIONS)))
   args = parser.parse_args()
 
   opts = [] if not args.enable else args.enable.split(',')
@@ -156,6 +174,9 @@ def main(argv : list[str]) -> None:
     print("Read settings from build-config-system.conf:", file=sys.stderr)
     for k, v in build_conf.items():
       print(f" {k} = {v}", file=sys.stderr)
+  elif args.mode == "gn":
+    print("Warning: build-config-system.conf not found; builds will likely "
+          "fail due to missing CROSS_PREFIX and GTEST_ROOT.", file=sys.stderr)
 
   if args.mode == "scons":
     do_scons(args, opts, build_conf)
