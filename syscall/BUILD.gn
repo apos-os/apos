@@ -26,6 +26,8 @@ tpl_source("syscall_dmz") {
 
 ksource_set("syscall") {
   sources = [
+    "//syscall/syscall_dispatch.tpl.c",
+    "//syscall/syscall_dmz.tpl.c",
     "dmz.c",
     "execve_wrapper.c",
     "fork.c",
@@ -33,10 +35,6 @@ ksource_set("syscall") {
     "wrappers.c",
     "wrappers32.c",
   ]
-
-  # Generated sources (written to source tree by codegen toolchain).
-  sources += [ "//syscall/syscall_dispatch.tpl.c" ]
-  sources += [ "//syscall/syscall_dmz.tpl.c" ]
 
   deps = [
     ":syscall_dispatch",
