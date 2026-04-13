@@ -45,9 +45,8 @@ config("loader_config") {
 }
 
 # The dynamic loader binary: a position-independent executable with no
-# dynamic dependencies.  See os/core/loader/SConscript for details.
+# dynamic dependencies.
 executable("ld.so.1") {
-  output_name = "ld.so.1"
   output_dir = "$root_out_dir/" + rebase_path(".", "//")
 
   sources = [
@@ -81,6 +80,9 @@ executable("ld.so.1") {
 # build these with '-l1' etc rather than references to the actual library
 # targets (GN deps) to ensure that DT_NEEDED is set correctly (without a path)
 # in the final binary.
+
+# Put them in out-gen/<variant>/os/core/loader/testdata, not under obj/, to
+# match the scons behavior.
 _testdata_out_dir = "$root_out_dir/" + rebase_path("testdata", "//")
 
 # Path to the testdata output directory, relative to the build root (suitable
@@ -101,21 +103,23 @@ config("testlib_ldpath_config") {
   ldflags = [ "-L$_testdata_lib_dir" ]
 }
 
-shared_library("lib2b") {
+shared_library("lib1") {
   output_dir = _testdata_out_dir
-  sources = [ "testdata/lib2b.c" ]
+  sources = [ "testdata/lib1.c" ]
+  data_deps = [
+    ":lib2",
+    ":lib2b",
+    ":lib3",
+  ]  # ordering: these .so files must exist before lib1 links
   configs += [
     "//build/config:user_config",
     ":testlib_config",
+    ":testlib_ldpath_config",
   ]
-}
-
-shared_library("lib4") {
-  output_dir = _testdata_out_dir
-  sources = [ "testdata/lib4.c" ]
-  configs += [
-    "//build/config:user_config",
-    ":testlib_config",
+  libs = [
+    "2",
+    "2b",
+    "3",
   ]
 }
 
@@ -129,6 +133,15 @@ shared_library("lib2") {
     ":testlib_ldpath_config",
   ]
   libs = [ "2b" ]
+}
+
+shared_library("lib2b") {
+  output_dir = _testdata_out_dir
+  sources = [ "testdata/lib2b.c" ]
+  configs += [
+    "//build/config:user_config",
+    ":testlib_config",
+  ]
 }
 
 shared_library("lib3") {
@@ -149,23 +162,12 @@ shared_library("lib3") {
   ]
 }
 
-shared_library("lib1") {
+shared_library("lib4") {
   output_dir = _testdata_out_dir
-  sources = [ "testdata/lib1.c" ]
-  data_deps = [
-    ":lib2",
-    ":lib2b",
-    ":lib3",
-  ]  # ordering: these .so files must exist before lib1 links
+  sources = [ "testdata/lib4.c" ]
   configs += [
     "//build/config:user_config",
     ":testlib_config",
-    ":testlib_ldpath_config",
-  ]
-  libs = [
-    "2",
-    "2b",
-    "3",
   ]
 }
 
