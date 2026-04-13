@@ -407,7 +407,8 @@ def parse_line(line: str) -> (str, str):
 arch = None
 comp = None
 def normalize(line: str, repls: Sequence[tuple[str, str]],
-              file_ignores: Sequence[re.Pattern], debug: bool = False):
+              file_ignores: Sequence[re.Pattern], debug: bool = False,
+              nonormalize: bool = False):
   ftype, fname, cmd, args = parse_line(line)
   if not ftype:
     return line.strip()
@@ -415,6 +416,9 @@ def normalize(line: str, repls: Sequence[tuple[str, str]],
     if p.match(fname):
       print(f'Ignored: {fname}', file=sys.stderr)
       return None
+
+  if nonormalize:
+    return f'[{ftype}] {fname}: {cmd} {" ".join(args)}'
 
   if debug:
     print(f'DEBUG input: {line}', file=sys.stderr)
@@ -482,6 +486,11 @@ def main(argv: Optional[Sequence[str]] = None):
       '--debug',
       action='store_true',
       help='Show how each line is rewritten by each pattern, printed to stderr.')
+  parser.add_argument(
+      '--nonormalize',
+      action='store_true',
+      help='Output lines with type, filename, and command line unmodified '
+      '(no repls, no sorting).  Useful for capturing raw build snapshots.')
   args = parser.parse_args()
 
   repls = REPLS
@@ -529,7 +538,8 @@ def main(argv: Optional[Sequence[str]] = None):
           ignore=True
           break
     if not ignore:
-      out = normalize(line, repls_c, file_ignores, debug=args.debug)
+      out = normalize(line, repls_c, file_ignores, debug=args.debug,
+                      nonormalize=args.nonormalize)
       if out:
         print(out)
 
