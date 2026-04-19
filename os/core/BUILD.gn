@@ -40,6 +40,7 @@ group("core") {
     ":ktest",
     ":login",
   ]
+
   # TODO(aoates): support other architectures (requires solving some weird linker
   # issues, and of course supporting 32-bits).
   if (enable_user_dynamic_loader) {
