@@ -137,8 +137,8 @@ def main(argv : list[str]) -> None:
   )
   parser.add_argument("--mode",
                       choices=["scons", "gn"],
-                      default="scons",
-                      help="Build system to use (default: scons)")
+                      default="gn",
+                      help="Build system to use (default: gn)")
   parser.add_argument("--arch",
                       choices=["i586", "x86_64", "riscv64"],
                       required=True,
