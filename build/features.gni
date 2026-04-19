@@ -55,12 +55,9 @@ declare_args() {
   enable_tsan_lib = false   # TSAN only for the TSAN tests themselves
   enable_tsan_core = false  # TSAN only for the scheduler and core thread code.
 
-  # Other options
+  # Build options:
+  is_debug = true  # Include debug symbols and debug-mode assertions.
   kshell_initial_command = ""
-  cross_prefix = ""
-
-  # Path to gtest root (for native test targets).  Set via build-config-system.conf.
-  gtest_root = ""
 }
 
 # Force TSAN off if we're in a toolchain that doesn't support it.  This means

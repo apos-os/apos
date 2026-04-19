@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import("//build/features.gni")
+import("//build/toolconfig.gni")
 
 config("compiler_defaults") {
   # TODO(aoates): turn most of these on for C++ as well.

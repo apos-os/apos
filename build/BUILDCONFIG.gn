@@ -18,9 +18,6 @@ declare_args() {
   # Toolchain provider (gcc, clang).  Set in target toolchain.
   compiler = "compiler-not-set"
 
-  # Debug build
-  is_debug = true
-
   # Toolchain identity variables.  Exactly one of these is true in any given
   # toolchain context.  Set via toolchain_args in each toolchain definition.
   # The defaults here reflect the stub (default) toolchain.
