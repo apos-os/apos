@@ -1,0 +1,104 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Template for defining a toolchain.  The invoker can set toolchain_cflags or
+# toolchain_ldflags to inject additional flags.
+template("apos_toolchain") {
+  _tc_cflags = ""
+  _tc_ldflags = ""
+  if (defined(invoker.toolchain_cflags)) {
+    _tc_cflags = string_join(" ", invoker.toolchain_cflags)
+  }
+  if (defined(invoker.toolchain_ldflags)) {
+    _tc_ldflags = string_join(" ", invoker.toolchain_ldflags)
+  }
+
+  toolchain(target_name) {
+    tool("cc") {
+      depfile = "{{output}}.d"
+      command = "${invoker.cc} ${_tc_cflags} -MMD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} -c {{source}} -o {{output}}"
+      depsformat = "gcc"
+      description = "CC {{output}}"
+      outputs =
+          [ "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.o" ]
+    }
+
+    if (defined(invoker.cxx)) {
+      tool("cxx") {
+        depfile = "{{output}}.d"
+        command = "${invoker.cxx} ${_tc_cflags} -MMD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} -c {{source}} -o {{output}}"
+        depsformat = "gcc"
+        description = "CXX {{output}}"
+        outputs = [
+          "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.o",
+        ]
+      }
+    }
+
+    tool("asm") {
+      depfile = "{{output}}.d"
+      command = "${invoker.asm} {{include_dirs}} {{asmflags}} {{source}} -o {{output}}"
+      depsformat = "gcc"
+      description = "ASM {{output}}"
+      outputs =
+          [ "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.o" ]
+    }
+
+    tool("alink") {
+      command = "rm -f {{output}} && ${invoker.ar} rcs {{output}} {{inputs}}"
+      description = "AR {{output}}"
+      outputs = [ "{{output_dir}}/{{target_output_name}}{{output_extension}}" ]
+      default_output_dir = "{{target_out_dir}}"
+      default_output_extension = ".a"
+      output_prefix = "lib"
+    }
+
+    tool("solink") {
+      command = "${invoker.ld} ${_tc_ldflags} {{ldflags}} -shared -o {{output}} {{inputs}} {{libs}}"
+      description = "SOLINK {{output}}"
+      outputs = [ "{{output_dir}}/{{target_output_name}}{{output_extension}}" ]
+      default_output_dir = "{{target_out_dir}}"
+      default_output_extension = ".so"
+      output_prefix = "lib"
+      link_output = "{{output_dir}}/{{target_output_name}}{{output_extension}}"
+      depend_output =
+          "{{output_dir}}/{{target_output_name}}{{output_extension}}"
+    }
+
+    tool("link") {
+      command = "${invoker.ld} ${_tc_ldflags} {{ldflags}} -o {{output}} {{inputs}} {{libs}}"
+      description = "LINK {{output}}"
+      outputs = [ "{{output_dir}}/{{target_output_name}}{{output_extension}}" ]
+      default_output_dir = "{{target_out_dir}}"
+    }
+
+    tool("stamp") {
+      command = "touch {{output}}"
+      description = "STAMP {{output}}"
+    }
+
+    tool("copy") {
+      command = "cp -af {{source}} {{output}}"
+      description = "COPY {{source}} {{output}}"
+    }
+
+    toolchain_args = {
+      target_cpu = invoker.toolchain_cpu
+      compiler = invoker.toolchain_compiler
+      is_native = invoker.is_native
+      is_codegen = false
+      is_target = !invoker.is_native
+    }
+  }
+}

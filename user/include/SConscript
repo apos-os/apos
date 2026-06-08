@@ -11,51 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
-
-Import('env user_env')
+Import('env')
 
 env.Tpl('#/user/include/apos/syscalls.h', 'apos/syscalls.h.tpl')
 env.Tpl('#/user/include/apos/syscall_decls.h', 'apos/syscall_decls.h.tpl')
-
-HEADERS = [
-  'apos/_posix_signal_constants.h',
-  'apos/_posix_termios_constants.h',
-  'apos/auxvec.h',
-  'apos/dev.h',
-  'apos/errors.h',
-  'apos/futex.h',
-  'apos/ktest.h',
-  'apos/mmap.h',
-  'apos/net/socket/inet.h',
-  'apos/net/socket/socket.h',
-  'apos/net/socket/tcp.h',
-  'apos/net/socket/unix.h',
-  'apos/posix_signal.h',
-  'apos/posix_types.h',
-  'apos/resource.h',
-  'apos/sleep.h',
-  'apos/syscall.h',
-  'apos/syscalls.h',
-  'apos/syscall_decls.h',
-  'apos/termios.h',
-  'apos/test.h',
-  'apos/thread.h',
-  'apos/time_types.h',
-  'apos/vfs/dirent.h',
-  'apos/vfs/fcntl.h',
-  'apos/vfs/poll.h',
-  'apos/vfs/stat.h',
-  'apos/vfs/vfs.h',
-  'apos/wait.h',
-]
-
-HEADER_INSTALL_DIR = os.path.join(env['HEADER_INSTALL_PREFIX'], 'include')
-
-if env['HEADER_INSTALL_PREFIX']:
-  for header in HEADERS:
-    env.Install(
-        os.path.join(HEADER_INSTALL_DIR, os.path.dirname(header)), header)
-  env.Alias('install', HEADER_INSTALL_DIR)
-else:
-  env.Alias('install')

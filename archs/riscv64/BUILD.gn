@@ -1,0 +1,59 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/templates.gni")
+
+ksource_set("kernel") {
+  sources = [
+    "arch/common/debug.c",
+    "arch/common/die.c",
+    "arch/dev/double_fault.c",
+    "arch/dev/interrupts.c",
+    "arch/dev/interrupts_asm.s",
+    "arch/dev/io.c",
+    "arch/dev/irq.c",
+    "arch/memory/page_map.c",
+    "arch/proc/exec.c",
+    "arch/proc/kthread.c",
+    "arch/proc/kthread_asm.s",
+    "arch/proc/signal_enter.c",
+    "arch/proc/sigreturn_trampoline.s",
+    "arch/proc/stack_trace.c",
+    "arch/proc/user_context.s",
+    "arch/proc/user_mode.c",
+    "arch/syscall/context.c",
+    "arch/syscall/init.c",
+    "internal/load/kernel_init.c",
+    "internal/page_tables.c",
+    "internal/sbi.c",
+    "internal/timer.c",
+  ]
+}
+
+# Use a ksource_set underneath the static library to get all kernel default
+# configs and settings.
+ksource_set("kernel_phys_src") {
+  visibility = [ ":*" ]
+  sources = [ "internal/load/loader.s" ]
+  defines = [ "_MULTILINK_SUFFIX=_PHYS" ]
+}
+
+static_library("kernel_phys") {
+  deps = [ ":kernel_phys_src" ]
+  complete_static_lib = true
+}
+
+group("generated_headers") {
+  deps = [ "internal" ]
+}

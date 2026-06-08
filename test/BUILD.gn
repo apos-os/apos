@@ -1,0 +1,130 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/features.gni")
+
+import("//build/templates.gni")
+
+config("test_config") {
+  # We have to set these in cflags_c so that they get put after the -Wall from
+  # the default config; otherwise, -Wall from cflags_c will override this.
+  # TODO(aoates): move these to cflags with -Wall is moved to cflags.
+
+  # TODO(aoates): get frame sizes small enough to reduce this.
+  if (enable_tsan) {
+    cflags_c = [ "-Wframe-larger-than=10000" ]
+  } else {
+    cflags_c = [ "-Wframe-larger-than=5000" ]
+  }
+
+  if (compiler == "clang") {
+    cflags_c += [ "-Wno-self-assign" ]
+  }
+}
+
+ksource_set("test") {
+  sources = [
+    "ansi_escape_test.c",
+    "arena_test.c",
+    "ata_test.c",
+    "atomic_test.c",
+    "block_cache_test.c",
+    "block_dev_test.c",
+    "cbfs_test.c",
+    "circbuf_test.c",
+    "devicetree_test.c",
+    "dmz_test.c",
+    "exec_test.c",
+    "fifo_test.c",
+    "flag_printf_test.c",
+    "fork_test.c",
+    "futex_test.c",
+    "hamlet.c",
+    "hash_test.c",
+    "hashtable_test.c",
+    "ipv6_test.c",
+    "kernel_tests.c",
+    "kmalloc_test.c",
+    "kprintf_test.c",
+    "kstring_test.c",
+    "ktest.c",
+    "ktest_test.c",
+    "kthread_pool_test.c",
+    "kthread_test.c",
+    "ld_test.c",
+    "limit_test.c",
+    "list_test.c",
+    "load_test.c",
+    "mmap_test.c",
+    "net_base_test.c",
+    "net_echo_test.c",
+    "net_test_util.c",
+    "page_alloc_test.c",
+    "poll_test.c",
+    "proc_group_test.c",
+    "proc_test_util.c",
+    "proc_thread_test.c",
+    "procfs_test.c",
+    "ramdisk_test.c",
+    "ramfs_test.c",
+    "random.c",
+    "run_user_tests.c",
+    "session_test.c",
+    "signal_test.c",
+    "slab_alloc_test.c",
+    "socket_raw_test.c",
+    "socket_test.c",
+    "socket_udp_test.c",
+    "socket_unix_test.c",
+    "static_block_dev_test.c",
+    "tcp_test.c",
+    "test_nic.c",
+    "test_point.c",
+    "tty_test.c",
+    "tuntap_test.c",
+    "user_test.c",
+    "vfs_fifo_test.c",
+    "vfs_mode_test.c",
+    "vfs_mount_test.c",
+    "vfs_test.c",
+    "vfs_test_util.c",
+    "vm_test.c",
+    "vterm_test.c",
+    "wait_test.c",
+  ]
+
+  if (enable_nvme) {
+    sources += [ "nvme_test.c" ]
+  }
+
+  deps = [
+    "ext2",
+    "//test/dtb_testdata:dtb_testdata(//build/toolchain:codegen)",
+  ]
+
+  if (target_cpu == "i586") {
+    deps += [ "i586" ]
+  }
+
+  if (target_cpu == "riscv64") {
+    deps += [ "riscv64" ]
+  }
+
+  if (enable_tsan) {
+    deps += [ "tsan" ]
+  }
+
+  override_wframe = true
+  configs = default_configs + [ ":test_config" ]
+}

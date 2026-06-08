@@ -1,0 +1,49 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/features.gni")
+
+# Only instantiate in real toolchains; the stub default toolchain defines no
+# targets so that GN does not evaluate kernel BUILD.gn files in stub context.
+if (is_target) {
+  group("apos") {
+    deps = [
+      "//main:kernel.bin",
+      "//user",
+    ]
+    if (enable_user_tests) {
+      deps += [ "//user-tests" ]
+    }
+    if (enable_user_os) {
+      deps += [ "//os" ]
+    }
+  }
+}
+
+# Builds all architectures and compilers in a single ninja invocation.
+group("all") {
+  deps = [
+    ":apos(//build/toolchain:i586-clang)",
+    ":apos(//build/toolchain:i586-gcc)",
+    ":apos(//build/toolchain:riscv64-clang)",
+    ":apos(//build/toolchain:riscv64-gcc)",
+    ":apos(//build/toolchain:x86_64-clang)",
+    ":apos(//build/toolchain:x86_64-gcc)",
+  ]
+}
+
+# By default, only build the "current" arch/compiler.
+group("default") {
+  deps = [ ":apos(//build/toolchain:${target_cpu}-${compiler})" ]
+}

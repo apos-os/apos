@@ -1,0 +1,84 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/features.gni")
+import("//build/templates.gni")
+
+# Pseudo-target with all generated header files, which must be built first.
+group("all_generated_headers") {
+  deps = [
+    "//archs/${target_cpu}:generated_headers",
+    "//common:kernel_headers",
+    "//user/include",
+  ]
+}
+
+ksource_set("main") {
+  sources = [
+    "kernel.c",
+    "kshell.c",
+  ]
+}
+
+static_library("kernel") {
+  sources = []  # Everything linked via deps
+  deps = [
+    ":main",
+    "//archs/${target_cpu}:kernel",
+    "//common",
+    "//dev",
+    "//memory",
+    "//net",
+    "//proc",
+    "//syscall",
+    "//util",
+    "//vfs",
+  ]
+
+  configs += [ "//build/config:kernel_config" ]
+
+  if (enable_tests) {
+    deps += [ "//test" ]
+  }
+
+  if (enable_tsan) {
+    deps += [ "//sanitizers" ]
+  }
+
+  complete_static_lib = true
+}
+
+executable("kernel.bin") {
+  # These must be ordered with kernel_phys coming first
+  # TODO(aoates): replace these static libraries with source_sets
+  # NOSORT
+  deps = [
+    "//archs/${target_cpu}:kernel_phys",
+    ":kernel",
+  ]
+
+  output_dir = root_out_dir
+  configs += [ "//build/config:kernel_config" ]
+  ldflags = [
+    "-T",
+    rebase_path("//archs/${target_cpu}/build/linker.ld", root_build_dir),
+    "-L",
+    rebase_path("//", root_build_dir),
+    "-L",
+    rebase_path(root_gen_dir, root_build_dir),
+    "-z",
+    "noexecstack",
+    "-Wl,--orphan-handling=error",
+  ]
+}

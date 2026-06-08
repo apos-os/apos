@@ -29,25 +29,35 @@
 static void direct_syscalls(void) {
   {% for syscall in SYSCALLS if syscall.stubs_to_generate %}
   {% set syscall = syscall.native() %}
+  {% if syscall.name != "exit" and syscall.name != "apos_thread_exit" %}
   {{ syscall.name }}(
     {% for arg in syscall.args -%}
       {% if '*' in arg.ctype %} NULL {% else %} 0 {% endif %}
         {%- if not loop.last %}, {% endif %}
     {%- endfor %}
       );
+  {% endif %}
   {% endfor %}
 }
 
 // Syscalls implemented in userspace, or libc functions.
-static void userspace_functions(void) {
+static void userspace_functions(int arg) {
   utimes(0, NULL);
   sbrk(0);
   gettimeofday(NULL, NULL);
   times(NULL);
   getentropy(NULL, 0);
+
+  // Must be last.
+  if (arg == 1) {
+    exit(0);
+  }
+  if (arg == 2) {
+    apos_thread_exit();
+  }
 }
 
-int main(void) {
+int main(int argc, char** argv) {
   direct_syscalls();
-  userspace_functions();
+  userspace_functions(argc);
 }

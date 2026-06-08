@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Configures APOS for building in a build-system agnostic way.  After this runs,
+# the following will be set up:
+#  - out/ contains all build artifacts
+#  - out/latest points to the latest configuration
+#  - out/latest-$arch points to the latest configuration for $arch
+#
+# Usage:
+#   ./configure --mode=<scons|gn> --arch=<i586|x86_64|riscv64> [options]
+#
+# Run ./configure --help for full usage.
+
+import argparse
+import os
+import stat
+import subprocess
+import sys
+import typing
+
+from util import build_util
+
+VALID_OPTIONS = [
+    "KMUTEX_DEADLOCK_DETECTION",
+    # Whether to pre-page in user binaries.  Useful when debugging them to avoid
+    # stepping through lots of page faults.
+    "PRELOAD_USER_BINS",
+    "PROFILING",
+    "PROFILE_IDLE",
+    "TSAN_FULL",
+    "TSAN_LIB",  # TSAN only for the TSAN tests themselves
+    "TSAN_CORE",  # TSAN only for the scheduler and core thread code.
+]
+
+
+def set_link(link: str, link_target: str) -> None:
+  """Create a symlink, trying to safely override it if it already exists."""
+  try:
+    s = os.lstat(link)
+    if not stat.S_ISLNK(s.st_mode):
+      print(f'Error: "{link}" is not a symbolic link, will not override it',
+            file=sys.stderr)
+      sys.exit(1)
+    os.unlink(link)
+  except FileNotFoundError as e:
+    pass
+  print(f'Linking {link} -> {link_target}')
+  os.symlink(link_target, link)
+
+
+def do_scons(args: argparse.Namespace, opts: typing.Sequence[str],
+             build_conf: dict[str, str]) -> None:
+  cmd = [
+      'scons', 'configure', 'ARCH=' + args.arch,
+      'CLANG=' + ('1' if args.compiler == 'clang' else '0')
+  ]
+  if args.kshell_initial_command:
+    cmd += ['KSHELL_INITIAL_COMMAND=' + args.kshell_initial_command]
+  if opts:
+    cmd.append('enable=' + ','.join(opts))
+
+  print('Running: ' + subprocess.list2cmdline(cmd))
+  proc = subprocess.run(cmd)
+  if proc.returncode != 0:
+    sys.exit(proc.returncode)
+
+  set_link('out', 'build-scons')
+
+
+def do_gn(args: argparse.Namespace, opts: typing.Sequence[str],
+          build_conf: dict[str, str]) -> None:
+  # target_cpu and compiler set the default toolchain; all toolchains are
+  # always built via the top-level "all" group.
+  opts_str = [
+      f'target_cpu="{args.arch}"',
+      f'compiler="{args.compiler}"',
+  ]
+  if args.kshell_initial_command:
+    opts_str += [f'kshell_initial_command="{args.kshell_initial_command}"']
+  for opt in opts:
+    opts_str.append('enable_' + opt.lower() + '=true')
+  if 'CROSS_PREFIX' in build_conf:
+    opts_str += [f'cross_prefix="{build_conf["CROSS_PREFIX"]}"']
+  if 'GTEST_ROOT' in build_conf:
+    opts_str += [f'gtest_root="{build_conf["GTEST_ROOT"]}"']
+  args_str = ' '.join(opts_str)
+
+  cmd = ['gn', 'gen', 'out-gn', f'--args={args_str}']
+
+  print('Running: ' + subprocess.list2cmdline(cmd))
+  proc = subprocess.run(cmd)
+  if proc.returncode != 0:
+    sys.exit(proc.returncode)
+
+  set_link('out', 'out-gn')
+
+  # Write a basic build-config.conf file to imitate what scons generates.
+  with open('build-config.conf', 'w') as f:
+    clang_bool = str(args.compiler == 'clang')
+    f.write(f"""\
+ARCH = '{args.arch}'
+TOOL_PREFIX = '{args.arch}-pc-apos-'
+CLANG = {clang_bool}
+""")
+
+  # Set up standard out links.  scons does this automatically.
+  latest = f'{args.arch}-{args.compiler}'
+  set_link('out/latest', latest)
+  set_link(f'out/latest-{args.arch}', latest)
+
+
+def main(argv : list[str]) -> None:
+  parser = argparse.ArgumentParser(
+      description='Configure APOS for building.',
+      epilog=(
+          'System build config (build-config-system.conf):\n'
+          '  Machine-local settings not checked into the repo. Each line has\n'
+          '  the form:  KEY = \'value\'\n'
+          '  Supported keys:\n'
+          '    CROSS_PREFIX   Path to the cross-compiler toolchain directory.\n'
+          '    GTEST_ROOT     Path to the googletest installation.\n'
+      ),
+      formatter_class=argparse.RawDescriptionHelpFormatter,
+  )
+  parser.add_argument("--mode",
+                      choices=["scons", "gn"],
+                      default="gn",
+                      help="Build system to use (default: gn)")
+  parser.add_argument("--arch",
+                      choices=["i586", "x86_64", "riscv64"],
+                      required=True,
+                      help="Architecture to target")
+  parser.add_argument("--compiler",
+                      choices=["gcc", "clang"],
+                      default="gcc",
+                      help="Compiler to use (default: gcc)")
+  parser.add_argument("--kshell_initial_command",
+                      help="Initial command for kshell to run on startup")
+  parser.add_argument(
+      "--enable",
+      default="",
+      metavar="OPT1,OPT2,...",
+      help=("Comma-separated features to enable. Valid options: " +
+            ", ".join(VALID_OPTIONS)))
+  args = parser.parse_args()
+
+  opts = [] if not args.enable else args.enable.split(',')
+  for opt in opts:
+    if opt and opt not in VALID_OPTIONS:
+      print(f"Invalid option for --enable: {opt}", file=sys.stderr)
+      sys.exit(1)
+
+  # Read the system build config, if it exists.
+  build_conf = {}
+  try:
+    build_conf = build_util.read_build_config("build-config-system.conf")
+  except FileNotFoundError as e:
+    pass
+
+  if build_conf:
+    print("Read settings from build-config-system.conf:", file=sys.stderr)
+    for k, v in build_conf.items():
+      print(f" {k} = {v}", file=sys.stderr)
+  elif args.mode == "gn":
+    print("Warning: build-config-system.conf not found; builds will likely "
+          "fail due to missing CROSS_PREFIX and GTEST_ROOT.", file=sys.stderr)
+
+  if args.mode == "scons":
+    do_scons(args, opts, build_conf)
+  elif args.mode == "gn":
+    do_gn(args, opts, build_conf)
+  else:
+    print(f"Invalid mode: {args.mode}", file=sys.stderr)
+    sys.exit(1)
+
+
+if __name__ == '__main__':
+  main(sys.argv)

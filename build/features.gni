@@ -1,0 +1,76 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Add platform-specific overrides.
+# TODO(aoates): do this with target_args overrides in the toolchain instead.
+# TODO(aoates): refactor enable_user_*, we probably only need one switch.
+supports_usb = true
+supports_user_dynamic_loader = false
+supports_userspace = true
+supports_tsan = false
+if (target_cpu == "riscv64") {
+  supports_usb = false
+  supports_user_dynamic_loader = true
+  if (compiler == "clang") {
+    supports_tsan = true
+  }
+} else if (target_cpu == "x86_64") {
+  # For x86-64, use i586 (32-bit) userspace.
+  supports_userspace = false
+}
+
+declare_args() {
+  # Features (enabled by default):
+  enable_ethernet = true
+  enable_ext2 = true
+  enable_nvme = true
+  enable_tests = true
+  enable_term_color = true
+  enable_usb = supports_usb
+  enable_user_dummy_lib = supports_userspace
+  enable_user_dynamic_loader = supports_user_dynamic_loader
+  enable_user_os = supports_userspace
+  enable_user_tests = supports_userspace
+  enable_kmalloc_heap_profile = true
+
+  # Disabled by default:
+  enable_kmutex_deadlock_detection = false
+
+  # Whether to pre-page in user binaries.  Useful when debugging them to avoid
+  # stepping through lots of page faults.
+  enable_preload_user_bins = false
+  enable_profiling = false
+  enable_profile_idle = false
+  enable_tsan_full = false
+  enable_tsan_lib = false  # TSAN only for the TSAN tests themselves
+  enable_tsan_core = false  # TSAN only for the scheduler and core thread code.
+
+  # Build options:
+  is_debug = true  # Include debug symbols and debug-mode assertions.
+  kshell_initial_command = ""
+}
+
+# Force TSAN off if we're in a toolchain that doesn't support it.  This means
+# that if the user selects enable_tsan_full (for example), TSAN will only in
+# fact be enabled in the toolchains that support it.
+#
+# This is arguably confusing.
+if (!supports_tsan) {
+  enable_tsan_full = false
+  enable_tsan_lib = false
+  enable_tsan_core = false
+}
+
+# Set a universal TSAN feature flag if any TSAN variants are enabled.
+enable_tsan = enable_tsan_full || enable_tsan_lib || enable_tsan_core

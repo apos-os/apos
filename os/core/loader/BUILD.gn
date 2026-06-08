@@ -1,0 +1,267 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/features.gni")
+import("//build/templates.gni")
+import("//build/toolconfig.gni")
+
+# Bespoke syscall stubs for ld since it doesn't link libc.
+tpl_source("syscalls_h") {
+  sources = [ "syscalls.h.tpl" ]
+  output_file = "//os/core/loader/syscalls.h"
+}
+
+tpl_source("syscalls_c") {
+  sources = [ "syscalls.c.tpl" ]
+  output_file = "//os/core/loader/syscalls.c"
+}
+
+# We want the binary linked such that it can be trivially relocated by the
+# kernel, without requiring any dynamic linking itself (as that is what it will
+# do).  In theory -static-pie should do what we want --- however that doesn't
+# work in our apos cross toolchain.  This is the expanded definition of that
+# flag.  See gcc commit b20e59f49b51b7baf05e1b727be5da947e617496.
+#
+# This results in an ET_DYN ELF file with position-independent code but no
+# dynamic dependencies.  Note that this doesn't work properly with libc/newlib
+# (currently, at least) --- but that's OK, since we don't want to link libc into
+# this anyway.
+config("loader_config") {
+  cflags = [ "-fPIE" ]
+  ldflags = [
+    "-nostdlib",
+    "-Wl,-static,-pie,--no-dynamic-linker,-ztext",
+  ]
+}
+
+# The dynamic loader binary: a position-independent executable with no
+# dynamic dependencies.
+executable("ld.so.1") {
+  output_dir = "$root_out_dir/" + rebase_path(".", "//")
+
+  sources = [
+    "elf64.c",
+    "gnu_hash.c",
+    "ld_alloc.c",
+    "ld_assert.c",
+    "ld_printf.c",
+    "ld_string.c",
+    "lib.c",
+    "loader.c",
+    "map.c",
+    "relocate.c",
+    "syscalls.c",
+  ]
+
+  deps = [
+    ":syscalls_c",
+    ":syscalls_h",
+    "//main:all_generated_headers",
+    "//user:apos_syscall",
+  ]
+
+  configs += [
+    "//build/config:user_config",
+    ":loader_config",
+  ]
+}
+
+# Complex shared library hierarchy.  See libs_header.h for details.  We have to
+# build these with '-l1' etc rather than references to the actual library
+# targets (GN deps) to ensure that DT_NEEDED is set correctly (without a path)
+# in the final binary.
+
+# Put them in out-gen/<variant>/os/core/loader/testdata, not under obj/, to
+# match the scons behavior.
+_testdata_out_dir = "$root_out_dir/" + rebase_path("testdata", "//")
+
+# Path to the testdata output directory, relative to the build root (suitable
+# for use in -L linker flags where commands run from root_build_dir).
+_testdata_lib_dir = rebase_path(_testdata_out_dir, root_build_dir)
+
+# Compile flags for testdata shared libraries.
+config("testlib_config") {
+  cflags = [
+    "-fPIC",
+    "-nostdlib",
+  ]
+  ldflags = [ "-nostdlib" ]
+}
+
+# TODO(aoates): confirm this is harmless in lib2b and lib4, and fold into above.
+config("testlib_ldpath_config") {
+  ldflags = [ "-L$_testdata_lib_dir" ]
+}
+
+shared_library("lib1") {
+  output_dir = _testdata_out_dir
+  sources = [ "testdata/lib1.c" ]
+  data_deps = [
+    ":lib2",
+    ":lib2b",
+    ":lib3",
+  ]  # ordering: these .so files must exist before lib1 links
+  configs += [
+    "//build/config:user_config",
+    ":testlib_config",
+    ":testlib_ldpath_config",
+  ]
+  libs = [
+    "2",
+    "2b",
+    "3",
+  ]
+}
+
+shared_library("lib2") {
+  output_dir = _testdata_out_dir
+  sources = [ "testdata/lib2.c" ]
+  data_deps = [ ":lib2b" ]  # ordering: lib2b.so must exist before lib2 links
+  configs += [
+    "//build/config:user_config",
+    ":testlib_config",
+    ":testlib_ldpath_config",
+  ]
+  libs = [ "2b" ]
+}
+
+shared_library("lib2b") {
+  output_dir = _testdata_out_dir
+  sources = [ "testdata/lib2b.c" ]
+  configs += [
+    "//build/config:user_config",
+    ":testlib_config",
+  ]
+}
+
+shared_library("lib3") {
+  output_dir = _testdata_out_dir
+  sources = [ "testdata/lib3.c" ]
+  data_deps = [
+    ":lib2",
+    ":lib4",
+  ]  # ordering: lib2.so and lib4.so must exist before lib3 links
+  configs += [
+    "//build/config:user_config",
+    ":testlib_config",
+    ":testlib_ldpath_config",
+  ]
+  libs = [
+    "2",
+    "4",
+  ]
+}
+
+shared_library("lib4") {
+  output_dir = _testdata_out_dir
+  sources = [ "testdata/lib4.c" ]
+  configs += [
+    "//build/config:user_config",
+    ":testlib_config",
+  ]
+}
+
+# Compile gnu_hash_lib.so and run xxd to generate an embeddable C array.
+# gnu_hash_lib.so: minimal shared library to test GNU hash table parsing.
+# The --hash-style=gnu flag ensures GNU-format symbol hash table generation.
+if (is_codegen) {
+  action("gnu_hash_lib_cdata") {
+    script = "//os/core/loader/testdata/build_gnu_hash_lib.py"
+
+    # Output the .so file and .so.cdata file directly into the source tree.
+    _so_file =
+        "$target_gen_dir/" +
+        rebase_path("//os/core/loader/testdata/gnu_hash_lib.so", target_gen_dir)
+    _out_file = "$target_gen_dir/" +
+                rebase_path("//os/core/loader/testdata/gnu_hash_lib.so.cdata",
+                            target_gen_dir)
+
+    inputs = [
+      "testdata/gnu_hash_lib.c",
+      "//build/license_template.h",
+    ]
+    outputs = [
+      _so_file,
+      _out_file,
+    ]
+
+    args = [
+      # TODO(aoates): support more architectures here, and split this into
+      # per-architecture outputs.
+      "riscv64-pc-apos-gcc",
+      rebase_path("testdata/gnu_hash_lib.c", root_build_dir),
+      rebase_path(_so_file, root_build_dir),
+      rebase_path("//build/license_template.h", root_build_dir),
+      rebase_path(_out_file, root_build_dir),
+    ]
+  }
+}
+
+# lib_bin: a test executable that dynamically links against the testdata libs.
+executable("lib_bin") {
+  output_dir = _testdata_out_dir
+  sources = [ "testdata/lib_bin.c" ]
+  configs += [ "//build/config:user_config" ]
+  data_deps = [
+    ":lib1",
+    ":lib2",
+    ":lib2b",
+    ":lib3",
+    ":lib4",
+  ]  # ordering: all .so files must exist before lib_bin links
+  cflags = [ "-nostdlib" ]
+  ldflags = [
+    # --as-needed ensures that lib_bin only has a NEEDED entry for lib1, and
+    # the others will be found transitively.
+    "-Wl,--as-needed",
+    "-L$_testdata_lib_dir",
+  ]
+  libs = [
+    "1",
+    "2",
+    "2b",
+    "3",
+    "4",
+  ]
+}
+
+if (is_native) {
+  executable("gnu_hash_test") {
+    sources = [
+      "gnu_hash.c",
+      "gnu_hash_test.cc",
+    ]
+    deps = [ ":gnu_hash_lib_cdata(//build/toolchain:codegen)" ]
+    include_dirs = [ "$gtest_root/include" ]
+    libs = [
+      "gtest",
+      "gtest_main",
+    ]
+    lib_dirs = [ "$gtest_root/lib" ]
+  }
+}
+
+group("loader") {
+  deps = [
+    ":gnu_hash_lib_cdata(//build/toolchain:codegen)",
+    ":gnu_hash_test(//build/toolchain:native)",
+    ":ld.so.1",
+    ":lib1",
+    ":lib2",
+    ":lib2b",
+    ":lib3",
+    ":lib4",
+    ":lib_bin",
+  ]
+}

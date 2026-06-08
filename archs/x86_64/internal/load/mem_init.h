@@ -28,7 +28,7 @@
 #define KERNEL_VIRT_START 0xFFFFFFFFC0000000
 
 // How many 2MB regions to allocate for the kernel.
-#define KERNEL_MAP_2MB_REGIONS 4
+#define KERNEL_MAP_2MB_REGIONS 32
 
 // Initialize page tables and enable paging.
 //

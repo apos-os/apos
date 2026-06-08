@@ -24,7 +24,6 @@
 .balign 0x1000
 PML4: .space 0x1000, 0
 PDPT: .space 0x1000, 0
-PD: .space 0x1000, 0
 
 .balign 8
 GDT: .space 24, 0
@@ -49,18 +48,11 @@ loader:
     movl %eax, PML4
     movl $0, (PML4 + 4)
 
-    # PDPT
-    movl $(PD), %eax
-    or $0x00000003, %eax
-    movl %eax, PDPT
-
-    # Page directory (identity-mapped 2MB pages).
-    movl $0x00000083, PD
-    movl $0x00200083, (PD + 8)
-    movl $0x00400083, (PD + 16)
+    # PDPT.  One entry, identity-mapping the first 1GB of memory.
+    movl $0x00000083, PDPT
 
     # Install page tables.
-    movl $(PDPT), %eax
+    movl $(PML4), %eax
     movl %eax, %cr3
 
     # Enter IA32e mode

@@ -19,39 +19,88 @@
 # If the template includes lines of the form '{# PY_IMPORT <file> #}', the given
 # python file will be read and interpreted in the template's environment before
 # the template is instantiated.
-#
-# Usage:
-#   tpl_gen.py <template file>
 
+import argparse
 import jinja2
+import jinja2.meta
 import os
 import re
+import subprocess
 import sys
 
-def main(argv):
-  if len(argv) != 2:
-    print('Usage: %s.py <template>' % os.path.basename(argv[0]),
-          file=sys.stderr)
-    sys.exit(1)
+import build_util
 
-  tpl_file = argv[1]
+def clang_format(buf):
+  # Ensure that clang-format always adds a trailing newline.  If there is
+  # already one (or more) newlines at the end of the output, clang-format will
+  # only omit one.
+  buf += '\n'
+  p = subprocess.run(["clang-format"],
+                     input=buf,
+                     capture_output=True,
+                     text=True,
+                     check=True,
+                     encoding='utf-8')
+  return p.stdout
+
+
+def main(argv):
+  parser = argparse.ArgumentParser()
+  parser.add_argument("template")
+  parser.add_argument("--outfile",
+                      help="Output filename.  If not given, stdout is used")
+  parser.add_argument("--depsfile", help="Filename to write dependencies in gcc format")
+  parser.add_argument("--clang-format",
+                      help="Whether to run clang-format on the output",
+                      action="store_true")
+  parser.add_argument("--import_root",
+                      help="Path to search for imported python modules",
+                      default=".")
+  args = parser.parse_args()
+  tpl_file = args.template
 
   # Find modules to import.
   python_env = {}
+  deps = []
   with open(tpl_file) as f:
     for line in f.readlines():
       m = re.search(r'\{#\s*PY_IMPORT\s*(\S*)', line)
       if m:
-        comp = compile(open(m.group(1)).read(), m.group(1), 'exec')
+        path = m.group(1)
+        path = os.path.join(args.import_root, path)
+        comp = compile(open(path).read(), path, 'exec')
         eval(comp, python_env)
+        deps.append(path)
 
-  env = jinja2.Environment(
-      loader=jinja2.FileSystemLoader(['.', os.path.dirname(tpl_file)]),
-      trim_blocks=True,
-      undefined=jinja2.StrictUndefined,
-      extensions=['jinja2.ext.do'])
-  template = env.get_template(tpl_file)
-  print(template.render(python_env))
+  env = jinja2.Environment(loader=jinja2.FileSystemLoader(
+      [args.import_root, os.path.dirname(tpl_file)]),
+                           trim_blocks=True,
+                           undefined=jinja2.StrictUndefined,
+                           extensions=['jinja2.ext.do'])
+  # We have to load the template here because jinja2 won't let us use ".." in
+  # template path names.  This lets us use a path relative to the build
+  # directory to reference a template.
+  template_str = open(tpl_file).read()
+  template = env.from_string(template_str)
+  ast = env.parse(template_str)
+  # TODO(aoates): make this work recursively (it currently does not)
+  template_deps = jinja2.meta.find_referenced_templates(ast)
+  # TODO(aoates): this doesn't work with template-relative paths, so remove
+  # those and make all includes/imports use path from source root.
+  deps.extend([os.path.join(args.import_root, d) for d in template_deps])
+  output = template.render(python_env)
+
+  if args.clang_format:
+    output = clang_format(output)
+
+  if args.outfile:
+    build_util.write_if_changed(args.outfile, output)
+  else:
+    print(output)
+
+  if args.depsfile:
+    deps_str = " ".join(deps)
+    build_util.write_if_changed(args.depsfile, f'{args.outfile}: {deps_str}\n')
 
 if __name__ == '__main__':
   main(sys.argv)

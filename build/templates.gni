@@ -1,0 +1,142 @@
+# Copyright 2026 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/features.gni")
+
+template("tpl_source") {
+  # We define the target differently depending on if we're in the codegen
+  # toolchain or not.  Because the action may write to a destination inside the
+  # source tree, if it is instantiated in multiple toolchains the build will
+  # fail (as they conflict).
+  #
+  # Therefore, for non-codegen-toolchains, we define the target simply as a
+  # group that depends on the same target but in the codegen toolchain.  In the
+  # codegen toolchain, we do the actual work.
+  #
+  # This ensures that each tpl_source destination is only instantiated a single
+  # time, regardless of how many different toolchains it is referenced from.
+  #
+  # Note that this precludes toolchain/arch-specific logic in templates.
+  if (is_codegen) {
+    action(target_name) {
+      script = "//util/tpl_gen.py"
+      sources = invoker.sources
+
+      source_file = sources[0]
+
+      # TODO(aoates): clean this up and remove default of .c
+      if (defined(invoker.output_file)) {
+        output_file = "$target_gen_dir/" +
+                      rebase_path(invoker.output_file, target_gen_dir)
+      } else {
+        output_file =
+            "$target_gen_dir/" + get_path_info(source_file, "name") + ".c"
+      }
+
+      outputs = [ output_file ]
+      depfile = "$target_gen_dir/$target_name.d"
+
+      args = [
+        rebase_path(source_file, root_build_dir),
+        "--clang-format",
+        "--outfile",
+        rebase_path(output_file, root_build_dir),
+        "--depsfile",
+        rebase_path(depfile, root_build_dir),
+        "--import_root",
+        rebase_path("//", root_build_dir),
+      ]
+    }
+  } else {
+    not_needed(invoker, "*")
+    group(target_name) {
+      deps = [ ":${target_name}(//build/toolchain:codegen)" ]
+    }
+  }
+}
+
+template("ksource_set") {
+  source_set(target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "deps",
+                             "no_tsan_instrument",
+                             "override_wframe",
+                           ])
+
+    # Ensure that all generated headers are generated _before_ we compile any
+    # kernel sources --- Ninja will still use actual calculated dependencies
+    # (from #includes) to determine when to rebuild other files, so this is only
+    # a build order constraint.
+    deps = [ "//main:all_generated_headers" ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+
+    configs += [ "//build/config:kernel_config" ]
+    _set_default_wframe =
+        !defined(invoker.override_wframe) || !invoker.override_wframe
+    if (_set_default_wframe) {
+      configs += [ "//build/config:cflags_wframe_larger_than_default" ]
+    }
+
+    # Apply TSAN configs to all kernel targets EXCEPT the TSAN library itself.
+    if (enable_tsan &&
+        (!defined(invoker.no_tsan_instrument) || !invoker.no_tsan_instrument)) {
+      if (_set_default_wframe) {
+        configs -= [ "//build/config:cflags_wframe_larger_than_default" ]
+        configs += [ "//build/config:tsan_kernel_wframe_config" ]
+      }
+      if (enable_tsan_core || enable_tsan_full) {
+        configs += [ "//build/config:tsan_instrument_config" ]
+      }
+    }
+  }
+}
+
+template("user_static_library") {
+  static_library(target_name) {
+    forward_variables_from(invoker, "*", [ "deps" ])
+    deps = [ "//main:all_generated_headers" ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+
+    configs += [ "//build/config:user_config" ]
+  }
+}
+
+template("user_executable") {
+  executable(target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "deps",
+                             "output_dir",
+                           ])
+    deps = [ "//main:all_generated_headers" ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+    if (!defined(invoker.output_dir)) {
+      # Put the binary in the main folder rather than in obj/ to match what
+      # scons does.
+      # TODO(aoates): remove this when scons is removed
+      output_dir = "$root_out_dir/" + rebase_path(".", "//")
+    }
+
+    configs += [ "//build/config:user_config" ]
+  }
+}

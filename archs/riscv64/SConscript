@@ -52,7 +52,7 @@ def build_shared_constants(env, source):
   for gentype, suffix in types:
     out.extend(
         env.Command('${SOURCE}' + suffix, source,
-                    'm4 -Dgentype=%s ${SOURCE} > ${TARGET}' % gentype))
+                    'python archs/riscv64/internal/gen_m4.py %s ${SOURCE} ${TARGET}' % gentype))
   return out
 
 env.AddMethod(build_shared_constants, 'SharedConstants')

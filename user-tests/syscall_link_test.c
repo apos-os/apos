@@ -53,7 +53,6 @@ static void direct_syscalls(void) {
   fcntl(0, 0, 0);
   fork();
   vfork();
-  exit(0);
   wait(NULL);
   waitpid(0, NULL, 0);
   execve(NULL, NULL, NULL);
@@ -115,7 +114,6 @@ static void direct_syscalls(void) {
   apos_run_ktest(NULL);
   apos_run_ktests(NULL, 0);
   apos_thread_create(NULL, NULL, NULL);
-  apos_thread_exit();
   sigwait(NULL, NULL);
   apos_thread_kill(NULL, 0);
   apos_thread_self(NULL);
@@ -129,15 +127,23 @@ static void direct_syscalls(void) {
 }
 
 // Syscalls implemented in userspace, or libc functions.
-static void userspace_functions(void) {
+static void userspace_functions(int arg) {
   utimes(0, NULL);
   sbrk(0);
   gettimeofday(NULL, NULL);
   times(NULL);
   getentropy(NULL, 0);
+
+  // Must be last.
+  if (arg == 1) {
+    exit(0);
+  }
+  if (arg == 2) {
+    apos_thread_exit();
+  }
 }
 
-int main(void) {
+int main(int argc, char** argv) {
   direct_syscalls();
-  userspace_functions();
+  userspace_functions(argc);
 }
